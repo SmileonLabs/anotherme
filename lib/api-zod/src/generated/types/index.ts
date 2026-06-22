@@ -46,6 +46,8 @@ export * from './messageInput';
 export * from './muteInput';
 export * from './myBattleStats';
 export * from './personaAnalysisError';
+export * from './personaCard';
+export * from './personaIdentityHistoryItem';
 export * from './personaProfile';
 export * from './personaStats';
 export * from './publicUser';

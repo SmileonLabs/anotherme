@@ -49,6 +49,7 @@ import type {
   MuteInput,
   MyBattleStats,
   PersonaAnalysisError,
+  PersonaCard,
   PersonaProfile,
   PublicUser,
   PushTokenInput,
@@ -582,6 +583,85 @@ export function useGetMyPersona<TData = Awaited<ReturnType<typeof getMyPersona>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMyPersonaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMyPersonaCardUrl = () => {
+
+
+
+
+  return `/api/users/me/persona/card`
+}
+
+/**
+ * Derived "identity" view (archetype, strengths, weaknesses, growth direction, archetype timeline) computed purely from existing stats and AI fields. No AI call and no XP/stat mutation. Fetching records an archetype history row only when the archetype changes.
+
+ * @summary Get my Another Me identity card
+ */
+export const getMyPersonaCard = async ( options?: RequestInit): Promise<PersonaCard> => {
+
+  return customFetch<PersonaCard>(getGetMyPersonaCardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyPersonaCardQueryKey = () => {
+    return [
+    `/api/users/me/persona/card`
+    ] as const;
+    }
+
+
+export const getGetMyPersonaCardQueryOptions = <TData = Awaited<ReturnType<typeof getMyPersonaCard>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPersonaCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyPersonaCardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPersonaCard>>> = ({ signal }) => getMyPersonaCard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyPersonaCard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyPersonaCardQueryResult = NonNullable<Awaited<ReturnType<typeof getMyPersonaCard>>>
+export type GetMyPersonaCardQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get my Another Me identity card
+ */
+
+export function useGetMyPersonaCard<TData = Awaited<ReturnType<typeof getMyPersonaCard>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPersonaCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyPersonaCardQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

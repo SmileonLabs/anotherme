@@ -1,0 +1,249 @@
+Phase 3 — Persona Card & Identity System
+
+목표:
+
+현재 구현된 성장 시스템, XP 시스템, AI 분석 시스템을 기반으로 사용자가 자신의 Another Me 정체성을 한눈에 볼 수 있는 Persona Card 시스템을 구현합니다.
+
+이 단계는 게임 기능 추가가 아니라 "정체성 시각화" 단계입니다.
+
+---
+
+핵심 개념
+
+사용자는 레벨과 스탯만 보는 것이 아니라
+
+"내 Another Me는 어떤 존재인가"
+
+를 확인할 수 있어야 합니다.
+
+현재 존재하는:
+
+* 레벨
+* 경험치
+* 능력치
+* AI 분석 결과
+
+를 조합하여 하나의 정체성 카드로 표현합니다.
+
+---
+
+1. Persona Card 모델 추가
+
+서버에서 계산되는 파생 데이터 생성
+
+persona_identity
+
+구성:
+
+* archetype
+* strengths
+* weaknesses
+* primary_traits
+* growth_direction
+* rank_title
+
+예시:
+
+archetype:
+"전략가형"
+
+strengths:
+["설득력", "논리성", "결단력"]
+
+weaknesses:
+["공감력", "감정표현"]
+
+growth_direction:
+"타인의 관점을 이해하는 능력을 키우면 더 균형 잡힌 리더가 될 수 있습니다."
+
+rank_title:
+"토론가"
+
+---
+
+2. Archetype 생성 규칙
+
+AI를 호출하지 말고
+현재 스탯 + AI 분석 결과만 사용
+
+예시:
+
+논리 + 설득 높음
+→ 전략가형
+
+공감 + 감정 높음
+→ 조율자형
+
+창의 + 지식 높음
+→ 탐험가형
+
+신념 + 결단 높음
+→ 개척자형
+
+균형형
+→ 관찰자형
+
+우선 5~10개 정도 Archetype 구현
+
+규칙 기반 계산
+
+---
+
+3. Persona Card API
+
+추가:
+
+GET /users/me/persona/card
+
+응답 예시
+
+{
+"name": "준희의 Another Me",
+"level": 12,
+"title": "전략가",
+"archetype": "전략가형",
+"personaSummary": "...",
+"strengths": [...],
+"weaknesses": [...],
+"growthDirection": "...",
+"houseName": null
+}
+
+---
+
+4. Persona Card UI
+
+Another Me 화면 상단에 카드 추가
+
+구성:
+
+[아바타]
+
+준희의 Another Me
+
+Lv.12 전략가
+
+---
+
+전략가형
+
+---
+
+대표 강점
+
+설득력
+논리성
+결단력
+
+---
+
+성장 방향
+
+공감 능력
+감정 표현
+
+---
+
+"나는 현실의 나를 닮아 성장하는 또 다른 자아입니다."
+
+---
+
+5. 공유용 카드 UI
+
+향후 SNS 공유를 고려
+
+모바일 카드 컴포넌트 제작
+
+크기:
+세로형
+
+포함:
+
+* 아바타
+* 이름
+* 레벨
+* 칭호
+* Archetype
+* 대표 능력치 3개
+* 대표 문구
+
+현재는 다운로드 기능 구현하지 말 것
+
+---
+
+6. Persona Identity 히스토리
+
+추가 테이블:
+
+persona_identity_history
+
+컬럼:
+
+* id
+* user_id
+* archetype
+* created_at
+
+규칙:
+
+Archetype 변경 시 기록
+
+예시
+
+Lv.5
+관찰자형
+
+↓
+
+Lv.12
+전략가형
+
+↓
+
+Lv.28
+설득가형
+
+사용자는 자신의 성장 방향 변화를 확인 가능
+
+---
+
+7. Another Me 화면 추가 영역
+
+현재:
+
+* 레벨
+* 경험치
+* 스탯
+* 분석 결과
+* 성장 기록
+
+위에 추가:
+
+"정체성"
+
+섹션
+
+---
+
+주의사항
+
+* 기존 XP 시스템 수정 금지
+* 기존 AI 분석 로직 수정 금지
+* Clan 시스템 구현 금지
+* Ranking 시스템 구현 금지
+* AI Agent 기능 구현 금지
+
+현재 단계는 Persona Card와 Identity 시스템만 구현
+
+---
+
+완료 후 정리
+
+1. 변경 파일 목록
+2. 추가 API
+3. Archetype 규칙표
+4. Persona Card 화면 구조
+5. 테스트 방법
+6. 향후 Ranking 연결 포인트
+
+한국어로 정리해주세요.

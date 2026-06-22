@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requireAuth } from "../lib/auth";
 import { ensurePersona, levelProgress, recentGrowthEvents } from "../lib/growth";
 import { analyzePersona } from "../lib/personaAnalysis";
+import { getPersonaCard } from "../lib/personaIdentity";
 import type { Persona } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -53,6 +54,23 @@ router.get("/users/me/persona", requireAuth, async (req, res): Promise<void> => 
     return;
   }
   res.json(await serializePersona(persona));
+});
+
+/**
+ * The Persona Card — a derived "identity" view (archetype, strengths, growth
+ * direction, archetype timeline) computed purely from existing stats + AI fields.
+ * No AI call, no XP/stat mutation. Fetching it records an archetype-history row
+ * only when the archetype has changed since last time.
+ */
+router.get("/users/me/persona/card", requireAuth, async (req, res): Promise<void> => {
+  const user = req.dbUser!;
+  const displayName = user.nickname?.trim() || "나";
+  const card = await getPersonaCard(user.id, displayName);
+  if (!card) {
+    res.status(500).json({ error: "Failed to load persona card" });
+    return;
+  }
+  res.json(card);
 });
 
 /**

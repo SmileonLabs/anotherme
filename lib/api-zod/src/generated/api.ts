@@ -135,6 +135,32 @@ export const GetMyPersonaResponse = zod.object({
 
 
 /**
+ * Derived "identity" view (archetype, strengths, weaknesses, growth direction, archetype timeline) computed purely from existing stats and AI fields. No AI call and no XP/stat mutation. Fetching records an archetype history row only when the archetype changes.
+
+ * @summary Get my Another Me identity card
+ */
+export const GetMyPersonaCardResponse = zod.object({
+  "name": zod.string(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "archetype": zod.string(),
+  "archetypeKey": zod.string(),
+  "personaSummary": zod.string().nullish(),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string()),
+  "primaryTraits": zod.array(zod.string()),
+  "growthDirection": zod.string(),
+  "motto": zod.string(),
+  "houseName": zod.string().nullish(),
+  "history": zod.array(zod.object({
+  "archetype": zod.string(),
+  "level": zod.number(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
  * Triggered only by the user. Analyzes recent app activity and updates the qualitative AI fields. Rate-limited to once per 10 minutes per user.
 
  * @summary Run an on-demand AI analysis of my Another Me persona

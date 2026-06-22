@@ -65,3 +65,25 @@ criminal history) are never asserted. The mobile screen repeats this disclaimer.
 Importing `zod/v4` directly in api-server code requires adding `zod` (catalog, v3.25+
 ships the `/v4` subpath) to api-server's own deps or the esbuild bundle fails to
 resolve it.
+
+## Persona identity / archetype (Phase 3)
+
+The "identity" (archetype, strengths, weaknesses, growth direction, card) is
+**derived, never stored as state** — computed on demand from the persona's
+deterministic stats. NO AI call: archetype is chosen by scoring rule-based
+signature stat-pairs and picking the max, with a balanced "관찰자형" fallback when
+total stat points are tiny. The AI analysis *result* is surfaced on the card only
+as `personaSummary` (read from `persona.summary`); it does not drive archetype
+selection. **Why:** the spec's concrete archetype rules are purely numeric and
+keyword-matching on AI free-text is brittle.
+
+**History-on-change is the source of current archetype.** `persona_identity_history`
+gets a new row ONLY when the freshly-computed archetype differs from the latest
+stored one, so the newest row IS the user's current archetype and the table is the
+growth timeline. The latest-check + insert MUST run in a transaction behind a
+`FOR UPDATE` row lock on the persona row (same pattern as growth's recordActivity)
+— otherwise concurrent card fetches both read the same latest row and insert
+duplicate consecutive archetype rows.
+
+**Card fetch must stay read-only w.r.t. progression.** Building the card only ever
+writes to `persona_identity_history`; it never touches xp/stats/level/xp_events.

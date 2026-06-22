@@ -8,4 +8,5 @@ export * from "./dungeon";
 export * from "./battle";
 export * from "./battleStats";
 export * from "./persona";
+export * from "./personaIdentity";
 export * from "./xpEvents";

@@ -5,8 +5,14 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useGetMe, useGetMyPersona, useAnalyzeMyPersona } from "@workspace/api-client-react";
+import {
+  useGetMe,
+  useGetMyPersona,
+  useGetMyPersonaCard,
+  useAnalyzeMyPersona,
+} from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
+import { PersonaCard } from "@/components/PersonaCard";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
@@ -111,6 +117,7 @@ export default function PersonaScreen() {
 
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
+  const { data: card, refetch: refetchCard } = useGetMyPersonaCard();
 
   const [analysisError, setAnalysisError] = React.useState<string | null>(null);
   const { mutate: analyze, isPending: isAnalyzing } = useAnalyzeMyPersona({
@@ -118,6 +125,7 @@ export default function PersonaScreen() {
       onMutate: () => setAnalysisError(null),
       onSuccess: () => {
         refetch();
+        refetchCard();
       },
       onError: (err: unknown) => {
         const data = (err as { data?: { message?: string } } | null)?.data;
@@ -210,6 +218,90 @@ export default function PersonaScreen() {
                 다음 레벨까지 {Math.max(0, xpFor - xpInto)} XP · {xpInto} / {xpFor}
               </Text>
             </LinearGradient>
+
+            {/* Identity — Persona Card */}
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>정체성</Text>
+            {card ? (
+              <>
+                <PersonaCard
+                  card={card}
+                  avatarUri={me?.profileImageUrl}
+                  avatarName={me?.nickname ?? "나"}
+                />
+
+                {/* Growth direction */}
+                <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
+                  <View style={styles.identityRow}>
+                    <View style={[styles.identityIcon, { backgroundColor: `${colors.primary}18` }]}>
+                      <Feather name="trending-up" size={15} color={colors.primary} />
+                    </View>
+                    <View style={styles.identityBody}>
+                      <Text style={[styles.identityLabel, { color: colors.foreground }]}>
+                        성장 방향
+                      </Text>
+                      <Text style={[styles.identityText, { color: colors.mutedForeground }]}>
+                        {card.growthDirection}
+                      </Text>
+                      {card.weaknesses.length > 0 ? (
+                        <View style={styles.tagRow}>
+                          {card.weaknesses.map((w) => (
+                            <View
+                              key={w}
+                              style={[styles.growthTag, { backgroundColor: `${colors.primary}14` }]}
+                            >
+                              <Text style={[styles.growthTagText, { color: colors.primary }]}>
+                                {w}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Archetype timeline */}
+                {card.history.length > 1 ? (
+                  <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
+                    <Text style={[styles.timelineTitle, { color: colors.foreground }]}>
+                      정체성 변화
+                    </Text>
+                    {card.history.map((h, i) => (
+                      <View key={`${h.archetype}-${h.createdAt}`} style={styles.timelineRow}>
+                        <View style={styles.timelineMarkerCol}>
+                          <View
+                            style={[
+                              styles.timelineDot,
+                              {
+                                backgroundColor: i === 0 ? colors.primary : colors.border,
+                              },
+                            ]}
+                          />
+                          {i < card.history.length - 1 ? (
+                            <View style={[styles.timelineLine, { backgroundColor: colors.border }]} />
+                          ) : null}
+                        </View>
+                        <View style={styles.timelineBody}>
+                          <Text style={[styles.timelineArchetype, { color: colors.foreground }]}>
+                            Lv.{h.level} · {h.archetype}
+                            {i === 0 ? " (현재)" : ""}
+                          </Text>
+                          <Text style={[styles.timelineDate, { color: colors.mutedForeground }]}>
+                            {formatEventTime(h.createdAt)}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
+                <View style={styles.summaryEmpty}>
+                  <ActivityIndicator color={colors.primary} />
+                </View>
+              </View>
+            )}
 
             {/* Stats */}
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>능력치</Text>
@@ -535,6 +627,31 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 19,
   },
+
+  identityCard: { marginHorizontal: 16, marginTop: 12, borderRadius: 16, padding: 16 },
+  identityRow: { flexDirection: "row", gap: 12 },
+  identityIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  identityBody: { flex: 1, gap: 6 },
+  identityLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  identityText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 4 },
+  growthTag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9 },
+  growthTagText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+
+  timelineTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 12 },
+  timelineRow: { flexDirection: "row", gap: 12 },
+  timelineMarkerCol: { alignItems: "center", width: 12 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  timelineLine: { width: 2, flex: 1, marginTop: 2, minHeight: 18 },
+  timelineBody: { flex: 1, paddingBottom: 14, gap: 2 },
+  timelineArchetype: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  timelineDate: { fontSize: 12, fontFamily: "Inter_400Regular" },
 
   summaryCard: { marginHorizontal: 16, borderRadius: 16, padding: 18 },
   summaryText: { fontSize: 14, fontFamily: "Inter_500Medium", lineHeight: 21 },

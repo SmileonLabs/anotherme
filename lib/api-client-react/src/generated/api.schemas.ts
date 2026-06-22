@@ -102,6 +102,30 @@ export interface PersonaProfile {
   createdAt: string;
 }
 
+export interface PersonaIdentityHistoryItem {
+  archetype: string;
+  level: number;
+  createdAt: string;
+}
+
+export interface PersonaCard {
+  name: string;
+  level: number;
+  title: string;
+  archetype: string;
+  archetypeKey: string;
+  /** @nullable */
+  personaSummary?: string | null;
+  strengths: string[];
+  weaknesses: string[];
+  primaryTraits: string[];
+  growthDirection: string;
+  motto: string;
+  /** @nullable */
+  houseName?: string | null;
+  history: PersonaIdentityHistoryItem[];
+}
+
 export interface PersonaAnalysisError {
   error: string;
   message: string;

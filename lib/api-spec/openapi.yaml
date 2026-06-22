@@ -132,6 +132,27 @@ paths:
         "401":
           description: Unauthorized
 
+  /users/me/persona/card:
+    get:
+      operationId: getMyPersonaCard
+      tags: [users]
+      summary: Get my Another Me identity card
+      description: >
+        Derived "identity" view (archetype, strengths, weaknesses, growth
+        direction, archetype timeline) computed purely from existing stats and AI
+        fields. No AI call and no XP/stat mutation. Fetching records an archetype
+        history row only when the archetype changes.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: My persona identity card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaCard"
+        "401":
+          description: Unauthorized
+
   /users/me/persona/analyze:
     post:
       operationId: analyzeMyPersona
@@ -1266,6 +1287,69 @@ components:
           type: ["string", "null"]
         createdAt:
           type: string
+
+    PersonaIdentityHistoryItem:
+      type: object
+      required: [archetype, level, createdAt]
+      properties:
+        archetype:
+          type: string
+        level:
+          type: integer
+        createdAt:
+          type: string
+
+    PersonaCard:
+      type: object
+      required:
+        [
+          name,
+          level,
+          title,
+          archetype,
+          archetypeKey,
+          strengths,
+          weaknesses,
+          primaryTraits,
+          growthDirection,
+          motto,
+          history,
+        ]
+      properties:
+        name:
+          type: string
+        level:
+          type: integer
+        title:
+          type: string
+        archetype:
+          type: string
+        archetypeKey:
+          type: string
+        personaSummary:
+          type: ["string", "null"]
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        primaryTraits:
+          type: array
+          items:
+            type: string
+        growthDirection:
+          type: string
+        motto:
+          type: string
+        houseName:
+          type: ["string", "null"]
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonaIdentityHistoryItem"
 
     PersonaAnalysisError:
       type: object
