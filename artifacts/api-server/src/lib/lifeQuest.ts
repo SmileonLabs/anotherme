@@ -124,6 +124,7 @@ const scenarioSchema = {
                 statChanges: {
                   type: "object",
                   additionalProperties: false,
+                  required: [...STAT_KEYS],
                   properties: Object.fromEntries(
                     STAT_KEYS.map((k) => [k, { type: "integer" }]),
                   ),
@@ -156,7 +157,8 @@ function buildSystemPrompt(theme: LifeQuestTheme): string {
     "## statChanges 규칙 (매우 중요)",
     `- 사용 가능한 스탯은 정확히 7개뿐: ${STAT_KEYS.join(", ")}.`,
     "- 의미: logic(논리), empathy(공감), wit(재치), knowledge(지식), conviction(소신·설득력), emotion(감정 조절), decisiveness(결단력).",
-    "- 각 선택지는 1~3개 스탯만 움직이며, 값은 +1 ~ +3 사이의 양수 정수만 사용한다(감소 없음).",
+    "- statChanges에는 항상 7개 스탯 키를 모두 포함한다. 실제로 올릴 스탯만 +1~+3을 주고, 나머지 스탯은 반드시 0으로 둔다.",
+    "- 각 선택지는 1~3개 스탯만 실제로 올린다(0보다 큰 값은 1~3개). 음수는 사용하지 않는다(감소 없음).",
     "- 선택의 성향에 맞는 스탯을 준다. (예: 차분히 대화로 풀면 empathy/emotion, 과감히 결정하면 decisiveness/conviction)",
     "",
     "## 금지 사항",
