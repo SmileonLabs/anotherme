@@ -1,0 +1,228 @@
+C:\Users\mirac\anotherme\artifacts\mobile>cd C:\Users\mirac\anotherme
+
+C:\Users\mirac\anotherme>git checkout -- artifacts/mobile/app.json
+
+C:\Users\mirac\anotherme>git pull
+Updating d60cd70..acd70a7
+Fast-forward
+ .agents/agent_assets_metadata.toml                 |    14 +
+ .agents/memory/MEMORY.md                           |     2 +
+ .agents/memory/android-resource-merge.md           |    35 +
+ .agents/memory/artifact-route-swap.md              |    28 +
+ .replit                                            |    12 +
+ artifacts/landing/.replit-artifact/artifact.toml   |    31 +
+ artifacts/landing/components.json                  |    20 +
+ artifacts/landing/index.html                       |    34 +
+ artifacts/landing/package.json                     |    77 +
+ artifacts/landing/public/anotherme.pdf             | 81538 +++++++++++++++++++
+ artifacts/landing/public/apple-touch-icon.png      |   Bin 0 -> 20732 bytes
+ artifacts/landing/public/favicon.svg               |     3 +
+ artifacts/landing/public/icon-192.png              |   Bin 0 -> 23017 bytes
+ artifacts/landing/public/icon-512.png              |   Bin 0 -> 69763 bytes
+ artifacts/landing/public/images/hero-abstract.png  |   Bin 0 -> 1265121 bytes
+ artifacts/landing/public/images/persona-brain.png  |   Bin 0 -> 1628485 bytes
+ artifacts/landing/public/images/visual.png         |   Bin 0 -> 1912374 bytes
+ artifacts/landing/public/logo_black.svg            |    53 +
+ artifacts/landing/public/logo_white.svg            |    66 +
+ artifacts/landing/public/manifest.webmanifest      |    31 +
+ artifacts/landing/public/opengraph.jpg             |   Bin 0 -> 71089 bytes
+ artifacts/landing/public/robots.txt                |     2 +
+ artifacts/landing/public/sw.js                     |    16 +
+ artifacts/landing/src/App.tsx                      |    32 +
+ artifacts/landing/src/components/ui/accordion.tsx  |    55 +
+ .../landing/src/components/ui/alert-dialog.tsx     |   139 +
+ artifacts/landing/src/components/ui/alert.tsx      |    59 +
+ .../landing/src/components/ui/aspect-ratio.tsx     |     5 +
+ artifacts/landing/src/components/ui/avatar.tsx     |    50 +
+ artifacts/landing/src/components/ui/badge.tsx      |    43 +
+ artifacts/landing/src/components/ui/breadcrumb.tsx |   115 +
+ .../landing/src/components/ui/button-group.tsx     |    83 +
+ artifacts/landing/src/components/ui/button.tsx     |    65 +
+ artifacts/landing/src/components/ui/calendar.tsx   |   213 +
+ artifacts/landing/src/components/ui/card.tsx       |    76 +
+ artifacts/landing/src/components/ui/carousel.tsx   |   260 +
+ artifacts/landing/src/components/ui/chart.tsx      |   367 +
+ artifacts/landing/src/components/ui/checkbox.tsx   |    28 +
+ .../landing/src/components/ui/collapsible.tsx      |    11 +
+ artifacts/landing/src/components/ui/command.tsx    |   153 +
+ .../landing/src/components/ui/context-menu.tsx     |   198 +
+ artifacts/landing/src/components/ui/dialog.tsx     |   120 +
+ artifacts/landing/src/components/ui/drawer.tsx     |   116 +
+ .../landing/src/components/ui/dropdown-menu.tsx    |   201 +
+ artifacts/landing/src/components/ui/empty.tsx      |   104 +
+ artifacts/landing/src/components/ui/field.tsx      |   244 +
+ artifacts/landing/src/components/ui/form.tsx       |   176 +
+ artifacts/landing/src/components/ui/hover-card.tsx |    27 +
+ .../landing/src/components/ui/input-group.tsx      |   168 +
+ artifacts/landing/src/components/ui/input-otp.tsx  |    69 +
+ artifacts/landing/src/components/ui/input.tsx      |    22 +
+ artifacts/landing/src/components/ui/item.tsx       |   193 +
+ artifacts/landing/src/components/ui/kbd.tsx        |    28 +
+ artifacts/landing/src/components/ui/label.tsx      |    26 +
+ artifacts/landing/src/components/ui/menubar.tsx    |   254 +
+ .../landing/src/components/ui/navigation-menu.tsx  |   128 +
+ artifacts/landing/src/components/ui/pagination.tsx |   117 +
+ artifacts/landing/src/components/ui/popover.tsx    |    31 +
+ artifacts/landing/src/components/ui/progress.tsx   |    28 +
+ .../landing/src/components/ui/radio-group.tsx      |    42 +
+ artifacts/landing/src/components/ui/resizable.tsx  |    45 +
+ .../landing/src/components/ui/scroll-area.tsx      |    46 +
+ artifacts/landing/src/components/ui/select.tsx     |   159 +
+ artifacts/landing/src/components/ui/separator.tsx  |    29 +
+ artifacts/landing/src/components/ui/sheet.tsx      |   140 +
+ artifacts/landing/src/components/ui/sidebar.tsx    |   727 +
+ artifacts/landing/src/components/ui/skeleton.tsx   |    15 +
+ artifacts/landing/src/components/ui/slider.tsx     |    26 +
+ artifacts/landing/src/components/ui/sonner.tsx     |    31 +
+ artifacts/landing/src/components/ui/spinner.tsx    |    16 +
+ artifacts/landing/src/components/ui/switch.tsx     |    27 +
+ artifacts/landing/src/components/ui/table.tsx      |   120 +
+ artifacts/landing/src/components/ui/tabs.tsx       |    53 +
+ artifacts/landing/src/components/ui/textarea.tsx   |    22 +
+ artifacts/landing/src/components/ui/toast.tsx      |   127 +
+ artifacts/landing/src/components/ui/toaster.tsx    |    33 +
+ .../landing/src/components/ui/toggle-group.tsx     |    61 +
+ artifacts/landing/src/components/ui/toggle.tsx     |    43 +
+ artifacts/landing/src/components/ui/tooltip.tsx    |    32 +
+ artifacts/landing/src/config.ts                    |     2 +
+ artifacts/landing/src/hooks/use-mobile.tsx         |    19 +
+ artifacts/landing/src/hooks/use-pwa.ts             |    63 +
+ artifacts/landing/src/hooks/use-toast.ts           |   191 +
+ artifacts/landing/src/index.css                    |   206 +
+ artifacts/landing/src/lib/utils.ts                 |     6 +
+ artifacts/landing/src/main.tsx                     |    19 +
+ artifacts/landing/src/pages/Home.tsx               |   352 +
+ artifacts/landing/src/pages/not-found.tsx          |    21 +
+ artifacts/landing/tsconfig.json                    |    24 +
+ artifacts/landing/vite.config.ts                   |    75 +
+ artifacts/mobile/.replit-artifact/artifact.toml    |     6 +-
+ artifacts/mobile/app.json                          |    28 +-
+ artifacts/mobile/assets/images/favicon.png         |   Bin 0 -> 8505 bytes
+ artifacts/mobile/assets/images/icon.png            |   Bin 106405 -> 8505 bytes
+ artifacts/mobile/assets/images/splash-icon.png     |   Bin 0 -> 8505 bytes
+ artifacts/mobile/package.json                      |     1 +
+ ...age-lock-json-yarn-lock-case-_1782137144565.txt |    27 +
+ attached_assets/image_1782137944084.png            |   Bin 0 -> 38898 bytes
+ attached_assets/image_1782142250843.png            |   Bin 0 -> 158206 bytes
+ attached_assets/image_1782147966666.png            |   Bin 0 -> 218986 bytes
+ attached_assets/image_1782148349690.png            |   Bin 0 -> 33512 bytes
+ attached_assets/image_1782148386906.png            |   Bin 0 -> 12956 bytes
+ attached_assets/image_1782148666297.png            |   Bin 0 -> 40334 bytes
+ attached_assets/image_1782148754957.png            |   Bin 0 -> 17055 bytes
+ images/anotherme.pdf                               | 81538 +++++++++++++++++++
+ images/visual.png                                  |   Bin 0 -> 1912374 bytes
+ pnpm-lock.yaml                                     |   392 +-
+ replit.md                                          |     1 +
+ 108 files changed, 170659 insertions(+), 72 deletions(-)
+ create mode 100644 .agents/agent_assets_metadata.toml
+ create mode 100644 .agents/memory/android-resource-merge.md
+ create mode 100644 .agents/memory/artifact-route-swap.md
+ create mode 100644 artifacts/landing/.replit-artifact/artifact.toml
+ create mode 100644 artifacts/landing/components.json
+ create mode 100644 artifacts/landing/index.html
+ create mode 100644 artifacts/landing/package.json
+ create mode 100644 artifacts/landing/public/anotherme.pdf
+ create mode 100644 artifacts/landing/public/apple-touch-icon.png
+ create mode 100644 artifacts/landing/public/favicon.svg
+ create mode 100644 artifacts/landing/public/icon-192.png
+ create mode 100644 artifacts/landing/public/icon-512.png
+ create mode 100644 artifacts/landing/public/images/hero-abstract.png
+ create mode 100644 artifacts/landing/public/images/persona-brain.png
+ create mode 100644 artifacts/landing/public/images/visual.png
+ create mode 100644 artifacts/landing/public/logo_black.svg
+ create mode 100644 artifacts/landing/public/logo_white.svg
+ create mode 100644 artifacts/landing/public/manifest.webmanifest
+ create mode 100644 artifacts/landing/public/opengraph.jpg
+ create mode 100644 artifacts/landing/public/robots.txt
+ create mode 100644 artifacts/landing/public/sw.js
+ create mode 100644 artifacts/landing/src/App.tsx
+ create mode 100644 artifacts/landing/src/components/ui/accordion.tsx
+ create mode 100644 artifacts/landing/src/components/ui/alert-dialog.tsx
+ create mode 100644 artifacts/landing/src/components/ui/alert.tsx
+ create mode 100644 artifacts/landing/src/components/ui/aspect-ratio.tsx
+ create mode 100644 artifacts/landing/src/components/ui/avatar.tsx
+ create mode 100644 artifacts/landing/src/components/ui/badge.tsx
+ create mode 100644 artifacts/landing/src/components/ui/breadcrumb.tsx
+ create mode 100644 artifacts/landing/src/components/ui/button-group.tsx
+ create mode 100644 artifacts/landing/src/components/ui/button.tsx
+ create mode 100644 artifacts/landing/src/components/ui/calendar.tsx
+ create mode 100644 artifacts/landing/src/components/ui/card.tsx
+ create mode 100644 artifacts/landing/src/components/ui/carousel.tsx
+ create mode 100644 artifacts/landing/src/components/ui/chart.tsx
+ create mode 100644 artifacts/landing/src/components/ui/checkbox.tsx
+ create mode 100644 artifacts/landing/src/components/ui/collapsible.tsx
+ create mode 100644 artifacts/landing/src/components/ui/command.tsx
+ create mode 100644 artifacts/landing/src/components/ui/context-menu.tsx
+ create mode 100644 artifacts/landing/src/components/ui/dialog.tsx
+ create mode 100644 artifacts/landing/src/components/ui/drawer.tsx
+ create mode 100644 artifacts/landing/src/components/ui/dropdown-menu.tsx
+ create mode 100644 artifacts/landing/src/components/ui/empty.tsx
+ create mode 100644 artifacts/landing/src/components/ui/field.tsx
+ create mode 100644 artifacts/landing/src/components/ui/form.tsx
+ create mode 100644 artifacts/landing/src/components/ui/hover-card.tsx
+ create mode 100644 artifacts/landing/src/components/ui/input-group.tsx
+ create mode 100644 artifacts/landing/src/components/ui/input-otp.tsx
+ create mode 100644 artifacts/landing/src/components/ui/input.tsx
+ create mode 100644 artifacts/landing/src/components/ui/item.tsx
+ create mode 100644 artifacts/landing/src/components/ui/kbd.tsx
+ create mode 100644 artifacts/landing/src/components/ui/label.tsx
+ create mode 100644 artifacts/landing/src/components/ui/menubar.tsx
+ create mode 100644 artifacts/landing/src/components/ui/navigation-menu.tsx
+ create mode 100644 artifacts/landing/src/components/ui/pagination.tsx
+ create mode 100644 artifacts/landing/src/components/ui/popover.tsx
+ create mode 100644 artifacts/landing/src/components/ui/progress.tsx
+ create mode 100644 artifacts/landing/src/components/ui/radio-group.tsx
+ create mode 100644 artifacts/landing/src/components/ui/resizable.tsx
+ create mode 100644 artifacts/landing/src/components/ui/scroll-area.tsx
+ create mode 100644 artifacts/landing/src/components/ui/select.tsx
+ create mode 100644 artifacts/landing/src/components/ui/separator.tsx
+ create mode 100644 artifacts/landing/src/components/ui/sheet.tsx
+ create mode 100644 artifacts/landing/src/components/ui/sidebar.tsx
+ create mode 100644 artifacts/landing/src/components/ui/skeleton.tsx
+ create mode 100644 artifacts/landing/src/components/ui/slider.tsx
+ create mode 100644 artifacts/landing/src/components/ui/sonner.tsx
+ create mode 100644 artifacts/landing/src/components/ui/spinner.tsx
+ create mode 100644 artifacts/landing/src/components/ui/switch.tsx
+ create mode 100644 artifacts/landing/src/components/ui/table.tsx
+ create mode 100644 artifacts/landing/src/components/ui/tabs.tsx
+ create mode 100644 artifacts/landing/src/components/ui/textarea.tsx
+ create mode 100644 artifacts/landing/src/components/ui/toast.tsx
+ create mode 100644 artifacts/landing/src/components/ui/toaster.tsx
+ create mode 100644 artifacts/landing/src/components/ui/toggle-group.tsx
+ create mode 100644 artifacts/landing/src/components/ui/toggle.tsx
+ create mode 100644 artifacts/landing/src/components/ui/tooltip.tsx
+ create mode 100644 artifacts/landing/src/config.ts
+ create mode 100644 artifacts/landing/src/hooks/use-mobile.tsx
+ create mode 100644 artifacts/landing/src/hooks/use-pwa.ts
+ create mode 100644 artifacts/landing/src/hooks/use-toast.ts
+ create mode 100644 artifacts/landing/src/index.css
+ create mode 100644 artifacts/landing/src/lib/utils.ts
+ create mode 100644 artifacts/landing/src/main.tsx
+ create mode 100644 artifacts/landing/src/pages/Home.tsx
+ create mode 100644 artifacts/landing/src/pages/not-found.tsx
+ create mode 100644 artifacts/landing/tsconfig.json
+ create mode 100644 artifacts/landing/vite.config.ts
+ create mode 100644 artifacts/mobile/assets/images/favicon.png
+ create mode 100644 artifacts/mobile/assets/images/splash-icon.png
+ create mode 100644 attached_assets/Pasted--preinstall-sh-c-rm-f-package-lock-json-yarn-lock-case-_1782137144565.txt
+ create mode 100644 attached_assets/image_1782137944084.png
+ create mode 100644 attached_assets/image_1782142250843.png
+ create mode 100644 attached_assets/image_1782147966666.png
+ create mode 100644 attached_assets/image_1782148349690.png
+ create mode 100644 attached_assets/image_1782148386906.png
+ create mode 100644 attached_assets/image_1782148666297.png
+ create mode 100644 attached_assets/image_1782148754957.png
+ create mode 100644 images/anotherme.pdf
+ create mode 100644 images/visual.png
+
+C:\Users\mirac\anotherme>
+
+
+
+
+
+
+
+
+
+
