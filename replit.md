@@ -19,7 +19,7 @@ AI가 판정하는 말발 배틀 앱 — 1:1/그룹 채팅, 던전 RPG, 토크�
 - DB: PostgreSQL + Drizzle ORM
 - Auth: Clerk (`@clerk/expo` on mobile, `@clerk/express` on server)
 - AI: OpenAI (`OPENAI_API_KEY`) — dungeon RPG & talk battle judging
-- Voice: LiveKit (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`)
+- Voice: LiveKit — web/PWA via `livekit-client`; native via `@livekit/react-native` + `@livekit/react-native-webrtc` (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`)
 - Push: Web Push / VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`)
 - Storage: Replit Object Storage (GCS-backed)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
@@ -47,8 +47,20 @@ AI가 판정하는 말발 배틀 앱 — 1:1/그룹 채팅, 던전 RPG, 토크�
 - Clerk proxy (`/api/__clerk`) is production-only; dev mode loads Clerk from CDN directly. `EXPO_PUBLIC_CLERK_PROXY_URL` must NOT be set in shared/dev env — only production.
 - OpenAI client (`aiClient.ts`) falls back: `AI_INTEGRATIONS_OPENAI_API_KEY` → `OPENAI_API_KEY`. Use `OPENAI_API_KEY` secret directly.
 - Object Storage uses Replit sidecar auth (no GCS credentials needed); bucket ID in `DEFAULT_OBJECT_STORAGE_BUCKET_ID`.
-- Mobile lib helpers (`artifacts/mobile/lib/`) have `.web.ts` platform-specific overrides for browser-incompatible APIs (HEIC conversion, voice calls, web push).
+- Mobile lib helpers (`artifacts/mobile/lib/`) have `.web.ts` platform-specific overrides for browser-incompatible APIs (HEIC conversion, voice calls, web push, call notifications, native push).
 - All DB tables are defined in `lib/db/src/schema/`; run `pnpm --filter @workspace/db run push` after schema changes.
+- Voice calls are dual-platform: PWA/web uses `livekit-client` + Web Push (`voiceCall.web.ts`); native build uses `@livekit/react-native` (`voiceCall.ts`) with `registerGlobals()` + `AudioSession`, plus notifee full-screen incoming UI (`callNotifications.ts`) and expo-notifications FCM token registration (`nativePush.ts`). All native files have `.web.ts` no-op stubs so the PWA keeps building.
+
+## Native build (Android APK / iOS) — Phase B
+
+The native voice-call foundation is **scaffolding only** — it cannot be built or verified on Replit. Building requires EAS off-platform.
+
+- **Config plugins (required, installed as devDeps):** `@livekit/react-native-expo-plugin`, `@config-plugins/react-native-webrtc`, plus `expo-notifications`. These are listed in `app.json` `plugins` and MUST stay installed — if missing, `expo start` fails at config resolution (`PluginError: Failed to resolve plugin`).
+- **Static `app.json` only** — never convert to `app.config.ts` (Replit-managed config requirement).
+- **EAS build:** `eas.json` defines `development`/`preview` (APK) and `production` (AAB) profiles. Run `eas build` from a local machine / CI with an Expo account — **never run `eas`/`expo build`/`expo prebuild` CLI on Replit** (forbidden by the expo skill).
+- **FCM (Android push):** `google-services.json` is a **placeholder with REPLACE_ME values** — must be replaced with a real Firebase project file before any native build. High-priority FCM data messages are required to wake the device for full-screen incoming calls.
+- **Server-side push is Web Push/VAPID only.** `push.ts` `addSubscription` ignores non-subscription tokens, so native FCM token registration via `POST /users/me/push-token` is a harmless server-side no-op today. Real native delivery needs `firebase-admin` + a service account on the server (not yet implemented).
+- **iOS** additionally requires CallKit + PushKit/VoIP entitlements and a paid Apple Developer account; `app.json` has `UIBackgroundModes: [audio, voip]` + mic usage description scaffolded, but iOS incoming-call UI is not implemented.
 
 ## Product
 
@@ -70,6 +82,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 - After any schema change in `lib/db/src/schema/`, run `pnpm --filter @workspace/db run push` AND restart the API server workflow.
 - After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching route/client code.
 - Do NOT use `console.log` in server code — use `req.log` in route handlers, `logger` elsewhere.
+- Any plugin listed in `app.json` `plugins` must be pnpm-installed in `artifacts/mobile`, or `expo start` (and the mobile workflow) crashes at config resolution with `PluginError: Failed to resolve plugin`. Adding native runtime libs without their config plugins (e.g. LiveKit + `@livekit/react-native-expo-plugin`) is a common cause.
+- Mobile workflow restart can transiently fail with a Metro file-watch `ENOENT ... is-array-buffer_tmp_*` error right after a pnpm install (watcher races a deleted install temp dir). Re-restart; if it persists, the real error is usually masked underneath — run `cd artifacts/mobile && pnpm exec expo config --type prebuild` to surface it.
 
 ## Pointers
 

@@ -20,6 +20,7 @@ import { setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CallProvider } from "@/components/CallProvider";
 import { PushRegistrar } from "@/components/PushRegistrar";
+import { NativePushRegistrar } from "@/components/NativePushRegistrar";
 import { ForegroundNotifier } from "@/components/ForegroundNotifier";
 import { ThemeModeProvider } from "@/hooks/useThemeMode";
 import { useColors } from "@/hooks/useColors";
@@ -180,6 +181,7 @@ export default function RootLayout() {
                   </>
                 ) : (
                   <KeyboardProvider>
+                    <NativePushRegistrar />
                     <RootLayoutNav />
                   </KeyboardProvider>
                 )}

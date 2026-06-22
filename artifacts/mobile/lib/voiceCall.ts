@@ -1,22 +1,160 @@
-// Native fallback. Voice calls are only supported on the web/PWA build.
-// Metro picks voiceCall.web.ts on web; this file is used on native.
+// Native (iOS/Android) voice-call implementation backed by @livekit/react-native
+// + @livekit/react-native-webrtc. Metro picks voiceCall.web.ts on web; this file
+// is used on native builds (dev client / EAS APK — NOT Expo Go, which lacks the
+// WebRTC native module). The exported surface mirrors voiceCall.web.ts exactly so
+// CallProvider can stay platform-agnostic.
 
-export const voiceCallSupported = false;
+import { AudioSession, registerGlobals } from "@livekit/react-native";
+import { Room, RoomEvent } from "livekit-client";
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  type AudioPlayer,
+} from "expo-audio";
 
-export function primeAudioPlayback(): void {}
+// Patch the global WebRTC objects (RTCPeerConnection, mediaDevices, …) onto the
+// JS runtime so livekit-client's browser code paths work on React Native. Must
+// run once, before any Room is constructed — module top-level guarantees that.
+registerGlobals();
 
-export function startRingback(): void {}
+export const voiceCallSupported = true;
 
-export function stopRingback(): void {}
+let room: Room | null = null;
+let audioSessionActive = false;
+let audioModeReady = false;
 
-export function startRingtone(): void {}
+let ringbackPlayer: AudioPlayer | null = null;
+let ringtonePlayer: AudioPlayer | null = null;
 
-export function stopRingtone(): void {}
-
-export async function joinCall(_url: string, _token: string): Promise<void> {
-  throw new Error("음성 통화는 웹에서만 지원됩니다");
+// Allow the ring/ringback tones to sound even when the phone's hardware silent
+// switch is on — an incoming or outgoing call must be audible. Best-effort and
+// idempotent; we don't block the call on it.
+async function ensureAudioMode(): Promise<void> {
+  if (audioModeReady) return;
+  audioModeReady = true;
+  try {
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: "duckOthers",
+    });
+  } catch {
+    audioModeReady = false;
+  }
 }
 
-export async function setMuted(_muted: boolean): Promise<void> {}
+function startLoop(asset: number): AudioPlayer | null {
+  try {
+    void ensureAudioMode();
+    const player = createAudioPlayer(asset);
+    player.loop = true;
+    player.play();
+    return player;
+  } catch {
+    return null;
+  }
+}
 
-export async function leaveCall(): Promise<void> {}
+function stopLoop(player: AudioPlayer | null): null {
+  if (player) {
+    try {
+      player.pause();
+    } catch {}
+    try {
+      player.remove();
+    } catch {}
+  }
+  return null;
+}
+
+export function primeAudioPlayback(): void {
+  // No-op on native. Mobile browsers gate audio playback behind a user gesture
+  // (the web build's primeAudioPlayback unlocks the AudioContext on that
+  // gesture); native has no such autoplay restriction, so there is nothing to
+  // unlock. Kept for interface parity with voiceCall.web.ts.
+  void ensureAudioMode();
+}
+
+export function startRingback(): void {
+  stopRingback();
+  ringbackPlayer = startLoop(require("../assets/sounds/ringback.wav"));
+}
+
+export function stopRingback(): void {
+  ringbackPlayer = stopLoop(ringbackPlayer);
+}
+
+export function startRingtone(): void {
+  stopRingtone();
+  ringtonePlayer = startLoop(require("../assets/sounds/ringtone.wav"));
+}
+
+export function stopRingtone(): void {
+  ringtonePlayer = stopLoop(ringtonePlayer);
+}
+
+export async function joinCall(url: string, token: string): Promise<void> {
+  await leaveCall();
+  await ensureAudioMode();
+
+  // Activate the native audio session (configures the OS audio category for
+  // two-way voice and routing). Remote participant audio is then rendered
+  // automatically by @livekit/react-native — no <audio> elements or Web Audio
+  // gain graph like the web build needs.
+  try {
+    await AudioSession.startAudioSession();
+    audioSessionActive = true;
+  } catch {
+    audioSessionActive = false;
+  }
+
+  const r = new Room({
+    // A 1:1 voice call has no video; disable adaptive stream / dynacast which
+    // only matter for video and add needless signaling.
+    adaptiveStream: false,
+    dynacast: false,
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+
+  // If the room drops for good, release the audio session so the OS earpiece/mic
+  // route is handed back instead of being held open.
+  r.on(RoomEvent.Disconnected, () => {
+    if (room === r) {
+      void releaseAudioSession();
+      room = null;
+    }
+  });
+
+  await r.connect(url, token);
+  await r.localParticipant.setMicrophoneEnabled(true);
+  room = r;
+}
+
+export async function setMuted(muted: boolean): Promise<void> {
+  if (room) {
+    await room.localParticipant.setMicrophoneEnabled(!muted);
+  }
+}
+
+async function releaseAudioSession(): Promise<void> {
+  if (!audioSessionActive) return;
+  audioSessionActive = false;
+  try {
+    await AudioSession.stopAudioSession();
+  } catch {}
+}
+
+export async function leaveCall(): Promise<void> {
+  const r = room;
+  room = null;
+  if (r) {
+    try {
+      await r.disconnect();
+    } catch {}
+  }
+  await releaseAudioSession();
+}

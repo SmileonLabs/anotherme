@@ -40,6 +40,7 @@ type CallMode = "idle" | "outgoing" | "incoming" | "active";
 interface CallContextValue {
   startCall: (calleeId: string, calleeName: string, roomId?: string) => Promise<void>;
   joinFromCard: (callId: string, peerName: string) => Promise<void>;
+  declineFromCard: (callId: string) => Promise<void>;
   supported: boolean;
 }
 
@@ -59,6 +60,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       value={{
         startCall: async () => {},
         joinFromCard: async () => {},
+        declineFromCard: async () => {},
         supported: voiceCallSupported,
       }}
     >
@@ -224,6 +226,20 @@ function CallManager({ children }: { children: React.ReactNode }) {
     [joinCallMut, reset],
   );
 
+  // Decline an incoming call straight from a notification action (no modal up).
+  // Records the proper "declined" terminal state server-side instead of letting
+  // the call ring out to "missed".
+  const declineFromCard = useCallback(
+    async (callId: string) => {
+      if (modeRef.current === "incoming") setIncoming(null);
+      if (modeRef.current === "incoming") setMode("idle");
+      try {
+        await declineCall.mutateAsync({ id: callId });
+      } catch {}
+    },
+    [declineCall],
+  );
+
   const handleAccept = useCallback(async () => {
     if (!incoming) return;
     // Unlock audio on the accept-button gesture, before the accept await.
@@ -275,7 +291,9 @@ function CallManager({ children }: { children: React.ReactNode }) {
   }, [muted]);
 
   return (
-    <CallContext.Provider value={{ startCall, joinFromCard, supported: voiceCallSupported }}>
+    <CallContext.Provider
+      value={{ startCall, joinFromCard, declineFromCard, supported: voiceCallSupported }}
+    >
       {children}
 
       {/* Incoming call modal */}

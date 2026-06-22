@@ -14,9 +14,26 @@
       "backgroundColor": "#0A0A0A"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.anotherme.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio", "voip"],
+        "NSMicrophoneUsageDescription": "음성 통화를 위해 마이크 접근 권한이 필요합니다."
+      }
     },
-    "android": {},
+    "android": {
+      "package": "com.anotherme.app",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ]
+    },
     "web": {
       "favicon": "./assets/images/icon.png",
       "name": "anotherme",
@@ -36,7 +53,16 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#00F7AF"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
