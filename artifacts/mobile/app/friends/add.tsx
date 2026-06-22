@@ -16,7 +16,6 @@ import {
   getListFriendsQueryKey,
   getListOutgoingFriendRequestsQueryKey,
   useCreateInvite,
-  useGetMe,
   useListFriends,
   useListOutgoingFriendRequests,
   useListUsers,
@@ -44,14 +43,8 @@ export default function AddFriendScreen() {
     { query: { enabled: shouldSearch } } as any,
   );
 
-  const { data: me } = useGetMe();
-  // Only this account may browse the full member directory; everyone else adds
-  // friends via email search or invite code/link. The server enforces this too.
-  const canBrowseDirectory =
-    me?.email?.toLowerCase() === "contact@smileon.app";
-
   const { data: allUsers = [], isFetching: loadingUsers } = useListUsers({
-    query: { enabled: !shouldSearch && canBrowseDirectory },
+    query: { enabled: !shouldSearch },
   } as any);
   const { data: friends = [] } = useListFriends();
   const { data: outgoing = [] } = useListOutgoingFriendRequests();
@@ -176,7 +169,7 @@ export default function AddFriendScreen() {
         ))}
       </View>
 
-      {!shouldSearch && canBrowseDirectory ? (
+      {!shouldSearch ? (
         <View style={[styles.section, { borderTopColor: colors.border }]}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
             전체 회원 {availableUsers.length > 0 ? `(${availableUsers.length})` : ""}

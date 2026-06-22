@@ -7,11 +7,6 @@ import { addSubscription } from "../lib/push";
 
 const router: IRouter = Router();
 
-// Only this account may browse the full member directory ("전체 회원" list on the
-// add-friend screen). Every other account gets an empty list and must add friends
-// by email search or invite code/link instead.
-const DIRECTORY_ADMIN_EMAIL = "contact@smileon.app";
-
 const toPublic = (u: typeof usersTable.$inferSelect) => ({
   id: u.id,
   email: u.email,
@@ -21,12 +16,6 @@ const toPublic = (u: typeof usersTable.$inferSelect) => ({
 });
 
 router.get("/users", requireAuth, async (req, res): Promise<void> => {
-  if (
-    req.dbUser!.email.toLowerCase() !== DIRECTORY_ADMIN_EMAIL.toLowerCase()
-  ) {
-    res.json([]);
-    return;
-  }
   const users = await db.select().from(usersTable).limit(1000);
   res.json(users.filter((u) => u.id !== req.dbUser!.id).map(toPublic));
 });
