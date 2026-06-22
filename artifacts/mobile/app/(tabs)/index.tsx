@@ -3,7 +3,6 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
-  ImageBackground,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -330,11 +330,12 @@ export default function HomeScreen() {
         }
       >
         {/* Persona hero card */}
-        <ImageBackground
-          source={require("../../assets/images/persona-card-bg.png")}
-          imageStyle={styles.heroBgImage}
-          style={styles.hero}
-        >
+        <View style={styles.hero}>
+          <ExpoImage
+            source={require("../../assets/images/persona-card-bg.png")}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+          />
           <LinearGradient
             colors={HERO_OVERLAY}
             start={{ x: 0, y: 0 }}
@@ -407,7 +408,7 @@ export default function HomeScreen() {
               {isAnalyzing ? "분석 중…" : "분석 업데이트"}
             </Text>
           </Pressable>
-        </ImageBackground>
+        </View>
 
         {/* Daily quests */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -768,10 +769,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(147,140,255,0.25)",
     overflow: "hidden",
     backgroundColor: "#0C0A1C",
-  },
-  heroBgImage: {
-    borderRadius: 20,
-    resizeMode: "cover",
   },
   heroTop: { flexDirection: "row", alignItems: "center" },
   heroInfo: { flex: 1 },
