@@ -94,11 +94,29 @@ async function main() {
       process.env.EXPO_PUBLIC_CLERK_PROXY_URL || `https://${domain}/api/__clerk`,
   };
 
-  await run(
-    "pnpm",
-    ["exec", "expo", "export", "-p", "web", "--output-dir", OUTPUT_DIR],
-    env,
-  );
+  // experiments.baseUrl is WEB-ONLY here, but expo-router bakes it into the
+  // NATIVE bundle too (production builds prefix/strip routes with it), which
+  // breaks the APK with a "+not-found" screen. So the committed app.json must
+  // NOT contain baseUrl. We inject it only for this web export and restore the
+  // file afterward (even on failure), so EAS native builds stay correct.
+  const appJsonPath = path.join(projectRoot, "app.json");
+  const originalAppJson = fs.readFileSync(appJsonPath, "utf8");
+  const appConfig = JSON.parse(originalAppJson);
+  appConfig.expo = appConfig.expo || {};
+  appConfig.expo.experiments = appConfig.expo.experiments || {};
+  appConfig.expo.experiments.baseUrl = "/app";
+  fs.writeFileSync(appJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
+
+  try {
+    await run(
+      "pnpm",
+      ["exec", "expo", "export", "-p", "web", "--output-dir", OUTPUT_DIR],
+      env,
+    );
+  } finally {
+    // Always restore the committed app.json (no baseUrl) for native builds.
+    fs.writeFileSync(appJsonPath, originalAppJson);
+  }
 
   const indexHtml = path.join(outPath, "index.html");
   if (!fs.existsSync(indexHtml)) {
