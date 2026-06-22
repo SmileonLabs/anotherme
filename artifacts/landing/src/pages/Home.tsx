@@ -30,7 +30,6 @@ export default function Home() {
       >
         <Smartphone className="mr-2 h-5 w-5" />
         APK 앱 다운로드
-        <span className="ml-2 text-xs opacity-70 bg-black/20 px-2 py-0.5 rounded-full">빌드 중</span>
       </Button>
       
       {!isInstalled && (
