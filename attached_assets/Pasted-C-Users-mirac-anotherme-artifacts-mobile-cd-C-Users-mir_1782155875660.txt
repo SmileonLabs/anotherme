@@ -1,0 +1,35 @@
+C:\Users\mirac\anotherme\artifacts\mobile>cd C:\Users\mirac\anotherme
+
+C:\Users\mirac\anotherme>git pull
+remote: Enumerating objects: 58, done.
+remote: Counting objects: 100% (58/58), done.
+remote: Compressing objects: 100% (13/13), done.
+remote: Total 47 (delta 35), reused 46 (delta 34), pack-reused 0 (from 0)
+Unpacking objects: 100% (47/47), 452.49 KiB | 3.19 MiB/s, done.
+From https://github.com/SmileonLabs/anotherme
+   acd70a7..3c47d08  main       -> origin/main
+Updating acd70a7..3c47d08
+Fast-forward
+ artifacts/landing/src/config.ts                    |   3 +-
+ artifacts/landing/src/pages/Home.tsx               |   1 -
+ artifacts/mobile/eas.json                          |  12 ++
+ ...tifacts-mobile-cd-C-Users-mir_1782149435272.txt | 228 +++++++++++++++++++++
+ attached_assets/image_1782149113662.png            | Bin 0 -> 83298 bytes
+ attached_assets/image_1782149338293.png            | Bin 0 -> 110310 bytes
+ attached_assets/image_1782149533373.png            | Bin 0 -> 60316 bytes
+ attached_assets/image_1782149761830.png            | Bin 0 -> 132851 bytes
+ attached_assets/image_1782154443885.png            | Bin 0 -> 86616 bytes
+ attached_assets/image_1782154587247.png            | Bin 0 -> 6788 bytes
+ attached_assets/image_1782154616409.png            | Bin 0 -> 14307 bytes
+ replit.md                                          |   2 +-
+ 12 files changed, 242 insertions(+), 4 deletions(-)
+ create mode 100644 attached_assets/Pasted-C-Users-mirac-anotherme-artifacts-mobile-cd-C-Users-mir_1782149435272.txt
+ create mode 100644 attached_assets/image_1782149113662.png
+ create mode 100644 attached_assets/image_1782149338293.png
+ create mode 100644 attached_assets/image_1782149533373.png
+ create mode 100644 attached_assets/image_1782149761830.png
+ create mode 100644 attached_assets/image_1782154443885.png
+ create mode 100644 attached_assets/image_1782154587247.png
+ create mode 100644 attached_assets/image_1782154616409.png
+
+C:\Users\mirac\anotherme>
