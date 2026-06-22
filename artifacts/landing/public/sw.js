@@ -1,4 +1,4 @@
-const CACHE = "anotherme-landing-v1";
+const CACHE = "anotherme-landing-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
