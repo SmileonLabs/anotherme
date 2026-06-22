@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "anotherme",
-    "slug": "mobile",
+    "name": "anotherMe",
+    "slug": "anotherme",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "anotherme",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -17,7 +17,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.anotherme.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio", "voip"],
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ],
         "NSMicrophoneUsageDescription": "음성 통화를 위해 마이크 접근 권한이 필요합니다."
       }
     },
@@ -35,7 +38,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/icon.png",
+      "favicon": "./assets/images/favicon.png",
       "name": "anotherme",
       "shortName": "anotherme",
       "description": "AI가 판정하는 말빨 배틀!",
