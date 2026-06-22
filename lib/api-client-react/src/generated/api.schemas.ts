@@ -765,6 +765,19 @@ export interface ClanMemoryDeleteResult {
   deleted: boolean;
 }
 
+export interface ClanWisdom {
+  clanId: string;
+  philosophy: string;
+  strategy: string;
+  values: string;
+  culture: string;
+  motto: string;
+  sourceMemoryCount: number;
+  generatedByUserId?: string | null;
+  generatedByName?: string | null;
+  generatedAt: string;
+}
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**

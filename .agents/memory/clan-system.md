@@ -5,7 +5,7 @@ description: Scope boundaries and invariants for the clan feature — what it mu
 
 # Clan system (가문)
 
-Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Phase 8 added Clan Memory (가문 기억). Still NO Clan War (forbidden).
+Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Phase 8 added Clan Memory (가문 기억). Phase 9 added Clan Wisdom (가문의 지혜). Still NO Clan War (forbidden).
 
 ## Invariants (do not break in later phases)
 - **One active clan per user** is enforced at the DB level by a UNIQUE constraint on `clan_members.user_id`, plus service-level pre-checks inside transactions. Any "leave one / join another" flow must keep this UNIQUE valid (delete old membership before inserting new in the same tx).
@@ -39,3 +39,10 @@ Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Ident
 - GET limit default 30 (route) / clamped max 100 (service); optional `type` filter.
 - Home preview "top 3 by importance" must fetch a wide window (limit 100) then client-sort by `importanceScore` — server orders by createdAt, so sorting only the latest few would be wrong.
 - Codegen gotcha: this is the first endpoint with BOTH a path param and query params, so orval emits a zod path-param schema `ListClanMemoriesParams` that collides with the react-query query-param type of the same name (TS2308). Fix: explicit disambiguation re-export in the stable barrel `lib/api-zod/src/index.ts` (`export { ListClanMemoriesParams } from "./generated/api"`). Re-apply if codegen is regenerated.
+
+## Clan wisdom (Phase 9, 가문의 지혜)
+- Read-only AI *summary* of existing Clan Memory + Clan Identity into 5 Korean fields (philosophy/strategy/values/culture/motto). `clanWisdom.ts` reads memories + `getClanIdentity` and writes ONLY `clan_wisdom`; never memories/persona/clan-exp/ranking. **Why:** wisdom is a derived read view, not a growth input — same hard constraint as memory.
+- AI is NEVER realtime: one row per clan (UNIQUE `clan_id`, upsert via `onConflictDoUpdate`) regenerated ONLY on explicit owner/elder click. GET wisdom = any member; POST generate = owner/elder only. Both enforced in service, not just routes. Requires ≥1 memory (`no_memories` error) — empty clans cannot generate.
+- **AI content rules are prompt-enforced AND there is a deterministic PII safety net**: after the model returns, `containsContactPII` rejects (returns null → `ai_failed`, nothing persisted) if output has an email or phone-like string. **Why:** prompt-only is not enough for a hard "no PII" constraint; political/religious/exaggeration stay prompt-only (not reliably regex-detectable, a 2nd AI pass would be over-engineering).
+- `generatedByName` is nickname only (no email/clerkId). Fields clamped to 600 chars each.
+- AI call: `gpt-5-mini`, chat.completions, `response_format` json_schema strict, `reasoning_effort: "minimal"`, `max_completion_tokens: 2000`; returns null on any failure (caller maps to friendly Korean error). DB column is literally `values` — fine, drizzle quotes identifiers.

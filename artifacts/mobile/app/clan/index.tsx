@@ -14,15 +14,23 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getGetClanDetailQueryKey,
   getGetClanIdentityQueryKey,
+  getGetClanWisdomQueryKey,
   getGetMyClanQueryKey,
   getListClanMemoriesQueryKey,
+  useGenerateClanWisdom,
   useGetClanDetail,
   useGetClanIdentity,
+  useGetClanWisdom,
   useGetMyClan,
   useLeaveClan,
   useListClanMemories,
 } from "@workspace/api-client-react";
-import type { ClanIdentity, ClanMember, ClanMemory } from "@workspace/api-client-react";
+import type {
+  ClanIdentity,
+  ClanMember,
+  ClanMemory,
+  ClanWisdom,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
@@ -75,7 +83,46 @@ export default function ClanHomeScreen() {
       queryKey: getListClanMemoriesQueryKey(clanId ?? "", memoryParams),
     },
   });
+  const { data: wisdom } = useGetClanWisdom(clanId ?? "", {
+    query: { enabled: !!clanId, queryKey: getGetClanWisdomQueryKey(clanId ?? "") },
+  });
+  const generateWisdom = useGenerateClanWisdom();
   const leave = useLeaveClan();
+
+  const canManageWisdom =
+    myClan?.myRole === "owner" || myClan?.myRole === "elder";
+  const hasMemories = (memories?.items.length ?? 0) > 0;
+
+  const onGenerateWisdom = () => {
+    if (!clanId) return;
+    if (!hasMemories) {
+      crossAlert(
+        "기억이 필요해요",
+        "가문 기억이 있어야 지혜를 생성할 수 있어요. 먼저 기억을 남겨주세요.",
+      );
+      return;
+    }
+    crossAlert(
+      wisdom ? "가문 지혜 갱신" : "가문 지혜 생성",
+      "가문 기억과 정체성을 바탕으로 가문의 지혜를 정리할까요? 잠시 시간이 걸릴 수 있어요.",
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: wisdom ? "갱신" : "생성",
+          onPress: async () => {
+            try {
+              await generateWisdom.mutateAsync({ id: clanId });
+              await queryClient.invalidateQueries({
+                queryKey: getGetClanWisdomQueryKey(clanId),
+              });
+            } catch {
+              crossAlert("오류", "가문의 지혜를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.");
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const topMemories = React.useMemo(
     () =>
@@ -241,6 +288,14 @@ export default function ClanHomeScreen() {
                 </Text>
               </Pressable>
             )}
+
+            <WisdomSection
+              wisdom={wisdom ?? null}
+              colors={colors}
+              canManage={canManageWisdom}
+              isGenerating={generateWisdom.isPending}
+              onGenerate={onGenerateWisdom}
+            />
 
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>멤버</Text>
             <View style={[styles.listCard, { backgroundColor: colors.background }]}>
@@ -463,6 +518,111 @@ function MemoryPreview({
   );
 }
 
+const WISDOM_ROWS: {
+  key: keyof Pick<ClanWisdom, "philosophy" | "strategy" | "values" | "culture" | "motto">;
+  label: string;
+  icon: React.ComponentProps<typeof Feather>["name"];
+}[] = [
+  { key: "philosophy", label: "철학", icon: "book-open" },
+  { key: "strategy", label: "전략", icon: "target" },
+  { key: "values", label: "가치관", icon: "heart" },
+  { key: "culture", label: "문화", icon: "users" },
+];
+
+function formatWisdomDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
+    d.getDate(),
+  ).padStart(2, "0")} 갱신`;
+}
+
+function WisdomSection({
+  wisdom,
+  colors,
+  canManage,
+  isGenerating,
+  onGenerate,
+}: {
+  wisdom: ClanWisdom | null;
+  colors: ReturnType<typeof useColors>;
+  canManage: boolean;
+  isGenerating: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <View>
+      <View style={styles.memHead}>
+        <Text style={[styles.sectionTitle, styles.memHeadTitle, { color: colors.mutedForeground }]}>
+          가문의 지혜
+        </Text>
+        {canManage ? (
+          <Pressable onPress={onGenerate} disabled={isGenerating} hitSlop={8}>
+            {isGenerating ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Text style={[styles.memMore, { color: colors.primary }]}>
+                {wisdom ? "갱신" : "생성"}
+              </Text>
+            )}
+          </Pressable>
+        ) : null}
+      </View>
+
+      {wisdom ? (
+        <View style={[styles.wisdomCard, { backgroundColor: colors.background }]}>
+          <View style={[styles.wisdomMotto, { backgroundColor: `${colors.primary}12` }]}>
+            <Feather name="award" size={15} color={colors.primary} />
+            <Text style={[styles.wisdomMottoText, { color: colors.primary }]}>
+              {wisdom.motto}
+            </Text>
+          </View>
+          {WISDOM_ROWS.map((row, i) => (
+            <View
+              key={row.key}
+              style={[
+                styles.wisdomRow,
+                {
+                  borderTopColor: colors.border,
+                  borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
+                },
+              ]}
+            >
+              <View style={styles.wisdomRowHead}>
+                <Feather name={row.icon} size={13} color={colors.primary} />
+                <Text style={[styles.wisdomRowLabel, { color: colors.mutedForeground }]}>
+                  {row.label}
+                </Text>
+              </View>
+              <Text style={[styles.wisdomRowBody, { color: colors.foreground }]}>
+                {wisdom[row.key]}
+              </Text>
+            </View>
+          ))}
+          <Text style={[styles.wisdomMeta, { color: colors.mutedForeground }]}>
+            기억 {wisdom.sourceMemoryCount}개 기반 · {formatWisdomDate(wisdom.generatedAt)}
+            {wisdom.generatedByName ? ` · ${wisdom.generatedByName}` : ""}
+          </Text>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.memEmpty,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
+        >
+          <Feather name="award" size={18} color={colors.mutedForeground} />
+          <Text style={[styles.memEmptyText, { color: colors.mutedForeground }]}>
+            {canManage
+              ? "아직 가문의 지혜가 없습니다. 가문 기억을 모아 지혜를 정리해보세요."
+              : "아직 가문의 지혜가 없습니다. 가문장·원로가 정리할 수 있어요."}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -629,6 +789,28 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   memEmptyText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+
+  wisdomCard: { marginHorizontal: 16, borderRadius: 16, padding: 16, gap: 4 },
+  wisdomMotto: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  wisdomMottoText: { flex: 1, fontSize: 14, fontFamily: "Inter_700Bold", lineHeight: 20 },
+  wisdomRow: { paddingTop: 12, paddingBottom: 4, gap: 5 },
+  wisdomRowHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  wisdomRowLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  wisdomRowBody: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },
+  wisdomMeta: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 12,
+    lineHeight: 16,
+  },
   listCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
   rowBody: { flex: 1, gap: 2 },

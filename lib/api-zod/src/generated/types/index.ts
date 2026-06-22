@@ -47,6 +47,7 @@ export * from './clanRankingItem';
 export * from './clanRankingMyRank';
 export * from './clanRankingType';
 export * from './clanSummary';
+export * from './clanWisdom';
 export * from './createCallInput';
 export * from './dungeonCharacter';
 export * from './dungeonEnemy';

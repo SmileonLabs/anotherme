@@ -45,6 +45,7 @@ import type {
   ClanMemoryList,
   ClanRanking,
   ClanSummary,
+  ClanWisdom,
   CreateCallInput,
   DungeonInput,
   DungeonState,
@@ -1324,6 +1325,157 @@ export function useGetClanIdentity<TData = Awaited<ReturnType<typeof getClanIden
 
 
 
+
+export const getGetClanWisdomUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/wisdom`
+}
+
+/**
+ * Returns a clan's AI-summarized collective wisdom (philosophy / strategy / values / culture / motto), derived read-only from existing clan memories and collective identity. Members only. Returns null when no wisdom has been generated yet. No XP / clan-EXP / ranking mutation.
+
+ * @summary Get a clan's collective wisdom (members only)
+ */
+export const getClanWisdom = async (id: string, options?: RequestInit): Promise<ClanWisdom | null> => {
+
+  return customFetch<ClanWisdom | null>(getGetClanWisdomUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClanWisdomQueryKey = (id: string,) => {
+    return [
+    `/api/clans/${id}/wisdom`
+    ] as const;
+    }
+
+
+export const getGetClanWisdomQueryOptions = <TData = Awaited<ReturnType<typeof getClanWisdom>>, TError = ErrorType<void | ClanError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanWisdom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClanWisdomQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClanWisdom>>> = ({ signal }) => getClanWisdom(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClanWisdom>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClanWisdomQueryResult = NonNullable<Awaited<ReturnType<typeof getClanWisdom>>>
+export type GetClanWisdomQueryError = ErrorType<void | ClanError>
+
+
+/**
+ * @summary Get a clan's collective wisdom (members only)
+ */
+
+export function useGetClanWisdom<TData = Awaited<ReturnType<typeof getClanWisdom>>, TError = ErrorType<void | ClanError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanWisdom>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClanWisdomQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateClanWisdomUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/wisdom/generate`
+}
+
+/**
+ * Summarizes the clan's existing memories and collective identity into a five-part wisdom via a single AI call, then stores it (one row per clan). Owner/elder only; runs only on this explicit request, never in real time. Requires at least one clan memory. Never mutates memories, persona XP, clan EXP, or ranking.
+
+ * @summary Generate (or regenerate) a clan's wisdom (owner/elder only)
+ */
+export const generateClanWisdom = async (id: string, options?: RequestInit): Promise<ClanWisdom> => {
+
+  return customFetch<ClanWisdom>(getGenerateClanWisdomUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getGenerateClanWisdomMutationOptions = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateClanWisdom>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateClanWisdom>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['generateClanWisdom'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateClanWisdom>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  generateClanWisdom(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateClanWisdomMutationResult = NonNullable<Awaited<ReturnType<typeof generateClanWisdom>>>
+
+    export type GenerateClanWisdomMutationError = ErrorType<ClanError | void>
+
+    /**
+ * @summary Generate (or regenerate) a clan's wisdom (owner/elder only)
+ */
+export const useGenerateClanWisdom = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateClanWisdom>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateClanWisdom>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getGenerateClanWisdomMutationOptions(options));
+    }
 
 export const getJoinClanUrl = (id: string,) => {
 

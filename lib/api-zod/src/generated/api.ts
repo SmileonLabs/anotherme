@@ -433,6 +433,52 @@ export const GetClanIdentityResponse = zod.object({
 
 
 /**
+ * Returns a clan's AI-summarized collective wisdom (philosophy / strategy / values / culture / motto), derived read-only from existing clan memories and collective identity. Members only. Returns null when no wisdom has been generated yet. No XP / clan-EXP / ranking mutation.
+
+ * @summary Get a clan's collective wisdom (members only)
+ */
+export const GetClanWisdomParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetClanWisdomResponse = zod.union([zod.object({
+  "clanId": zod.string(),
+  "philosophy": zod.string(),
+  "strategy": zod.string(),
+  "values": zod.string(),
+  "culture": zod.string(),
+  "motto": zod.string(),
+  "sourceMemoryCount": zod.number(),
+  "generatedByUserId": zod.string().nullish(),
+  "generatedByName": zod.string().nullish(),
+  "generatedAt": zod.string()
+}),zod.null()])
+
+
+/**
+ * Summarizes the clan's existing memories and collective identity into a five-part wisdom via a single AI call, then stores it (one row per clan). Owner/elder only; runs only on this explicit request, never in real time. Requires at least one clan memory. Never mutates memories, persona XP, clan EXP, or ranking.
+
+ * @summary Generate (or regenerate) a clan's wisdom (owner/elder only)
+ */
+export const GenerateClanWisdomParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GenerateClanWisdomResponse = zod.object({
+  "clanId": zod.string(),
+  "philosophy": zod.string(),
+  "strategy": zod.string(),
+  "values": zod.string(),
+  "culture": zod.string(),
+  "motto": zod.string(),
+  "sourceMemoryCount": zod.number(),
+  "generatedByUserId": zod.string().nullish(),
+  "generatedByName": zod.string().nullish(),
+  "generatedAt": zod.string()
+})
+
+
+/**
  * @summary Join a clan
  */
 export const JoinClanParams = zod.object({

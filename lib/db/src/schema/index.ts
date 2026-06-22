@@ -12,3 +12,4 @@ export * from "./personaIdentity";
 export * from "./xpEvents";
 export * from "./clan";
 export * from "./clanMemory";
+export * from "./clanWisdom";

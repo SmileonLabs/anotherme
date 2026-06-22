@@ -18,6 +18,7 @@ import {
   type ClanArchetypeKey,
 } from "../lib/clan";
 import { getClanIdentity } from "../lib/clanGrowth";
+import { ClanWisdomError, generateClanWisdom, getClanWisdom } from "../lib/clanWisdom";
 import {
   CLAN_RANKING_LIMIT_DEFAULT,
   CLAN_RANKING_TYPES,
@@ -187,6 +188,51 @@ router.post("/clans/:id/leave", requireAuth, async (req, res): Promise<void> => 
     if (handleClanError(res, err)) return;
     req.log.error({ err }, "leaveClan failed");
     res.status(500).json({ error: "internal", message: "가문 탈퇴에 실패했어요." });
+  }
+});
+
+/** Map a ClanWisdomError to an HTTP status + the Korean message it carries. */
+function handleClanWisdomError(res: import("express").Response, err: unknown): boolean {
+  if (err instanceof ClanWisdomError) {
+    const status =
+      err.code === "not_found"
+        ? 404
+        : err.code === "not_member" || err.code === "forbidden"
+          ? 403
+          : 400;
+    res.status(status).json({ error: err.code, message: err.message });
+    return true;
+  }
+  return false;
+}
+
+/** GET /clans/:id/wisdom — read a clan's collective wisdom (members only). */
+router.get("/clans/:id/wisdom", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  try {
+    const wisdom = await getClanWisdom({ clanId: id, meUserId: req.dbUser!.id });
+    res.json(wisdom);
+  } catch (err) {
+    if (handleClanWisdomError(res, err)) return;
+    req.log.error({ err }, "getClanWisdom failed");
+    res.status(500).json({ error: "internal", message: "가문의 지혜를 불러오지 못했어요." });
+  }
+});
+
+/** POST /clans/:id/wisdom/generate — (re)generate wisdom via AI (owner/elder only). */
+router.post("/clans/:id/wisdom/generate", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  try {
+    const wisdom = await generateClanWisdom({
+      clanId: id,
+      meUserId: req.dbUser!.id,
+      log: req.log,
+    });
+    res.json(wisdom);
+  } catch (err) {
+    if (handleClanWisdomError(res, err)) return;
+    req.log.error({ err }, "generateClanWisdom failed");
+    res.status(500).json({ error: "internal", message: "가문의 지혜를 생성하지 못했어요." });
   }
 });
 
