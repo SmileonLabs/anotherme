@@ -11,6 +11,7 @@ import storageRouter from "./storage";
 import dungeonsRouter from "./dungeons";
 import battlesRouter from "./battles";
 import personaRouter from "./persona";
+import clansRouter from "./clans";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(storageRouter);
 router.use(dungeonsRouter);
 router.use(battlesRouter);
 router.use(personaRouter);
+router.use(clansRouter);
 
 export default router;

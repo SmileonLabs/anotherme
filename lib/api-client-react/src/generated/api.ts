@@ -34,6 +34,11 @@ import type {
   CancelBattle200,
   ChatRoom,
   ChatRoomMember,
+  ClanCreate,
+  ClanDetail,
+  ClanError,
+  ClanLeaveResult,
+  ClanSummary,
   CreateCallInput,
   DungeonInput,
   DungeonState,
@@ -45,10 +50,12 @@ import type {
   HealthStatus,
   Invite,
   InviteMembersInput,
+  ListClansParams,
   Message,
   MessageInput,
   MuteInput,
   MyBattleStats,
+  MyClan,
   PersonaAnalysisError,
   PersonaCard,
   PersonaProfile,
@@ -833,6 +840,459 @@ export function useGetPersonaRankings<TData = Awaited<ReturnType<typeof getPerso
 
 
 
+
+export const getGetMyClanUrl = () => {
+
+
+
+
+  return `/api/users/me/clan`
+}
+
+/**
+ * My clan with my role, member count, and a few recent members. Returns null when I am not in any clan. Member rows expose only non-sensitive fields (name, avatar, level, title, archetype, role, contribution).
+
+ * @summary Get my clan (or null)
+ */
+export const getMyClan = async ( options?: RequestInit): Promise<MyClan | null> => {
+
+  return customFetch<MyClan | null>(getGetMyClanUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyClanQueryKey = () => {
+    return [
+    `/api/users/me/clan`
+    ] as const;
+    }
+
+
+export const getGetMyClanQueryOptions = <TData = Awaited<ReturnType<typeof getMyClan>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyClan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyClanQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyClan>>> = ({ signal }) => getMyClan({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyClan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyClanQueryResult = NonNullable<Awaited<ReturnType<typeof getMyClan>>>
+export type GetMyClanQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get my clan (or null)
+ */
+
+export function useGetMyClan<TData = Awaited<ReturnType<typeof getMyClan>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyClan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyClanQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListClansUrl = (params?: ListClansParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/clans?${stringifiedParams}` : `/api/clans`
+}
+
+/**
+ * @summary Browse / search clans
+ */
+export const listClans = async (params?: ListClansParams, options?: RequestInit): Promise<ClanSummary[]> => {
+
+  return customFetch<ClanSummary[]>(getListClansUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListClansQueryKey = (params?: ListClansParams,) => {
+    return [
+    `/api/clans`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListClansQueryOptions = <TData = Awaited<ReturnType<typeof listClans>>, TError = ErrorType<void>>(params?: ListClansParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListClansQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listClans>>> = ({ signal }) => listClans(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listClans>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListClansQueryResult = NonNullable<Awaited<ReturnType<typeof listClans>>>
+export type ListClansQueryError = ErrorType<void>
+
+
+/**
+ * @summary Browse / search clans
+ */
+
+export function useListClans<TData = Awaited<ReturnType<typeof listClans>>, TError = ErrorType<void>>(
+ params?: ListClansParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListClansQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateClanUrl = () => {
+
+
+
+
+  return `/api/clans`
+}
+
+/**
+ * Create a clan and join it as owner. Fails if the user already belongs to a clan or the name is taken.
+
+ * @summary Create a clan
+ */
+export const createClan = async (clanCreate: ClanCreate, options?: RequestInit): Promise<MyClan> => {
+
+  return customFetch<MyClan>(getCreateClanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clanCreate,)
+  }
+);}
+
+
+
+
+export const getCreateClanMutationOptions = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClan>>, TError,{data: BodyType<ClanCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createClan>>, TError,{data: BodyType<ClanCreate>}, TContext> => {
+
+const mutationKey = ['createClan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createClan>>, {data: BodyType<ClanCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createClan(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateClanMutationResult = NonNullable<Awaited<ReturnType<typeof createClan>>>
+    export type CreateClanMutationBody = BodyType<ClanCreate>
+    export type CreateClanMutationError = ErrorType<ClanError | void>
+
+    /**
+ * @summary Create a clan
+ */
+export const useCreateClan = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClan>>, TError,{data: BodyType<ClanCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createClan>>,
+        TError,
+        {data: BodyType<ClanCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateClanMutationOptions(options));
+    }
+
+export const getGetClanDetailUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}`
+}
+
+/**
+ * @summary Get clan detail with members
+ */
+export const getClanDetail = async (id: string, options?: RequestInit): Promise<ClanDetail> => {
+
+  return customFetch<ClanDetail>(getGetClanDetailUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClanDetailQueryKey = (id: string,) => {
+    return [
+    `/api/clans/${id}`
+    ] as const;
+    }
+
+
+export const getGetClanDetailQueryOptions = <TData = Awaited<ReturnType<typeof getClanDetail>>, TError = ErrorType<void | ClanError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClanDetailQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClanDetail>>> = ({ signal }) => getClanDetail(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClanDetail>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClanDetailQueryResult = NonNullable<Awaited<ReturnType<typeof getClanDetail>>>
+export type GetClanDetailQueryError = ErrorType<void | ClanError>
+
+
+/**
+ * @summary Get clan detail with members
+ */
+
+export function useGetClanDetail<TData = Awaited<ReturnType<typeof getClanDetail>>, TError = ErrorType<void | ClanError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClanDetailQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getJoinClanUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/join`
+}
+
+/**
+ * @summary Join a clan
+ */
+export const joinClan = async (id: string, options?: RequestInit): Promise<MyClan> => {
+
+  return customFetch<MyClan>(getJoinClanUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getJoinClanMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinClan>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinClan>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['joinClan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinClan>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  joinClan(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinClanMutationResult = NonNullable<Awaited<ReturnType<typeof joinClan>>>
+
+    export type JoinClanMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Join a clan
+ */
+export const useJoinClan = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinClan>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinClan>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getJoinClanMutationOptions(options));
+    }
+
+export const getLeaveClanUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/leave`
+}
+
+/**
+ * @summary Leave a clan (deletes it if owner is the last member)
+ */
+export const leaveClan = async (id: string, options?: RequestInit): Promise<ClanLeaveResult> => {
+
+  return customFetch<ClanLeaveResult>(getLeaveClanUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getLeaveClanMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveClan>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leaveClan>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['leaveClan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveClan>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  leaveClan(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeaveClanMutationResult = NonNullable<Awaited<ReturnType<typeof leaveClan>>>
+
+    export type LeaveClanMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Leave a clan (deletes it if owner is the last member)
+ */
+export const useLeaveClan = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveClan>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof leaveClan>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getLeaveClanMutationOptions(options));
+    }
 
 export const getSearchUsersUrl = (params: SearchUsersParams,) => {
   const normalizedParams = new URLSearchParams();

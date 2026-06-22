@@ -10,3 +10,4 @@ export * from "./battleStats";
 export * from "./persona";
 export * from "./personaIdentity";
 export * from "./xpEvents";
+export * from "./clan";

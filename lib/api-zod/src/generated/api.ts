@@ -250,6 +250,173 @@ export const GetPersonaRankingsResponse = zod.object({
 
 
 /**
+ * My clan with my role, member count, and a few recent members. Returns null when I am not in any clan. Member rows expose only non-sensitive fields (name, avatar, level, title, archetype, role, contribution).
+
+ * @summary Get my clan (or null)
+ */
+export const GetMyClanResponse = zod.union([zod.object({
+  "clan": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "emblemUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "exp": zod.number(),
+  "memberCount": zod.number(),
+  "clanValues": zod.string().nullish(),
+  "clanSummary": zod.string().nullish(),
+  "preferredArchetype": zod.string().nullish(),
+  "createdAt": zod.string()
+}),
+  "myRole": zod.enum(['owner', 'elder', 'member']),
+  "memberCount": zod.number(),
+  "recentMembers": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "archetype": zod.string(),
+  "archetypeLabel": zod.string(),
+  "role": zod.enum(['owner', 'elder', 'member']),
+  "contributionExp": zod.number()
+}))
+}),zod.null()])
+
+
+/**
+ * @summary Browse / search clans
+ */
+export const listClansQueryLimitDefault = 30;
+export const listClansQueryLimitMax = 100;
+
+
+
+export const ListClansQueryParams = zod.object({
+  "q": zod.coerce.string().optional().describe('Search term matched against name and description.'),
+  "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional(),
+  "limit": zod.coerce.number().min(1).max(listClansQueryLimitMax).default(listClansQueryLimitDefault)
+})
+
+export const ListClansResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "emblemUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "memberCount": zod.number(),
+  "preferredArchetype": zod.string().nullish()
+})
+export const ListClansResponse = zod.array(ListClansResponseItem)
+
+
+/**
+ * Create a clan and join it as owner. Fails if the user already belongs to a clan or the name is taken.
+
+ * @summary Create a clan
+ */
+export const createClanBodyNameMin = 2;
+export const createClanBodyNameMax = 20;
+
+export const createClanBodyDescriptionMax = 300;
+
+export const createClanBodyClanValuesMax = 200;
+
+
+
+export const CreateClanBody = zod.object({
+  "name": zod.string().min(createClanBodyNameMin).max(createClanBodyNameMax),
+  "description": zod.string().max(createClanBodyDescriptionMax).optional(),
+  "clanValues": zod.string().max(createClanBodyClanValuesMax).optional(),
+  "preferredArchetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional(),
+  "emblemUrl": zod.string().optional()
+})
+
+
+/**
+ * @summary Get clan detail with members
+ */
+export const GetClanDetailParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetClanDetailResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "emblemUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "exp": zod.number(),
+  "memberCount": zod.number(),
+  "clanValues": zod.string().nullish(),
+  "clanSummary": zod.string().nullish(),
+  "preferredArchetype": zod.string().nullish(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "members": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "archetype": zod.string(),
+  "archetypeLabel": zod.string(),
+  "role": zod.enum(['owner', 'elder', 'member']),
+  "contributionExp": zod.number()
+}))
+}))
+
+
+/**
+ * @summary Join a clan
+ */
+export const JoinClanParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const JoinClanResponse = zod.object({
+  "clan": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "emblemUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "exp": zod.number(),
+  "memberCount": zod.number(),
+  "clanValues": zod.string().nullish(),
+  "clanSummary": zod.string().nullish(),
+  "preferredArchetype": zod.string().nullish(),
+  "createdAt": zod.string()
+}),
+  "myRole": zod.enum(['owner', 'elder', 'member']),
+  "memberCount": zod.number(),
+  "recentMembers": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "archetype": zod.string(),
+  "archetypeLabel": zod.string(),
+  "role": zod.enum(['owner', 'elder', 'member']),
+  "contributionExp": zod.number()
+}))
+})
+
+
+/**
+ * @summary Leave a clan (deletes it if owner is the last member)
+ */
+export const LeaveClanParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const LeaveClanResponse = zod.object({
+  "clanDeleted": zod.boolean()
+})
+
+
+/**
  * @summary Search users by email
  */
 export const SearchUsersQueryParams = zod.object({

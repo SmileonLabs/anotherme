@@ -516,6 +516,117 @@ export interface CallSession {
   url: string;
 }
 
+export type ClanMemberRole = typeof ClanMemberRole[keyof typeof ClanMemberRole];
+
+
+export const ClanMemberRole = {
+  owner: 'owner',
+  elder: 'elder',
+  member: 'member',
+} as const;
+
+export interface ClanMember {
+  userId: string;
+  displayName: string;
+  /** @nullable */
+  avatarUrl?: string | null;
+  level: number;
+  title: string;
+  archetype: string;
+  archetypeLabel: string;
+  role: ClanMemberRole;
+  contributionExp: number;
+}
+
+export interface Clan {
+  id: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  emblemUrl?: string | null;
+  level: number;
+  exp: number;
+  memberCount: number;
+  /** @nullable */
+  clanValues?: string | null;
+  /** @nullable */
+  clanSummary?: string | null;
+  /** @nullable */
+  preferredArchetype?: string | null;
+  createdAt: string;
+}
+
+export interface ClanSummary {
+  id: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  emblemUrl?: string | null;
+  level: number;
+  memberCount: number;
+  /** @nullable */
+  preferredArchetype?: string | null;
+}
+
+export type ClanDetail = Clan & {
+  members: ClanMember[];
+};
+
+export type MyClanMyRole = typeof MyClanMyRole[keyof typeof MyClanMyRole];
+
+
+export const MyClanMyRole = {
+  owner: 'owner',
+  elder: 'elder',
+  member: 'member',
+} as const;
+
+export interface MyClan {
+  clan: Clan;
+  myRole: MyClanMyRole;
+  memberCount: number;
+  recentMembers: ClanMember[];
+}
+
+export type ClanCreatePreferredArchetype = typeof ClanCreatePreferredArchetype[keyof typeof ClanCreatePreferredArchetype];
+
+
+export const ClanCreatePreferredArchetype = {
+  strategist: 'strategist',
+  harmonizer: 'harmonizer',
+  explorer: 'explorer',
+  pioneer: 'pioneer',
+  sage: 'sage',
+  entertainer: 'entertainer',
+  activist: 'activist',
+  observer: 'observer',
+} as const;
+
+export interface ClanCreate {
+  /**
+     * @minLength 2
+     * @maxLength 20
+     */
+  name: string;
+  /** @maxLength 300 */
+  description?: string;
+  /** @maxLength 200 */
+  clanValues?: string;
+  preferredArchetype?: ClanCreatePreferredArchetype;
+  emblemUrl?: string;
+}
+
+export interface ClanLeaveResult {
+  clanDeleted: boolean;
+}
+
+export interface ClanError {
+  error: string;
+  message: string;
+}
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**
@@ -545,6 +656,33 @@ export type GetPersonaRankingsArchetype = typeof GetPersonaRankingsArchetype[key
 
 
 export const GetPersonaRankingsArchetype = {
+  strategist: 'strategist',
+  harmonizer: 'harmonizer',
+  explorer: 'explorer',
+  pioneer: 'pioneer',
+  sage: 'sage',
+  entertainer: 'entertainer',
+  activist: 'activist',
+  observer: 'observer',
+} as const;
+
+export type ListClansParams = {
+/**
+ * Search term matched against name and description.
+ */
+q?: string;
+archetype?: ListClansArchetype;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListClansArchetype = typeof ListClansArchetype[keyof typeof ListClansArchetype];
+
+
+export const ListClansArchetype = {
   strategist: 'strategist',
   harmonizer: 'harmonizer',
   explorer: 'explorer',

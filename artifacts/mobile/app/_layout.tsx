@@ -101,6 +101,18 @@ function RootLayoutNav() {
         options={{ title: "랭킹", headerBackTitle: "Back" }}
       />
       <Stack.Screen
+        name="clan/index"
+        options={{ title: "가문", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="clan/create"
+        options={{ title: "가문 만들기", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="clan/browse"
+        options={{ title: "가문 찾기", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}
       />

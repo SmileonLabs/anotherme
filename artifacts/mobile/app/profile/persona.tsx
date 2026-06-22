@@ -218,18 +218,37 @@ export default function PersonaScreen() {
                 다음 레벨까지 {Math.max(0, xpFor - xpInto)} XP · {xpInto} / {xpFor}
               </Text>
 
-              <Pressable
-                onPress={() => router.push("/profile/ranking")}
-                style={({ pressed }) => [
-                  styles.rankingBtn,
-                  { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
-                ]}
-              >
-                <Feather name="bar-chart-2" size={15} color={colors.background} />
-                <Text style={[styles.rankingBtnText, { color: colors.background }]}>
-                  랭킹 보기
-                </Text>
-              </Pressable>
+              <View style={styles.heroBtnRow}>
+                <Pressable
+                  onPress={() => router.push("/profile/ranking")}
+                  style={({ pressed }) => [
+                    styles.rankingBtn,
+                    { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <Feather name="bar-chart-2" size={15} color={colors.background} />
+                  <Text style={[styles.rankingBtnText, { color: colors.background }]}>
+                    랭킹 보기
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push("/clan")}
+                  style={({ pressed }) => [
+                    styles.rankingBtn,
+                    {
+                      backgroundColor: "transparent",
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: colors.foreground,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  <Feather name="shield" size={15} color={colors.foreground} />
+                  <Text style={[styles.rankingBtnText, { color: colors.foreground }]}>
+                    가문
+                  </Text>
+                </Pressable>
+              </View>
             </LinearGradient>
 
             {/* Identity — Persona Card */}
@@ -586,15 +605,17 @@ const styles = StyleSheet.create({
   },
   xpText: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 8 },
   rankingBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    marginTop: 16,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 12,
   },
   rankingBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  heroBtnRow: { flexDirection: "row", gap: 10, marginTop: 16, alignSelf: "stretch" },
 
   sectionTitle: {
     fontSize: 13,

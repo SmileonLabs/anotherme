@@ -1,2 +1,3 @@
 - [Workspace typecheck noise](workspace-typecheck.md) — full `pnpm run typecheck` fails in mockup-sandbox (spinner SVG ref, React 19 types); unrelated to app code.
 - [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.
+- [Clan system (가문)](clan-system.md) — create/join/leave/lookup only; one clan/user (DB UNIQUE), never writes XP/persona/ranking, members are PII-whitelisted.

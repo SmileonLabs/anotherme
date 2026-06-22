@@ -249,6 +249,208 @@ paths:
         "401":
           description: Unauthorized
 
+  /users/me/clan:
+    get:
+      operationId: getMyClan
+      tags: [clans]
+      summary: Get my clan (or null)
+      description: >
+        My clan with my role, member count, and a few recent members. Returns
+        null when I am not in any clan. Member rows expose only non-sensitive
+        fields (name, avatar, level, title, archetype, role, contribution).
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: My clan or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/MyClan"
+                  - type: "null"
+        "401":
+          description: Unauthorized
+
+  /clans:
+    get:
+      operationId: listClans
+      tags: [clans]
+      summary: Browse / search clans
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search term matched against name and description.
+          schema:
+            type: string
+        - name: archetype
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              [
+                strategist,
+                harmonizer,
+                explorer,
+                pioneer,
+                sage,
+                entertainer,
+                activist,
+                observer,
+              ]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Clan list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClanSummary"
+        "401":
+          description: Unauthorized
+    post:
+      operationId: createClan
+      tags: [clans]
+      summary: Create a clan
+      description: >
+        Create a clan and join it as owner. Fails if the user already belongs to
+        a clan or the name is taken.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClanCreate"
+      responses:
+        "201":
+          description: Created clan (my-clan view)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClan"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "401":
+          description: Unauthorized
+        "409":
+          description: Already in a clan, or name taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clans/{id}:
+    get:
+      operationId: getClanDetail
+      tags: [clans]
+      summary: Get clan detail with members
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Clan detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanDetail"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clans/{id}/join:
+    post:
+      operationId: joinClan
+      tags: [clans]
+      summary: Join a clan
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Joined (my-clan view)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClan"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Clan not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: Already in a clan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clans/{id}/leave:
+    post:
+      operationId: leaveClan
+      tags: [clans]
+      summary: Leave a clan (deletes it if owner is the last member)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Leave result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanLeaveResult"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Owner must transfer ownership first, or not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: Clan not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
   /users/search:
     get:
       operationId: searchUsers
@@ -2119,4 +2321,157 @@ components:
         token:
           type: string
         url:
+          type: string
+
+    ClanMember:
+      type: object
+      required:
+        [
+          userId,
+          displayName,
+          level,
+          title,
+          archetype,
+          archetypeLabel,
+          role,
+          contributionExp,
+        ]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        level:
+          type: integer
+        title:
+          type: string
+        archetype:
+          type: string
+        archetypeLabel:
+          type: string
+        role:
+          type: string
+          enum: [owner, elder, member]
+        contributionExp:
+          type: integer
+
+    Clan:
+      type: object
+      required: [id, name, level, exp, memberCount, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        emblemUrl:
+          type: ["string", "null"]
+        level:
+          type: integer
+        exp:
+          type: integer
+        memberCount:
+          type: integer
+        clanValues:
+          type: ["string", "null"]
+        clanSummary:
+          type: ["string", "null"]
+        preferredArchetype:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    ClanSummary:
+      type: object
+      required: [id, name, level, memberCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        emblemUrl:
+          type: ["string", "null"]
+        level:
+          type: integer
+        memberCount:
+          type: integer
+        preferredArchetype:
+          type: ["string", "null"]
+
+    ClanDetail:
+      allOf:
+        - $ref: "#/components/schemas/Clan"
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClanMember"
+
+    MyClan:
+      type: object
+      required: [clan, myRole, memberCount, recentMembers]
+      properties:
+        clan:
+          $ref: "#/components/schemas/Clan"
+        myRole:
+          type: string
+          enum: [owner, elder, member]
+        memberCount:
+          type: integer
+        recentMembers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClanMember"
+
+    ClanCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 20
+        description:
+          type: string
+          maxLength: 300
+        clanValues:
+          type: string
+          maxLength: 200
+        preferredArchetype:
+          type: string
+          enum:
+            [
+              strategist,
+              harmonizer,
+              explorer,
+              pioneer,
+              sage,
+              entertainer,
+              activist,
+              observer,
+            ]
+        emblemUrl:
+          type: string
+
+    ClanLeaveResult:
+      type: object
+      required: [clanDeleted]
+      properties:
+        clanDeleted:
+          type: boolean
+
+    ClanError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
           type: string
