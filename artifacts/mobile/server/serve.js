@@ -1,25 +1,26 @@
 /**
- * Standalone production server for Expo static builds.
+ * Standalone production server for the browser PWA web build.
  *
- * Serves the output of build.js (static-build/) with two special routes:
- * - GET / or /manifest with expo-platform header → platform manifest JSON
- * - GET / without expo-platform → landing page HTML
- * Everything else falls through to static file serving from ./static-build/.
+ * Serves the output of build.js (./web-build) as a single-page app:
+ * - static files (index.html, _expo/static/..., assets/...) are served directly
+ * - any unknown route falls back to index.html so client-side routing works
  *
- * Zero external dependencies — uses only Node.js built-ins (http, fs, path).
+ * The artifact is mounted at BASE_PATH (/app/); that prefix is stripped before
+ * resolving files. Zero external dependencies — Node.js built-ins only.
  */
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const STATIC_ROOT = path.resolve(__dirname, "..", "static-build");
-const TEMPLATE_PATH = path.resolve(__dirname, "templates", "landing-page.html");
+const STATIC_ROOT = path.resolve(__dirname, "..", "web-build");
+const INDEX_HTML = path.join(STATIC_ROOT, "index.html");
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".png": "image/png",
@@ -28,61 +29,30 @@ const MIME_TYPES = {
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".webp": "image/webp",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
   ".otf": "font/otf",
   ".map": "application/json",
+  ".webmanifest": "application/manifest+json",
 };
 
-function getAppName() {
-  try {
-    const appJsonPath = path.resolve(__dirname, "..", "app.json");
-    const appJson = JSON.parse(fs.readFileSync(appJsonPath, "utf-8"));
-    return appJson.expo?.name || "App Landing Page";
-  } catch {
-    return "App Landing Page";
-  }
-}
-
-function serveManifest(platform, res) {
-  const manifestPath = path.join(STATIC_ROOT, platform, "manifest.json");
-
-  if (!fs.existsSync(manifestPath)) {
-    res.writeHead(404, { "content-type": "application/json" });
-    res.end(
-      JSON.stringify({ error: `Manifest not found for platform: ${platform}` }),
-    );
+function serveIndex(res) {
+  if (!fs.existsSync(INDEX_HTML)) {
+    res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Web build not found. Run the build step first.");
     return;
   }
-
-  const manifest = fs.readFileSync(manifestPath, "utf-8");
   res.writeHead(200, {
-    "content-type": "application/json",
-    "expo-protocol-version": "1",
-    "expo-sfv-version": "0",
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-cache",
   });
-  res.end(manifest);
+  res.end(fs.readFileSync(INDEX_HTML));
 }
 
-function serveLandingPage(req, res, landingPageTemplate, appName) {
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  const protocol = forwardedProto || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers["host"];
-  const baseUrl = `${protocol}://${host}`;
-  const expsUrl = `${host}`;
-
-  const html = landingPageTemplate
-    .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
-    .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName);
-
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  res.end(html);
-}
-
-function serveStaticFile(urlPath, res) {
-  const safePath = path.normalize(urlPath).replace(/^(\.\.(\/|\\|$))+/, "");
+function serveStaticOrFallback(pathname, res) {
+  const safePath = path.normalize(pathname).replace(/^(\.\.(\/|\\|$))+/, "");
   const filePath = path.join(STATIC_ROOT, safePath);
 
   if (!filePath.startsWith(STATIC_ROOT)) {
@@ -91,21 +61,32 @@ function serveStaticFile(urlPath, res) {
     return;
   }
 
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    res.writeHead(404);
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const headers = {
+      "content-type": MIME_TYPES[ext] || "application/octet-stream",
+    };
+    // Hashed Expo bundle/asset files are safe to cache long-term.
+    if (filePath.includes(`${path.sep}_expo${path.sep}`)) {
+      headers["cache-control"] = "public, max-age=31536000, immutable";
+    }
+    res.writeHead(200, headers);
+    res.end(fs.readFileSync(filePath));
+    return;
+  }
+
+  // A request that looks like a static asset (has a file extension) but does
+  // not exist is a genuine 404. Returning index.html for it would surface as a
+  // confusing MIME-type error in the browser console.
+  if (path.extname(pathname)) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     res.end("Not Found");
     return;
   }
 
-  const ext = path.extname(filePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] || "application/octet-stream";
-  const content = fs.readFileSync(filePath);
-  res.writeHead(200, { "content-type": contentType });
-  res.end(content);
+  // SPA fallback — unknown (extension-less) routes render the app shell.
+  serveIndex(res);
 }
-
-const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, "utf-8");
-const appName = getAppName();
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
@@ -115,21 +96,14 @@ const server = http.createServer((req, res) => {
     pathname = pathname.slice(basePath.length) || "/";
   }
 
-  if (pathname === "/" || pathname === "/manifest") {
-    const platform = req.headers["expo-platform"];
-    if (platform === "ios" || platform === "android") {
-      return serveManifest(platform, res);
-    }
-
-    if (pathname === "/") {
-      return serveLandingPage(req, res, landingPageTemplate, appName);
-    }
+  if (pathname === "/" || pathname === "") {
+    return serveIndex(res);
   }
 
-  serveStaticFile(pathname, res);
+  serveStaticOrFallback(pathname, res);
 });
 
 const port = parseInt(process.env.PORT || "3000", 10);
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Serving static Expo build on port ${port}`);
+  console.log(`Serving browser web build on port ${port} (base path: ${basePath || "/"})`);
 });
