@@ -3,20 +3,33 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: TodoTalk messenger API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User profile operations
+  - name: friends
+    description: Friend management
+  - name: rooms
+    description: Chat rooms
+  - name: messages
+    description: Chat messages
+  - name: invites
+    description: Invite links
+  - name: blocked
+    description: Block management
+  - name: calls
+    description: Voice calls
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +37,1717 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all registered users
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: All registered users (excluding me)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get my profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: My profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update my profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    delete:
+      operationId: deleteMe
+      tags: [users]
+      summary: Delete my account
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204":
+          description: Deleted
+
+  /users/me/push-token:
+    post:
+      operationId: registerPushToken
+      tags: [users]
+      summary: Register push token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenInput"
+      responses:
+        "200":
+          description: Token registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /users/search:
+    get:
+      operationId: searchUsers
+      tags: [users]
+      summary: Search users by email
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+
+  /friends:
+    get:
+      operationId: listFriends
+      tags: [friends]
+      summary: List my friends
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Friends list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+
+  /friends/{userId}:
+    delete:
+      operationId: removeFriend
+      tags: [friends]
+      summary: Remove a friend
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+
+  /friend-requests:
+    post:
+      operationId: sendFriendRequest
+      tags: [friends]
+      summary: Send a friend request
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FriendRequestInput"
+      responses:
+        "201":
+          description: Request sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequest"
+        "400":
+          description: Invalid request
+
+  /friend-requests/incoming:
+    get:
+      operationId: listIncomingFriendRequests
+      tags: [friends]
+      summary: List incoming friend requests
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Incoming requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FriendRequestWithUser"
+
+  /friend-requests/outgoing:
+    get:
+      operationId: listOutgoingFriendRequests
+      tags: [friends]
+      summary: List outgoing friend requests
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Outgoing requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FriendRequestWithUser"
+
+  /friend-requests/{id}/accept:
+    patch:
+      operationId: acceptFriendRequest
+      tags: [friends]
+      summary: Accept a friend request
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequest"
+
+  /friend-requests/{id}/reject:
+    patch:
+      operationId: rejectFriendRequest
+      tags: [friends]
+      summary: Reject a friend request
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequest"
+
+  /rooms:
+    get:
+      operationId: listRooms
+      tags: [rooms]
+      summary: List chat rooms I'm in
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Room list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatRoom"
+    post:
+      operationId: createRoom
+      tags: [rooms]
+      summary: Create a chat room
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomInput"
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoom"
+
+  /rooms/{id}:
+    get:
+      operationId: getRoom
+      tags: [rooms]
+      summary: Get room details
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoom"
+
+  /rooms/{id}/leave:
+    post:
+      operationId: leaveRoom
+      tags: [rooms]
+      summary: Leave a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Left
+
+  /rooms/{id}/mute:
+    patch:
+      operationId: toggleMuteRoom
+      tags: [rooms]
+      summary: Toggle mute for a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MuteInput"
+      responses:
+        "200":
+          description: Mute toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoomMember"
+
+  /rooms/{id}/members:
+    get:
+      operationId: listRoomMembers
+      tags: [rooms]
+      summary: List room members
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+    post:
+      operationId: inviteRoomMembers
+      tags: [rooms]
+      summary: Invite additional friends to a group room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMembersInput"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoom"
+
+  /rooms/{id}/messages:
+    get:
+      operationId: fetchRoomMessages
+      tags: [messages]
+      summary: List messages in a room (last 50)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /rooms/{id}/read:
+    patch:
+      operationId: markRoomRead
+      tags: [messages]
+      summary: Mark room as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadInput"
+      responses:
+        "204":
+          description: Marked read
+
+  /rooms/{id}/typing:
+    get:
+      operationId: getTypingUsers
+      tags: [messages]
+      summary: List members currently typing in a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Typing members (excluding the requester)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+    post:
+      operationId: setTyping
+      tags: [messages]
+      summary: Signal that the current user is typing (heartbeat)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Recorded
+
+  /invites:
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Create an invite link
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+
+  /invites/redeem:
+    post:
+      operationId: redeemInvite
+      tags: [invites]
+      summary: Redeem an invite code
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemInviteInput"
+      responses:
+        "200":
+          description: Redeemed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequest"
+        "400":
+          description: Invalid or expired invite
+
+  /blocked:
+    get:
+      operationId: listBlocked
+      tags: [blocked]
+      summary: List blocked users
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Blocked users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicUser"
+    post:
+      operationId: blockUser
+      tags: [blocked]
+      summary: Block a user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockInput"
+      responses:
+        "201":
+          description: Blocked
+
+  /blocked/{userId}:
+    delete:
+      operationId: unblockUser
+      tags: [blocked]
+      summary: Unblock a user
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Unblocked
+
+  /calls:
+    post:
+      operationId: createCall
+      tags: [calls]
+      summary: Start a voice call
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCallInput"
+      responses:
+        "201":
+          description: Call created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+
+  /calls/incoming:
+    get:
+      operationId: listIncomingCalls
+      tags: [calls]
+      summary: List incoming ringing calls for the current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Incoming calls
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CallWithCaller"
+
+  /calls/{id}:
+    get:
+      operationId: getCall
+      tags: [calls]
+      summary: Get call status
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+
+  /calls/{id}/accept:
+    post:
+      operationId: acceptCall
+      tags: [calls]
+      summary: Accept an incoming call
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+
+  /calls/{id}/join:
+    post:
+      operationId: joinCall
+      tags: [calls]
+      summary: Join a call from the in-chat call card (caller or callee)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallSession"
+
+  /calls/{id}/decline:
+    post:
+      operationId: declineCall
+      tags: [calls]
+      summary: Decline an incoming call
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call declined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+
+  /calls/{id}/end:
+    post:
+      operationId: endCall
+      tags: [calls]
+      summary: End an active or ringing call
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call ended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to generate upload URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/objects/{objectPath}:
+    get:
+      tags: [Storage]
+      operationId: getStorageObject
+      summary: Serve an object entity from PRIVATE_OBJECT_DIR
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content streamed with correct Content-Type.
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Object not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to serve object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /dungeons:
+    post:
+      operationId: createDungeon
+      tags: [dungeons]
+      summary: Create a dungeon (MUD game room with AI Dungeon Master)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DungeonInput"
+      responses:
+        "201":
+          description: Dungeon room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoom"
+
+  /dungeons/{id}:
+    get:
+      operationId: getDungeonState
+      tags: [dungeons]
+      summary: Get the current party/game state of a dungeon
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dungeon game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DungeonState"
+
+  /battles:
+    post:
+      operationId: createBattle
+      tags: [battles]
+      summary: Create a talk-battle room (AI-judged debate game)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BattleCreateInput"
+      responses:
+        "201":
+          description: Battle room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRoom"
+
+  /battle-topics:
+    post:
+      operationId: suggestBattleTopics
+      tags: [battles]
+      summary: Get AI-suggested debate topics for a category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BattleTopicInput"
+      responses:
+        "200":
+          description: Suggested topics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleTopicSuggestions"
+
+  /battle-personas:
+    get:
+      operationId: listBattlePersonas
+      tags: [battles]
+      summary: List available AI opponent personas
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Available AI personas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattlePersonaList"
+
+  /battle-stats:
+    get:
+      operationId: getMyBattleStats
+      tags: [battles]
+      summary: My lifetime talk-battle stats (record, MP, level)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: My battle stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyBattleStats"
+
+  /battle-history:
+    get:
+      operationId: getMyBattleHistory
+      tags: [battles]
+      summary: My recent finished battles (dashboard carousel)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Recent finished battles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BattleHistoryItem"
+
+  /battles/{id}:
+    get:
+      operationId: getBattleState
+      tags: [battles]
+      summary: Get the current state of a talk-battle
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Battle game state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleState"
+
+  /battles/{id}/ready:
+    post:
+      operationId: setBattleReady
+      tags: [battles]
+      summary: Mark yourself ready in the waiting room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated battle state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleState"
+
+  /battles/{id}/start:
+    post:
+      operationId: startBattle
+      tags: [battles]
+      summary: Start the debate (assign sides, generate opening question)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated battle state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleState"
+
+  /battles/{id}/turn:
+    post:
+      operationId: submitBattleTurn
+      tags: [battles]
+      summary: Submit your utterance for the current turn (AI evaluates it)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BattleTurnInput"
+      responses:
+        "200":
+          description: Updated battle state after evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleState"
+
+  /battles/{id}/restart:
+    post:
+      operationId: restartBattle
+      tags: [battles]
+      summary: Reset the battle back to the waiting room for another game
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Battle reset to waiting room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleState"
+
+  /battles/{id}/cancel:
+    post:
+      operationId: cancelBattle
+      tags: [battles]
+      summary: Cancel a waiting battle and delete its room (host only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Battle cancelled and room deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+        contentType:
+          type: string
+          minLength: 1
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+        objectPath:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    UserProfile:
+      type: object
+      required: [id, clerkId, email, nickname, notificationEnabled, createdAt]
+      properties:
+        id:
+          type: string
+        clerkId:
+          type: string
+        email:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        statusMessage:
+          type: ["string", "null"]
+        pushToken:
+          type: ["string", "null"]
+        notificationEnabled:
+          type: boolean
+        createdAt:
+          type: string
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        nickname:
+          type: string
+        statusMessage:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+        notificationEnabled:
+          type: boolean
+
+    PushTokenInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    PublicUser:
+      type: object
+      required: [id, nickname, email]
+      properties:
+        id:
+          type: string
+        nickname:
+          type: string
+        email:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        statusMessage:
+          type: ["string", "null"]
+
+    FriendRequestInput:
+      type: object
+      required: [toUserId]
+      properties:
+        toUserId:
+          type: string
+
+    FriendRequest:
+      type: object
+      required: [id, fromUserId, toUserId, status, createdAt]
+      properties:
+        id:
+          type: string
+        fromUserId:
+          type: string
+        toUserId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+
+    FriendRequestWithUser:
+      type: object
+      required: [id, fromUserId, toUserId, status, createdAt, user]
+      properties:
+        id:
+          type: string
+        fromUserId:
+          type: string
+        toUserId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        user:
+          $ref: "#/components/schemas/PublicUser"
+
+    ChatRoom:
+      type: object
+      required: [id, type, createdAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        name:
+          type: ["string", "null"]
+        ownerId:
+          type: ["string", "null"]
+        lastMessage:
+          type: ["string", "null"]
+        lastMessageAt:
+          type: ["string", "null"]
+        unreadCount:
+          type: integer
+        firstUnreadMessageId:
+          type: ["string", "null"]
+        muted:
+          type: boolean
+        createdAt:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicUser"
+
+    ChatRoomMember:
+      type: object
+      required: [id, roomId, userId, joinedAt, muted]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        userId:
+          type: string
+        joinedAt:
+          type: string
+        muted:
+          type: boolean
+
+    RoomInput:
+      type: object
+      required: [type, memberIds]
+      properties:
+        type:
+          type: string
+        name:
+          type: ["string", "null"]
+        memberIds:
+          type: array
+          items:
+            type: string
+
+    InviteMembersInput:
+      type: object
+      required: [memberIds]
+      properties:
+        memberIds:
+          type: array
+          items:
+            type: string
+
+    Message:
+      type: object
+      required: [id, roomId, senderId, type, content, createdAt]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        senderId:
+          type: string
+        type:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+        sender:
+          $ref: "#/components/schemas/PublicUser"
+        readCount:
+          type: integer
+          description: Number of other room members who have read this message
+
+    MessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        type:
+          type: string
+
+    DungeonInput:
+      type: object
+      required: [memberIds]
+      properties:
+        name:
+          type: ["string", "null"]
+        memberIds:
+          type: array
+          items:
+            type: string
+        theme:
+          type: ["string", "null"]
+
+    DungeonCharacter:
+      type: object
+      required: [userId, name, hp, maxHp, status, inventory]
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        hp:
+          type: integer
+        maxHp:
+          type: integer
+        status:
+          type: string
+        inventory:
+          type: array
+          items:
+            type: string
+
+    DungeonEnemy:
+      type: object
+      required: [name, hp, maxHp]
+      properties:
+        name:
+          type: string
+        hp:
+          type: integer
+        maxHp:
+          type: integer
+
+    DungeonEvent:
+      type: object
+      required: [kind, text]
+      properties:
+        kind:
+          type: string
+        text:
+          type: string
+        targetUserId:
+          type: ["string", "null"]
+        points:
+          type: integer
+          description: For score events, the signed game-point delta (+gain / -loss).
+
+    DungeonGoal:
+      type: object
+      required: [text, kind, done]
+      properties:
+        text:
+          type: string
+        kind:
+          type: string
+          description: "main (win condition) or sub (intermediate step)"
+        done:
+          type: boolean
+
+    DungeonState:
+      type: object
+      required:
+        [roomId, theme, status, scene, turn, ended, party, enemies, choices, lastTurnEvents, goals, points]
+      properties:
+        roomId:
+          type: string
+        theme:
+          type: string
+        status:
+          type: string
+        scene:
+          type: string
+        turn:
+          type: integer
+        ended:
+          type: boolean
+        points:
+          type: integer
+          description: Shared party score; good choices add, bad choices subtract.
+        goals:
+          type: array
+          items:
+            $ref: "#/components/schemas/DungeonGoal"
+        party:
+          type: array
+          items:
+            $ref: "#/components/schemas/DungeonCharacter"
+        enemies:
+          type: array
+          items:
+            $ref: "#/components/schemas/DungeonEnemy"
+        choices:
+          type: array
+          items:
+            type: string
+        lastTurnEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/DungeonEvent"
+        lastNarrativeMessageId:
+          type: string
+          description: Message id of the current turn's DM narrative bubble; the client shows choices only once this message is on screen.
+
+    BattleCreateInput:
+      type: object
+      required: [category, topic]
+      properties:
+        memberId:
+          type: string
+          description: The single friend's userId to invite. Provide this OR aiPersonaId.
+        aiPersonaId:
+          type: string
+          description: The AI opponent persona id to battle against. Provide this OR memberId.
+        category:
+          type: string
+        topic:
+          type: string
+
+    BattleTopicInput:
+      type: object
+      required: [category]
+      properties:
+        category:
+          type: string
+
+    BattleTopicSuggestions:
+      type: object
+      required: [topics]
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+
+    BattleTurnInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    BattleEvaluation:
+      type: object
+      required: [logic, persuasiveness, rebuttal, wit, manners, total, feedback, violation]
+      properties:
+        logic:
+          type: integer
+        persuasiveness:
+          type: integer
+        rebuttal:
+          type: integer
+        wit:
+          type: integer
+        manners:
+          type: integer
+        total:
+          type: integer
+        feedback:
+          type: string
+        violation:
+          type: boolean
+
+    BattleParticipant:
+      type: object
+      required: [userId, name, side, totalScore, ready]
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        side:
+          type: string
+          description: "pro or con (empty until the game starts)"
+        totalScore:
+          type: integer
+        ready:
+          type: boolean
+        isAI:
+          type: boolean
+          description: True when this participant is an AI persona opponent.
+        personaId:
+          type: string
+          description: AI persona id when isAI is true.
+
+    BattlePersona:
+      type: object
+      required: [id, name, emoji, tagline]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        emoji:
+          type: string
+        tagline:
+          type: string
+
+    BattlePersonaList:
+      type: object
+      required: [personas]
+      properties:
+        personas:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattlePersona"
+
+    BattleState:
+      type: object
+      required:
+        [
+          roomId,
+          status,
+          topic,
+          category,
+          startQuestion,
+          phase,
+          participants,
+          totalRounds,
+          round,
+          timeLimitSeconds,
+          turnIndex,
+          ended,
+        ]
+      properties:
+        roomId:
+          type: string
+        status:
+          type: string
+        hostUserId:
+          type: ["string", "null"]
+          description: The battle creator's userId; only the host may cancel while waiting.
+        topic:
+          type: string
+        category:
+          type: string
+        startQuestion:
+          type: string
+        phase:
+          type: string
+          description: "waiting | active | ended"
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattleParticipant"
+        totalRounds:
+          type: integer
+        round:
+          type: integer
+          description: Current round (1-based); 0 before the game starts.
+        timeLimitSeconds:
+          type: integer
+        turnIndex:
+          type: integer
+          description: 0-based turn index across the whole game; -1 before start.
+        currentSpeakerUserId:
+          type: ["string", "null"]
+        turnStartedAt:
+          type: ["string", "null"]
+          description: ISO timestamp the current turn's clock started.
+        remainingSeconds:
+          type: integer
+          description: Server-computed seconds left in the current turn (0 when no active turn).
+        ended:
+          type: boolean
+        winnerUserId:
+          type: ["string", "null"]
+          description: Winner userId, or null for a draw / not yet ended.
+
+    MyBattleStats:
+      type: object
+      required:
+        [
+          wins,
+          losses,
+          draws,
+          total,
+          winRate,
+          currentStreak,
+          bestStreak,
+          mp,
+          level,
+          title,
+          mpIntoLevel,
+          mpForNextLevel,
+          mpToNext,
+        ]
+      properties:
+        wins:
+          type: integer
+        losses:
+          type: integer
+        draws:
+          type: integer
+        total:
+          type: integer
+        winRate:
+          type: integer
+          description: Win percentage (0-100), 0 when no games played.
+        currentStreak:
+          type: integer
+        bestStreak:
+          type: integer
+        mp:
+          type: integer
+          description: Total accumulated mal-bbal points.
+        level:
+          type: integer
+        title:
+          type: string
+        mpIntoLevel:
+          type: integer
+        mpForNextLevel:
+          type: integer
+        mpToNext:
+          type: integer
+
+    BattleHistoryPreview:
+      type: object
+      required: [name, content, isMe]
+      properties:
+        name:
+          type: string
+        content:
+          type: string
+        isMe:
+          type: boolean
+
+    BattleHistoryItem:
+      type: object
+      required:
+        [roomId, topic, opponentName, myScore, opponentScore, outcome, comment, preview]
+      properties:
+        roomId:
+          type: string
+        topic:
+          type: string
+        opponentName:
+          type: string
+        opponentAvatarUrl:
+          type: ["string", "null"]
+        myScore:
+          type: integer
+        opponentScore:
+          type: integer
+        outcome:
+          type: string
+          enum: [win, loss, draw]
+        comment:
+          type: string
+        preview:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattleHistoryPreview"
+
+    ReadInput:
+      type: object
+      required: [messageId]
+      properties:
+        messageId:
+          type: string
+
+    MuteInput:
+      type: object
+      required: [muted]
+      properties:
+        muted:
+          type: boolean
+
+    Invite:
+      type: object
+      required: [id, inviteCode, inviterUserId, status, createdAt]
+      properties:
+        id:
+          type: string
+        inviteCode:
+          type: string
+        inviterUserId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        expiredAt:
+          type: ["string", "null"]
+
+    RedeemInviteInput:
+      type: object
+      required: [inviteCode]
+      properties:
+        inviteCode:
+          type: string
+
+    BlockInput:
+      type: object
+      required: [blockedUserId]
+      properties:
+        blockedUserId:
+          type: string
+
+    CreateCallInput:
+      type: object
+      required: [calleeId]
+      properties:
+        calleeId:
+          type: string
+        roomId:
+          type: string
+
+    Call:
+      type: object
+      required: [id, roomName, callerId, calleeId, status, createdAt]
+      properties:
+        id:
+          type: string
+        roomName:
+          type: string
+        callerId:
+          type: string
+        calleeId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        endedAt:
+          type: ["string", "null"]
+
+    CallWithCaller:
+      type: object
+      required: [id, roomName, callerId, calleeId, status, createdAt, caller]
+      properties:
+        id:
+          type: string
+        roomName:
+          type: string
+        callerId:
+          type: string
+        calleeId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        endedAt:
+          type: ["string", "null"]
+        caller:
+          $ref: "#/components/schemas/PublicUser"
+
+    CallSession:
+      type: object
+      required: [call, token, url]
+      properties:
+        call:
+          $ref: "#/components/schemas/Call"
+        token:
+          type: string
+        url:
+          type: string
