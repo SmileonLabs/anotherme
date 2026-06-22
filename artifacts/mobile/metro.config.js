@@ -2,6 +2,10 @@ const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
 
+if (process.env.EXPO_WEB_EXPORT === "1") {
+  config.maxWorkers = 1;
+}
+
 const { transformer, resolver } = config;
 
 config.transformer = {
