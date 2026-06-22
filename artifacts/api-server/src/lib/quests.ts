@@ -113,8 +113,8 @@ export const DAILY_QUESTS: QuestDef[] = [
   {
     key: "daily_dungeon",
     type: "daily",
-    title: "던전 행동",
-    description: "던전에서 3번 행동하세요.",
+    title: "라이프 퀘스트",
+    description: "라이프 퀘스트에서 3번 선택하세요.",
     target: 3,
     rewardExp: 15,
     metric: "dungeonAction",
@@ -152,8 +152,8 @@ export const WEEKLY_QUESTS: QuestDef[] = [
   {
     key: "weekly_dungeon",
     type: "weekly",
-    title: "던전 탐험가",
-    description: "던전에서 20번 행동하세요.",
+    title: "라이프 퀘스트 마스터",
+    description: "라이프 퀘스트에서 20번 선택하세요.",
     target: 20,
     rewardExp: 100,
     metric: "dungeonAction",
@@ -194,8 +194,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { key: "first_chat", title: "첫 대화", description: "처음으로 대화를 나눴어요.", rewardExp: 20, category: "chat", icon: "message-circle" },
   { key: "first_battle", title: "첫 토크배틀 참여", description: "처음으로 토크배틀에 참여했어요.", rewardExp: 20, category: "battle", icon: "zap" },
   { key: "first_battle_win", title: "첫 토크배틀 승리", description: "처음으로 토크배틀에서 승리했어요.", rewardExp: 50, category: "battle", icon: "award" },
-  { key: "first_dungeon", title: "첫 던전 행동", description: "처음으로 던전에서 행동했어요.", rewardExp: 20, category: "dungeon", icon: "compass" },
-  { key: "first_dungeon_goal", title: "첫 던전 목표 달성", description: "처음으로 던전 목표를 달성했어요.", rewardExp: 50, category: "dungeon", icon: "flag" },
+  { key: "first_dungeon", title: "첫 라이프 퀘스트", description: "처음으로 라이프 퀘스트에서 선택했어요.", rewardExp: 20, category: "dungeon", icon: "compass" },
+  { key: "first_dungeon_goal", title: "첫 라이프 퀘스트 완료", description: "처음으로 라이프 퀘스트를 완료했어요.", rewardExp: 50, category: "dungeon", icon: "flag" },
   { key: "first_clan_join", title: "첫 가문 가입", description: "처음으로 가문에 들어갔어요.", rewardExp: 30, category: "clan", icon: "users" },
   { key: "first_clan_memory", title: "첫 가문 기억 작성", description: "처음으로 가문 기억을 남겼어요.", rewardExp: 30, category: "clan", icon: "book-open" },
   { key: "first_clan_war", title: "첫 가문전 참여", description: "처음으로 가문전에 참여했어요.", rewardExp: 40, category: "clan", icon: "shield" },
@@ -224,7 +224,7 @@ async function activityCountsSince(userId: string, since: Date): Promise<Activit
     .select({
       chat: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'chat_message')`,
       battle: sql<number>`count(*) filter (where ${xpEventsTable.eventType} in ('battle_speech','battle_result'))`,
-      dungeonAction: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'dungeon_action')`,
+      dungeonAction: sql<number>`count(*) filter (where ${xpEventsTable.eventType} in ('dungeon_action','life_quest_action'))`,
     })
     .from(xpEventsTable)
     .where(and(eq(xpEventsTable.userId, userId), gte(xpEventsTable.createdAt, since)));
@@ -483,8 +483,8 @@ async function evaluateUnlocked(userId: string): Promise<Set<string>> {
       chat: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'chat_message')`,
       battle: sql<number>`count(*) filter (where ${xpEventsTable.eventType} in ('battle_speech','battle_result'))`,
       battleWin: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'battle_result' and ${xpEventsTable.reason} = '토크배틀 승리')`,
-      dungeonAction: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'dungeon_action')`,
-      dungeonGoal: sql<number>`count(*) filter (where ${xpEventsTable.eventType} = 'dungeon_result')`,
+      dungeonAction: sql<number>`count(*) filter (where ${xpEventsTable.eventType} in ('dungeon_action','life_quest_action'))`,
+      dungeonGoal: sql<number>`count(*) filter (where ${xpEventsTable.eventType} in ('dungeon_result','life_quest_complete'))`,
     })
     .from(xpEventsTable)
     .where(eq(xpEventsTable.userId, userId));

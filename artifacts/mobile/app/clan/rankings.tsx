@@ -217,7 +217,7 @@ export default function ClanRankingScreen() {
               아직 랭킹 데이터가 부족합니다.
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              가문원들과 함께 토크배틀과 던전을 플레이해보세요.
+              가문원들과 함께 토크배틀과 라이프 퀘스트를 플레이해보세요.
             </Text>
             <Pressable
               onPress={() => router.push("/(tabs)/battle")}

@@ -1208,6 +1208,203 @@ export const GetDungeonStateResponse = zod.object({
 
 
 /**
+ * @summary Start a Life Quest (AI generates the whole scenario once)
+ */
+export const CreateLifeQuestBody = zod.object({
+  "theme": zod.string().nullish().describe('One of the Life Quest themes, or omit\/null for a random theme.')
+})
+
+
+/**
+ * @summary Get the caller's most recent active Life Quest (or null)
+ */
+export const GetActiveLifeQuestResponse = zod.object({
+  "quest": zod.union([zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "title": zod.string(),
+  "theme": zod.string(),
+  "goal": zod.string(),
+  "summary": zod.string(),
+  "currentStageIndex": zod.number(),
+  "status": zod.string().describe('active | completed | failed'),
+  "stages": zod.array(zod.object({
+  "stageNumber": zod.number(),
+  "title": zod.string(),
+  "situation": zod.string(),
+  "choices": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "resultText": zod.string(),
+  "statChanges": zod.object({
+  "logic": zod.number().optional(),
+  "empathy": zod.number().optional(),
+  "wit": zod.number().optional(),
+  "knowledge": zod.number().optional(),
+  "conviction": zod.number().optional(),
+  "emotion": zod.number().optional(),
+  "decisiveness": zod.number().optional()
+}).describe('Signed deltas applied to a persona\'s seven growth stats. All optional.'),
+  "riskLevel": zod.string().describe('low | medium | high (boldness, not correctness)')
+})),
+  "chosenChoiceId": zod.string().nullish()
+})),
+  "createdAt": zod.string(),
+  "completedAt": zod.string().nullish()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Get a Life Quest by id
+ */
+export const GetLifeQuestParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetLifeQuestResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "title": zod.string(),
+  "theme": zod.string(),
+  "goal": zod.string(),
+  "summary": zod.string(),
+  "currentStageIndex": zod.number(),
+  "status": zod.string().describe('active | completed | failed'),
+  "stages": zod.array(zod.object({
+  "stageNumber": zod.number(),
+  "title": zod.string(),
+  "situation": zod.string(),
+  "choices": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "resultText": zod.string(),
+  "statChanges": zod.object({
+  "logic": zod.number().optional(),
+  "empathy": zod.number().optional(),
+  "wit": zod.number().optional(),
+  "knowledge": zod.number().optional(),
+  "conviction": zod.number().optional(),
+  "emotion": zod.number().optional(),
+  "decisiveness": zod.number().optional()
+}).describe('Signed deltas applied to a persona\'s seven growth stats. All optional.'),
+  "riskLevel": zod.string().describe('low | medium | high (boldness, not correctness)')
+})),
+  "chosenChoiceId": zod.string().nullish()
+})),
+  "createdAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Pick a choice for the current stage (applies stats + XP, no AI)
+ */
+export const ChooseLifeQuestOptionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ChooseLifeQuestOptionBody = zod.object({
+  "stageNumber": zod.number(),
+  "choiceId": zod.string()
+})
+
+export const ChooseLifeQuestOptionResponse = zod.object({
+  "quest": zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "title": zod.string(),
+  "theme": zod.string(),
+  "goal": zod.string(),
+  "summary": zod.string(),
+  "currentStageIndex": zod.number(),
+  "status": zod.string().describe('active | completed | failed'),
+  "stages": zod.array(zod.object({
+  "stageNumber": zod.number(),
+  "title": zod.string(),
+  "situation": zod.string(),
+  "choices": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "resultText": zod.string(),
+  "statChanges": zod.object({
+  "logic": zod.number().optional(),
+  "empathy": zod.number().optional(),
+  "wit": zod.number().optional(),
+  "knowledge": zod.number().optional(),
+  "conviction": zod.number().optional(),
+  "emotion": zod.number().optional(),
+  "decisiveness": zod.number().optional()
+}).describe('Signed deltas applied to a persona\'s seven growth stats. All optional.'),
+  "riskLevel": zod.string().describe('low | medium | high (boldness, not correctness)')
+})),
+  "chosenChoiceId": zod.string().nullish()
+})),
+  "createdAt": zod.string(),
+  "completedAt": zod.string().nullish()
+}),
+  "resultText": zod.string(),
+  "statChanges": zod.object({
+  "logic": zod.number().optional(),
+  "empathy": zod.number().optional(),
+  "wit": zod.number().optional(),
+  "knowledge": zod.number().optional(),
+  "conviction": zod.number().optional(),
+  "emotion": zod.number().optional(),
+  "decisiveness": zod.number().optional()
+}).describe('Signed deltas applied to a persona\'s seven growth stats. All optional.'),
+  "expEarned": zod.number(),
+  "completed": zod.boolean()
+})
+
+
+/**
+ * @summary Abandon an active Life Quest (small consolation XP)
+ */
+export const AbandonLifeQuestParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const AbandonLifeQuestResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "title": zod.string(),
+  "theme": zod.string(),
+  "goal": zod.string(),
+  "summary": zod.string(),
+  "currentStageIndex": zod.number(),
+  "status": zod.string().describe('active | completed | failed'),
+  "stages": zod.array(zod.object({
+  "stageNumber": zod.number(),
+  "title": zod.string(),
+  "situation": zod.string(),
+  "choices": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "resultText": zod.string(),
+  "statChanges": zod.object({
+  "logic": zod.number().optional(),
+  "empathy": zod.number().optional(),
+  "wit": zod.number().optional(),
+  "knowledge": zod.number().optional(),
+  "conviction": zod.number().optional(),
+  "emotion": zod.number().optional(),
+  "decisiveness": zod.number().optional()
+}).describe('Signed deltas applied to a persona\'s seven growth stats. All optional.'),
+  "riskLevel": zod.string().describe('low | medium | high (boldness, not correctness)')
+})),
+  "chosenChoiceId": zod.string().nullish()
+})),
+  "createdAt": zod.string(),
+  "completedAt": zod.string().nullish()
+})
+
+
+/**
  * @summary Create a talk-battle room (AI-judged debate game)
  */
 export const CreateBattleBody = zod.object({

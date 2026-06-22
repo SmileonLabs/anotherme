@@ -103,9 +103,9 @@ export default function ChatsScreen() {
             <Feather name="mic" size={22} color={colors.primary} />
           </Pressable>
           <Pressable
-            accessibilityLabel="새 던전"
+            accessibilityLabel="라이프 퀘스트"
             hitSlop={8}
-            onPress={() => router.push("/dungeon/create")}
+            onPress={() => router.push("/(tabs)/dungeon")}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
           >
             <Feather name="compass" size={22} color={colors.primary} />

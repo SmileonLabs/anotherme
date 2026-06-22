@@ -5,6 +5,7 @@ export * from "./chat";
 export * from "./blocked";
 export * from "./calls";
 export * from "./dungeon";
+export * from "./lifeQuest";
 export * from "./battle";
 export * from "./battleStats";
 export * from "./persona";

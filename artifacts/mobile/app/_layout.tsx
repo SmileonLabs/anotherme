@@ -76,10 +76,7 @@ function RootLayoutNav() {
         name="group/invite"
         options={{ title: "친구 초대", headerBackTitle: "Back" }}
       />
-      <Stack.Screen
-        name="dungeon/create"
-        options={{ title: "새 던전", headerBackTitle: "Back" }}
-      />
+      <Stack.Screen name="dungeon/[id]" options={{ headerShown: false }} />
       <Stack.Screen
         name="battle/create"
         options={{ title: "토크배틀", headerBackTitle: "Back" }}

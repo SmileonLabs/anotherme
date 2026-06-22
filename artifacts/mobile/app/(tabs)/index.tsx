@@ -239,10 +239,10 @@ export default function HomeScreen() {
     },
     {
       key: "dungeon",
-      title: "던전",
+      title: "라이프 퀘스트",
       tagline: "선택으로 성장하라",
-      desc: "AI 던전 마스터와 모험",
-      cta: "입장하기",
+      desc: "현실 같은 선택 시뮬레이션",
+      cta: "시작하기",
       icon: "compass",
       grad: ["#0E3327", "#155C41"],
       accent: "#34D399",

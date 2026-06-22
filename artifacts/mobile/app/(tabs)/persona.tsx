@@ -560,7 +560,7 @@ export default function PersonaScreen() {
               <TipRow icon="message-circle" text="채팅하면 공감이 자라요" colors={colors} />
               <TipRow icon="mic" text="토크배틀에 참여하면 논리·위트가 올라요" colors={colors} />
               <TipRow icon="award" text="배틀에서 이기면 신념이 강해져요" colors={colors} />
-              <TipRow icon="compass" text="던전을 모험하면 결단·지식이 늘어요" colors={colors} last />
+              <TipRow icon="compass" text="라이프 퀘스트를 플레이하면 결단·지식이 늘어요" colors={colors} last />
             </View>
 
             <Pressable

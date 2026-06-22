@@ -375,6 +375,79 @@ export interface DungeonState {
   lastNarrativeMessageId?: string;
 }
 
+/**
+ * Signed deltas applied to a persona's seven growth stats. All optional.
+ */
+export interface PersonaStatChanges {
+  logic?: number;
+  empathy?: number;
+  wit?: number;
+  knowledge?: number;
+  conviction?: number;
+  emotion?: number;
+  decisiveness?: number;
+}
+
+export interface LifeQuestChoice {
+  id: string;
+  label: string;
+  description: string;
+  resultText: string;
+  statChanges: PersonaStatChanges;
+  /** low | medium | high (boldness, not correctness) */
+  riskLevel: string;
+}
+
+export interface LifeQuestStage {
+  stageNumber: number;
+  title: string;
+  situation: string;
+  choices: LifeQuestChoice[];
+  /** @nullable */
+  chosenChoiceId?: string | null;
+}
+
+export interface LifeQuest {
+  id: string;
+  userId: string;
+  title: string;
+  theme: string;
+  goal: string;
+  summary: string;
+  currentStageIndex: number;
+  /** active | completed | failed */
+  status: string;
+  stages: LifeQuestStage[];
+  createdAt: string;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export interface LifeQuestActiveResponse {
+  quest: LifeQuest | null;
+}
+
+export interface LifeQuestCreateInput {
+  /**
+     * One of the Life Quest themes, or omit/null for a random theme.
+     * @nullable
+     */
+  theme?: string | null;
+}
+
+export interface LifeQuestChooseInput {
+  stageNumber: number;
+  choiceId: string;
+}
+
+export interface LifeQuestChooseResult {
+  quest: LifeQuest;
+  resultText: string;
+  statChanges: PersonaStatChanges;
+  expEarned: number;
+  completed: boolean;
+}
+
 export interface BattleCreateInput {
   /** The single friend's userId to invite. Provide this OR aiPersonaId. */
   memberId?: string;

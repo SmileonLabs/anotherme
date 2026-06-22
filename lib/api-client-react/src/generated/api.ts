@@ -62,6 +62,11 @@ import type {
   HealthStatus,
   Invite,
   InviteMembersInput,
+  LifeQuest,
+  LifeQuestActiveResponse,
+  LifeQuestChooseInput,
+  LifeQuestChooseResult,
+  LifeQuestCreateInput,
   ListClanMemoriesParams,
   ListClanWarsParams,
   ListClansParams,
@@ -4503,6 +4508,373 @@ export function useGetDungeonState<TData = Awaited<ReturnType<typeof getDungeonS
 
 
 
+
+export const getCreateLifeQuestUrl = () => {
+
+
+
+
+  return `/api/life-quests`
+}
+
+/**
+ * @summary Start a Life Quest (AI generates the whole scenario once)
+ */
+export const createLifeQuest = async (lifeQuestCreateInput?: LifeQuestCreateInput, options?: RequestInit): Promise<LifeQuest> => {
+
+  return customFetch<LifeQuest>(getCreateLifeQuestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lifeQuestCreateInput,)
+  }
+);}
+
+
+
+
+export const getCreateLifeQuestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLifeQuest>>, TError,{data?: BodyType<LifeQuestCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLifeQuest>>, TError,{data?: BodyType<LifeQuestCreateInput>}, TContext> => {
+
+const mutationKey = ['createLifeQuest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLifeQuest>>, {data?: BodyType<LifeQuestCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createLifeQuest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateLifeQuestMutationResult = NonNullable<Awaited<ReturnType<typeof createLifeQuest>>>
+    export type CreateLifeQuestMutationBody = BodyType<LifeQuestCreateInput> | undefined
+    export type CreateLifeQuestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a Life Quest (AI generates the whole scenario once)
+ */
+export const useCreateLifeQuest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLifeQuest>>, TError,{data?: BodyType<LifeQuestCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createLifeQuest>>,
+        TError,
+        {data?: BodyType<LifeQuestCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateLifeQuestMutationOptions(options));
+    }
+
+export const getGetActiveLifeQuestUrl = () => {
+
+
+
+
+  return `/api/life-quests/active`
+}
+
+/**
+ * @summary Get the caller's most recent active Life Quest (or null)
+ */
+export const getActiveLifeQuest = async ( options?: RequestInit): Promise<LifeQuestActiveResponse> => {
+
+  return customFetch<LifeQuestActiveResponse>(getGetActiveLifeQuestUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetActiveLifeQuestQueryKey = () => {
+    return [
+    `/api/life-quests/active`
+    ] as const;
+    }
+
+
+export const getGetActiveLifeQuestQueryOptions = <TData = Awaited<ReturnType<typeof getActiveLifeQuest>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getActiveLifeQuest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetActiveLifeQuestQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getActiveLifeQuest>>> = ({ signal }) => getActiveLifeQuest({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getActiveLifeQuest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetActiveLifeQuestQueryResult = NonNullable<Awaited<ReturnType<typeof getActiveLifeQuest>>>
+export type GetActiveLifeQuestQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the caller's most recent active Life Quest (or null)
+ */
+
+export function useGetActiveLifeQuest<TData = Awaited<ReturnType<typeof getActiveLifeQuest>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getActiveLifeQuest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetActiveLifeQuestQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetLifeQuestUrl = (id: string,) => {
+
+
+
+
+  return `/api/life-quests/${id}`
+}
+
+/**
+ * @summary Get a Life Quest by id
+ */
+export const getLifeQuest = async (id: string, options?: RequestInit): Promise<LifeQuest> => {
+
+  return customFetch<LifeQuest>(getGetLifeQuestUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLifeQuestQueryKey = (id: string,) => {
+    return [
+    `/api/life-quests/${id}`
+    ] as const;
+    }
+
+
+export const getGetLifeQuestQueryOptions = <TData = Awaited<ReturnType<typeof getLifeQuest>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLifeQuest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLifeQuestQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLifeQuest>>> = ({ signal }) => getLifeQuest(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLifeQuest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLifeQuestQueryResult = NonNullable<Awaited<ReturnType<typeof getLifeQuest>>>
+export type GetLifeQuestQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a Life Quest by id
+ */
+
+export function useGetLifeQuest<TData = Awaited<ReturnType<typeof getLifeQuest>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLifeQuest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLifeQuestQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getChooseLifeQuestOptionUrl = (id: string,) => {
+
+
+
+
+  return `/api/life-quests/${id}/choose`
+}
+
+/**
+ * @summary Pick a choice for the current stage (applies stats + XP, no AI)
+ */
+export const chooseLifeQuestOption = async (id: string,
+    lifeQuestChooseInput: LifeQuestChooseInput, options?: RequestInit): Promise<LifeQuestChooseResult> => {
+
+  return customFetch<LifeQuestChooseResult>(getChooseLifeQuestOptionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lifeQuestChooseInput,)
+  }
+);}
+
+
+
+
+export const getChooseLifeQuestOptionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseLifeQuestOption>>, TError,{id: string;data: BodyType<LifeQuestChooseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof chooseLifeQuestOption>>, TError,{id: string;data: BodyType<LifeQuestChooseInput>}, TContext> => {
+
+const mutationKey = ['chooseLifeQuestOption'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof chooseLifeQuestOption>>, {id: string;data: BodyType<LifeQuestChooseInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  chooseLifeQuestOption(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChooseLifeQuestOptionMutationResult = NonNullable<Awaited<ReturnType<typeof chooseLifeQuestOption>>>
+    export type ChooseLifeQuestOptionMutationBody = BodyType<LifeQuestChooseInput>
+    export type ChooseLifeQuestOptionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pick a choice for the current stage (applies stats + XP, no AI)
+ */
+export const useChooseLifeQuestOption = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseLifeQuestOption>>, TError,{id: string;data: BodyType<LifeQuestChooseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof chooseLifeQuestOption>>,
+        TError,
+        {id: string;data: BodyType<LifeQuestChooseInput>},
+        TContext
+      > => {
+      return useMutation(getChooseLifeQuestOptionMutationOptions(options));
+    }
+
+export const getAbandonLifeQuestUrl = (id: string,) => {
+
+
+
+
+  return `/api/life-quests/${id}/abandon`
+}
+
+/**
+ * @summary Abandon an active Life Quest (small consolation XP)
+ */
+export const abandonLifeQuest = async (id: string, options?: RequestInit): Promise<LifeQuest> => {
+
+  return customFetch<LifeQuest>(getAbandonLifeQuestUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAbandonLifeQuestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof abandonLifeQuest>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof abandonLifeQuest>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['abandonLifeQuest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof abandonLifeQuest>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  abandonLifeQuest(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AbandonLifeQuestMutationResult = NonNullable<Awaited<ReturnType<typeof abandonLifeQuest>>>
+
+    export type AbandonLifeQuestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Abandon an active Life Quest (small consolation XP)
+ */
+export const useAbandonLifeQuest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof abandonLifeQuest>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof abandonLifeQuest>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAbandonLifeQuestMutationOptions(options));
+    }
 
 export const getCreateBattleUrl = () => {
 

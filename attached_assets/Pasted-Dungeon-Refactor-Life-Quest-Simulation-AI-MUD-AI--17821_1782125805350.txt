@@ -1,0 +1,281 @@
+Dungeon Refactor — Life Quest Simulation
+
+목표:
+
+현재 AI MUD 던전은 매 턴마다 AI가 지문을 생성해서 진행이 느리고 비용이 큽니다.
+
+이 기능을 판타지 RPG 던전이 아니라, Another Me의 성격과 의사결정 스타일을 성장시키는 생활 시뮬레이션 게임으로 개편합니다.
+
+기존 “던전” 기능을 완전히 삭제하지 말고, 내부 구조를 “Life Quest” 방식으로 리팩터링해주세요.
+
+---
+
+핵심 변경 방향
+
+기존:
+
+* 매 턴 AI 호출
+* 판타지 RPG 스타일
+* AI 던전 마스터가 매번 지문 생성
+* 진행 속도 느림
+
+변경:
+
+* 입장 시 AI가 전체 시나리오와 스테이지를 한 번에 생성
+* 이후 진행은 미리 생성된 선택지 기반
+* 중요한 요약/결과 단계에서만 AI 호출 optional
+* 장르는 생활 시뮬레이션 / 인생 선택 게임
+* 사용자의 선택이 Another Me 성장 스탯에 반영
+
+---
+
+1. 명칭 변경
+
+UI에서는 “던전”이라는 표현을 줄이고 아래 표현을 사용해주세요.
+
+권장 명칭:
+
+* 라이프 퀘스트
+* 오늘의 시나리오
+* 선택의 하루
+
+기존 라우트나 내부 명칭은 크게 깨지지 않게 유지하되, 사용자에게 보이는 문구는 “라이프 퀘스트” 중심으로 변경해주세요.
+
+---
+
+2. Life Quest 구조
+
+입장 시 하나의 Life Quest Scenario를 생성합니다.
+
+Scenario 구성:
+
+* id
+* title
+* theme
+* goal
+* summary
+* currentStageIndex
+* status
+
+  * active
+  * completed
+  * failed
+* stages
+
+각 stage 구성:
+
+* stageNumber
+* title
+* situation
+* choices
+
+각 choice 구성:
+
+* id
+* label
+* description
+* resultText
+* statChanges
+* riskLevel
+* nextStageIndex optional
+
+예시:
+
+{
+"title": "중요한 발표를 앞둔 하루",
+"theme": "work",
+"goal": "발표를 성공적으로 마치고 동료와의 갈등을 줄인다",
+"stages": [
+{
+"stageNumber": 1,
+"title": "아침의 선택",
+"situation": "늦잠을 잤습니다. 발표 자료는 아직 완성되지 않았습니다.",
+"choices": [
+{
+"label": "핵심부터 빠르게 정리한다",
+"resultText": "완벽하진 않지만 발표의 중심 흐름을 살렸습니다.",
+"statChanges": {
+"logic": 1,
+"decisiveness": 1
+},
+"riskLevel": "medium"
+}
+]
+}
+]
+}
+
+---
+
+3. AI 호출 방식
+
+AI 호출은 Life Quest 시작 시 1회만 수행합니다.
+
+생성할 것:
+
+* 4~6개 stage
+* 각 stage당 선택지 3~4개
+* 각 선택지의 결과문
+* 각 선택지의 스탯 변화
+* 마지막 stage 완료 시 엔딩 결과
+
+매 턴 AI 호출 금지.
+
+선택 시에는 이미 생성된 choice.resultText를 보여주고, statChanges를 적용합니다.
+
+완료 시 결과 요약이 필요하면 optional로 AI 호출 가능하지만, 기본 MVP에서는 생성된 stage 데이터만으로 완료 처리해주세요.
+
+---
+
+4. Life Quest 테마
+
+아래 테마 중 하나를 선택하거나 랜덤 생성합니다.
+
+* work: 직장/업무
+* relationship: 인간관계
+* money: 돈 관리
+* health: 생활 루틴
+* study: 공부/성장
+* conflict: 갈등 해결
+* startup: 창업/비즈니스
+* daily: 일상 선택
+
+주의:
+
+* 과도하게 무거운 심리 상담처럼 만들지 말 것
+* 의료/법률/금융 조언처럼 보이지 않게 할 것
+* “선택 시뮬레이션” 톤 유지
+
+---
+
+5. 성장 스탯 연결
+
+선택 결과는 기존 Another Me 스탯에 반영합니다.
+
+추천 매핑:
+
+* 논리적 선택 → logic +1
+* 타인을 배려하는 선택 → empathy +1
+* 설득/협상 선택 → persuasion 또는 conviction +1
+* 빠른 결정 → decisiveness +1
+* 감정 조절 → emotional_control +1
+* 창의적 해결 → creativity 또는 wit +1
+* 배움/정보 탐색 → knowledge +1
+
+기존 DB 스탯 이름을 확인해서 현재 프로젝트 명칭에 맞게 매핑해주세요.
+
+---
+
+6. XP 지급
+
+기존 던전 XP 규칙을 Life Quest에 맞게 유지/수정합니다.
+
+권장:
+
+* 스테이지 선택 1회: Persona EXP +2
+* Life Quest 완료: Persona EXP +50
+* 실패/중도 종료: Persona EXP +10
+
+기존 XP 이벤트 source_type=dungeon을 유지해도 되지만,
+event_type은 life_quest_action / life_quest_complete로 분리 가능하면 분리해주세요.
+
+중복 지급 방지 source_key:
+
+* life_quest_action:{questId}:{stageNumber}:{userId}
+* life_quest_complete:{questId}:{userId}
+
+---
+
+7. UI 변경
+
+던전 화면을 Life Quest 화면으로 개편합니다.
+
+입장 전:
+
+* “오늘의 라이프 퀘스트”
+* “선택이 Another Me를 성장시킵니다.”
+* 테마 선택 또는 랜덤 시작 버튼
+
+진행 화면:
+
+* 퀘스트 제목
+* 목표
+* 현재 스테이지 1/5
+* 상황 카드
+* 선택지 버튼 3~4개
+
+선택 후:
+
+* 결과 카드
+* 성장한 스탯 표시
+* 다음 스테이지 버튼
+
+완료 화면:
+
+* 오늘의 선택 요약
+* 성장한 스탯
+* 획득 EXP
+* “Another Me 보기”
+* “다시 플레이”
+
+---
+
+8. 기존 기능과의 호환성
+
+주의:
+
+* 기존 던전 관련 DB/API를 완전히 삭제하지 말 것
+* 가능하면 기존 dungeon room/session 구조를 재사용
+* 기존 XP/Clan XP 연동이 깨지지 않게 유지
+* 기존 Daily Quest / Achievement에서 dungeon 이벤트를 참조한다면 호환 유지
+* 기존 Clan Memory에서 dungeon source_type을 참조한다면 호환 유지
+
+---
+
+9. AI 프롬프트 규칙
+
+Life Quest 생성 프롬프트에는 아래 원칙을 포함해주세요.
+
+* 한국어로 작성
+* 생활 시뮬레이션 톤
+* 판타지, 몬스터, 전투, 마법 요소 금지
+* 사용자가 실제 생활에서 할 법한 선택지 제공
+* 각 선택지는 서로 다른 성향을 반영
+* 정답 하나만 있는 구조 금지
+* 선택마다 장단점이 있어야 함
+* 의료/법률/투자 조언 금지
+* 민감한 개인정보 요구 금지
+* 너무 긴 지문 금지
+* 모바일 화면에서 읽기 좋게 짧게 작성
+
+---
+
+10. 테스트
+
+확인할 것:
+
+1. Life Quest 시작 시 AI 호출 1회만 발생
+2. stage 4~6개 생성
+3. 각 stage 선택지 3~4개 생성
+4. 선택 시 AI 호출 없이 다음 단계 진행
+5. 선택 결과에 따라 XP 지급
+6. 선택 결과에 따라 스탯 증가
+7. Life Quest 완료 시 EXP 지급
+8. 중복 선택/재요청 시 중복 지급 방지
+9. 기존 Clan XP 연동 유지
+10. 기존 Quest/Achievement 참조가 깨지지 않음
+11. 판타지/전투 문구가 UI에서 제거됨
+12. 타입체크 통과
+
+---
+
+완료 후 한국어로 정리:
+
+1. 변경 파일 목록
+2. 기존 던전 구조에서 변경된 점
+3. AI 호출 감소 방식
+4. Life Quest 데이터 구조
+5. XP/스탯 반영 방식
+6. 모바일 화면 흐름
+7. 테스트 결과
+8. 남은 개선 포인트

@@ -167,7 +167,7 @@ export default function ClanMemoriesScreen() {
                 : "이 유형의 가문 기억이 없습니다."}
             </Text>
             <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-              전투와 던전에서 얻은 교훈을 가문의 기억으로 남겨보세요.
+              토크배틀과 라이프 퀘스트에서 얻은 교훈을 가문의 기억으로 남겨보세요.
             </Text>
             {clanId ? (
               <Pressable

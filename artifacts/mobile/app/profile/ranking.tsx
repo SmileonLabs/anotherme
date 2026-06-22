@@ -213,7 +213,7 @@ export default function RankingScreen() {
               아직 랭킹 데이터가 부족합니다.
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              토크배틀과 던전을 플레이해 Another Me를 성장시켜보세요.
+              토크배틀과 라이프 퀘스트를 플레이해 Another Me를 성장시켜보세요.
             </Text>
             <View style={styles.ctaRow}>
               <Pressable
@@ -224,11 +224,11 @@ export default function RankingScreen() {
                 <Text style={[styles.ctaText, { color: colors.background }]}>토크배틀 하러가기</Text>
               </Pressable>
               <Pressable
-                onPress={() => router.push("/dungeon/create")}
+                onPress={() => router.push("/(tabs)/dungeon")}
                 style={[styles.ctaBtnOutline, { borderColor: colors.border }]}
               >
                 <Feather name="compass" size={15} color={colors.foreground} />
-                <Text style={[styles.ctaTextOutline, { color: colors.foreground }]}>던전 입장하기</Text>
+                <Text style={[styles.ctaTextOutline, { color: colors.foreground }]}>라이프 퀘스트</Text>
               </Pressable>
             </View>
           </View>

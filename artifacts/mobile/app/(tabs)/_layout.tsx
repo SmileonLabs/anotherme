@@ -28,7 +28,7 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="dungeon">
         <Icon sf={{ default: "map", selected: "map.fill" }} />
-        <Label>던전</Label>
+        <Label>라이프</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="persona">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
@@ -98,7 +98,7 @@ function ClassicTabLayout() {
       />
       <Tabs.Screen
         name="dungeon"
-        options={{ title: "던전", tabBarIcon: tabIcon("map", "compass") }}
+        options={{ title: "라이프", tabBarIcon: tabIcon("map", "compass") }}
       />
       <Tabs.Screen
         name="persona"

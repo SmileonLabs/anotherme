@@ -38,7 +38,7 @@ const SLIDES: Slide[] = [
     icon: "trending-up",
     accent: "#7C5CFC",
     title: "활동할수록 성장",
-    body: "토크배틀과 던전에서 쌓은 경험치로\n나만의 자아가 레벨업하고 능력치가 자랍니다.",
+    body: "토크배틀과 라이프 퀘스트에서 쌓은 경험치로\n나만의 자아가 레벨업하고 능력치가 자랍니다.",
   },
   {
     icon: "user",

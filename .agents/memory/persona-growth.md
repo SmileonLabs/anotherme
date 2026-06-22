@@ -136,3 +136,22 @@ Reward source_keys: `quest:{periodKey}:{questKey}:{userId}`,
 **Recompute upsert must never clear `completedAt`.** Use
 `coalesce(completed_at, <now-or-null>)` on conflict — writing a bare `null` when
 the current recompute is below target would erase an earlier completion.
+
+## Life Quest (single-player life-sim replacing multiplayer dungeon)
+
+**Abandon must NOT be a completion event.** Finishing a quest and giving up are
+distinct growth events: `life_quest_complete` (full XP + flat clan completion
+bonus, counts toward the "완료" achievement/dungeonGoal counter) vs
+`life_quest_abandon` (small consolation XP only, NO clan bonus, excluded from all
+completion counters). **Why:** reusing `life_quest_complete` for abandon (with an
+`abandoned:true` metadata flag) silently grants the completion clan bonus and
+unlocks the completion achievement on give-up. Keep them as separate event-type
+strings — the metadata flag is not enough because counters/bonuses key off
+eventType, not metadata.
+
+**Dungeon→Life Quest counter aliasing.** Quest/achievement SQL counters count the
+old and new events together: action counters match `('dungeon_action','life_quest_action')`,
+completion counters match `('dungeon_result','life_quest_complete')` — abandon is
+in neither. The user-facing feature was renamed 던전→라이프 퀘스트 but all DB
+keys, `sourceType:'dungeon'`, and the `dungeon` route/tab names were kept for
+back-compat; only labels/text changed.

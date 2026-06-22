@@ -1,34 +1,27 @@
 import { CustomScrollView } from "@/components/CustomScroll";
 import { useFocusEffect, useRouter } from "expo-router";
-import React from "react";
-import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useListRooms } from "@workspace/api-client-react";
-import { EmptyState } from "@/components/EmptyState";
+import { useCreateLifeQuest, useGetActiveLifeQuest } from "@workspace/api-client-react";
+import { crossAlert } from "@/lib/crossAlert";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
+import { LIFE_QUEST_THEMES, themeMeta, type LifeQuestThemeKey } from "@/constants/lifeQuest";
 
-function formatTime(dateStr?: string | null) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-}
-
-export default function DungeonScreen() {
+export default function LifeQuestLobbyScreen() {
   const router = useRouter();
   const colors = useColors();
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
 
-  const { data: rooms = [], refetch, isRefetching } = useListRooms();
+  const { data: active, refetch, isRefetching } = useGetActiveLifeQuest();
+  const createQuest = useCreateLifeQuest();
+  const [starting, setStarting] = useState<string | null>(null);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -36,12 +29,29 @@ export default function DungeonScreen() {
     }, [refetch]),
   );
 
-  const dungeons = rooms.filter((r) => r.type === "dungeon");
+  const activeQuest = active?.quest ?? null;
+
+  const start = async (theme: LifeQuestThemeKey | null) => {
+    if (createQuest.isPending) return;
+    setStarting(theme ?? "random");
+    try {
+      const quest = await createQuest.mutateAsync({
+        data: { theme: theme ?? null },
+      });
+      router.push({ pathname: "/dungeon/[id]", params: { id: quest.id } });
+    } catch {
+      crossAlert("오류", "라이프 퀘스트를 생성하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setStarting(null);
+    }
+  };
+
+  const busy = createQuest.isPending;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.brand, { color: colors.foreground }]}>던전</Text>
+        <Text style={[styles.brand, { color: colors.foreground }]}>라이프 퀘스트</Text>
       </View>
 
       <CustomScrollView
@@ -52,89 +62,91 @@ export default function DungeonScreen() {
         }
       >
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-          AI 던전마스터가 이끄는 텍스트 모험. 친구들과 함께 선택하고, 결단·지식을 키워요.
+          현실 같은 상황 속 선택으로 또 다른 나를 성장시켜요. 정답은 없고, 모든 선택이 나를 만들어요.
         </Text>
 
-        {/* New dungeon CTA */}
-        <Pressable
-          onPress={() => router.push("/dungeon/create")}
-          style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
-        >
-          <LinearGradient
-            colors={(isDark ? gradientsDark : gradients).soft}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.ctaCard}
+        {activeQuest ? (
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: "/dungeon/[id]", params: { id: activeQuest.id } })
+            }
+            style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
           >
-            <View style={[styles.ctaIcon, { backgroundColor: isDark ? "#3A2618" : "#FFF0E1" }]}>
-              <Feather name="compass" size={26} color="#FB923C" />
-            </View>
-            <View style={styles.ctaBody}>
-              <Text style={[styles.ctaTitle, { color: colors.foreground }]}>새 던전 시작</Text>
-              <Text style={[styles.ctaSub, { color: colors.mutedForeground }]}>
-                테마를 고르고 모험을 떠나요
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
-          </LinearGradient>
+            <LinearGradient
+              colors={(isDark ? gradientsDark : gradients).soft}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.ctaCard}
+            >
+              <View style={[styles.ctaIcon, { backgroundColor: isDark ? "#3A2618" : "#FFF0E1" }]}>
+                <Feather name={themeMeta(activeQuest.theme).icon} size={24} color="#FB923C" />
+              </View>
+              <View style={styles.ctaBody}>
+                <Text style={[styles.ctaLabel, { color: colors.mutedForeground }]}>이어서 하기</Text>
+                <Text style={[styles.ctaTitle, { color: colors.foreground }]} numberOfLines={1}>
+                  {activeQuest.title}
+                </Text>
+                <Text style={[styles.ctaSub, { color: colors.mutedForeground }]}>
+                  {Math.min(activeQuest.currentStageIndex + 1, activeQuest.stages.length)} /{" "}
+                  {activeQuest.stages.length} 단계
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+            </LinearGradient>
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          onPress={() => start(null)}
+          disabled={busy}
+          style={({ pressed }) => [
+            styles.randomBtn,
+            { backgroundColor: colors.primary, opacity: pressed || busy ? 0.85 : 1 },
+          ]}
+        >
+          {starting === "random" ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Feather name="shuffle" size={18} color="#fff" />
+              <Text style={styles.randomBtnText}>랜덤 퀘스트 시작</Text>
+            </>
+          )}
         </Pressable>
 
-        {/* Ongoing dungeons */}
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>진행 중인 모험</Text>
-        {dungeons.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <EmptyState
-              icon="compass"
-              title="아직 떠난 모험이 없어요"
-              subtitle="첫 던전을 만들어 AI 던전마스터와 모험을 시작해보세요."
-              actionLabel="던전 만들기"
-              actionIcon="plus"
-              onAction={() => router.push("/dungeon/create")}
-            />
-          </View>
-        ) : (
-          <View style={[styles.listCard, { backgroundColor: colors.card }]}>
-            {dungeons.map((room, i) => {
-              const unread = room.unreadCount ?? 0;
-              return (
-                <Pressable
-                  key={room.id}
-                  onPress={() => router.push({ pathname: "/chat/[id]", params: { id: room.id } })}
-                  style={({ pressed }) => [
-                    styles.listRow,
-                    {
-                      opacity: pressed ? 0.6 : 1,
-                      borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
-                      borderTopColor: colors.border,
-                    },
-                  ]}
-                >
-                  <View style={[styles.listIcon, { backgroundColor: colors.accent }]}>
-                    <Feather name="compass" size={20} color={colors.primary} />
-                  </View>
-                  <View style={styles.listBody}>
-                    <Text style={[styles.listTitle, { color: colors.foreground }]} numberOfLines={1}>
-                      {room.name ?? "던전"}
-                    </Text>
-                    <Text style={[styles.listSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                      {room.lastMessage ?? "모험이 시작되었어요"}
-                    </Text>
-                  </View>
-                  <View style={styles.listRight}>
-                    <Text style={[styles.listTime, { color: colors.mutedForeground }]}>
-                      {formatTime(room.lastMessageAt)}
-                    </Text>
-                    {unread > 0 ? (
-                      <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                        <Text style={styles.badgeText}>{unread > 99 ? "99+" : unread}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>테마 선택</Text>
+        <View style={styles.grid}>
+          {LIFE_QUEST_THEMES.map((t) => {
+            const loading = starting === t.key;
+            return (
+              <Pressable
+                key={t.key}
+                onPress={() => start(t.key)}
+                disabled={busy}
+                style={({ pressed }) => [
+                  styles.themeCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: pressed || (busy && !loading) ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <View style={[styles.themeIcon, { backgroundColor: t.color + "22" }]}>
+                  {loading ? (
+                    <ActivityIndicator color={t.color} />
+                  ) : (
+                    <Feather name={t.icon} size={20} color={t.color} />
+                  )}
+                </View>
+                <Text style={[styles.themeLabel, { color: colors.foreground }]}>{t.label}</Text>
+                <Text style={[styles.themeDesc, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  {t.desc}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </CustomScrollView>
     </View>
   );
@@ -151,27 +163,31 @@ const styles = StyleSheet.create({
   },
   brand: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, marginTop: 4, marginBottom: 14 },
-  ctaCard: {
+  ctaCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 18, padding: 16, marginBottom: 14 },
+  ctaIcon: { width: 52, height: 52, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  ctaBody: { flex: 1, gap: 2 },
+  ctaLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5 },
+  ctaTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  ctaSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  randomBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    borderRadius: 18,
-    padding: 16,
+    justifyContent: "center",
+    gap: 8,
+    height: 52,
+    borderRadius: 14,
   },
-  ctaIcon: { width: 52, height: 52, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-  ctaBody: { flex: 1, gap: 3 },
-  ctaTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  ctaSub: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 26, marginBottom: 10 },
-  emptyWrap: { minHeight: 240 },
-  listCard: { borderRadius: 16, overflow: "hidden" },
-  listRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
-  listIcon: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  listBody: { flex: 1, gap: 2 },
-  listTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  listSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  listRight: { alignItems: "flex-end", gap: 4 },
-  listTime: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  badgeText: { fontSize: 11, fontFamily: "Inter_700Bold", color: "#fff" },
+  randomBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 26, marginBottom: 12 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  themeCard: {
+    width: "48%",
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    gap: 8,
+  },
+  themeIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  themeLabel: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  themeDesc: { fontSize: 12, fontFamily: "Inter_400Regular" },
 });

@@ -27,6 +27,9 @@ export type GrowthEventType =
   | "battle_result"
   | "dungeon_action"
   | "dungeon_result"
+  | "life_quest_action"
+  | "life_quest_complete"
+  | "life_quest_abandon"
   | "quest_reward"
   | "achievement_reward";
 
