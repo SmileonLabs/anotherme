@@ -86,6 +86,12 @@ async function main() {
     EXPO_PUBLIC_REPL_ID:
       process.env.REPL_ID || process.env.EXPO_PUBLIC_REPL_ID || "",
     EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkKey,
+    // Production-only: a pk_live Clerk instance resolves its Frontend API at
+    // clerk.<domain>, which has no DNS on *.replit.app. Route Clerk through the
+    // api-server proxy (/api/__clerk) instead so the browser can reach it.
+    // build.js only runs for the production deploy, so this never leaks to dev.
+    EXPO_PUBLIC_CLERK_PROXY_URL:
+      process.env.EXPO_PUBLIC_CLERK_PROXY_URL || `https://${domain}/api/__clerk`,
   };
 
   await run(
