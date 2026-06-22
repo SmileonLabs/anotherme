@@ -23,6 +23,7 @@ export * from './battleTurnInput';
 export * from './blockInput';
 export * from './call';
 export * from './callSession';
+export * from './callStatus';
 export * from './callWithCaller';
 export * from './cancelBattle200';
 export * from './chatRoom';

@@ -1,7 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@clerk/expo";
 import { useGetMe, useRegisterPushToken } from "@workspace/api-client-react";
-import { ensureWebPushIfGranted, webPushSupported } from "@/lib/webPush";
+import {
+  ensureWebPushIfGranted,
+  registerPushServiceWorker,
+  webPushSupported,
+} from "@/lib/webPush";
 
 /**
  * Web-only: silently re-subscribes to web push on load when the user is signed
@@ -27,6 +31,15 @@ export function PushRegistrar() {
   useEffect(() => {
     if (!isSignedIn) done.current = false;
   }, [isSignedIn]);
+
+  // Register the push service worker once on load. Web push (and `.ready`, which
+  // several components await) only works once a SW controls the page, and the
+  // Expo web app ships none by default — so register ours up front, independent
+  // of sign-in. Idempotent + best-effort.
+  useEffect(() => {
+    if (!webPushSupported) return;
+    void registerPushServiceWorker();
+  }, []);
 
   // When the browser rotates the push subscription, the service worker
   // re-subscribes and posts the fresh subscription here so we re-register it

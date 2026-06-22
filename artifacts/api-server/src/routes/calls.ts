@@ -9,10 +9,11 @@ import {
   messagesTable,
   chatRoomsTable,
   chatRoomMembersTable,
+  blockedUsersTable,
 } from "@workspace/db";
 import type { Call } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { sendCallPush } from "../lib/push";
+import { sendCallPush, incomingCallData } from "../lib/push";
 
 const router: IRouter = Router();
 
@@ -29,15 +30,43 @@ function livekitConfigured(): boolean {
 // Opportunistically transition a long-unanswered ringing call to "missed".
 async function maybeExpire(call: Call): Promise<Call> {
   if (call.status === "ringing" && Date.now() - call.createdAt.getTime() > RING_TIMEOUT_MS) {
+    const now = new Date();
     const [updated] = await db
       .update(callsTable)
-      .set({ status: "missed", endedAt: new Date() })
+      .set({ status: "missed", missedAt: now, endedAt: now })
       .where(and(eq(callsTable.id, call.id), eq(callsTable.status, "ringing")))
       .returning();
-    if (updated) await endCallMessage(call.id);
+    if (updated) await endCallMessage(call.id, "missed");
     return updated ?? call;
   }
   return call;
+}
+
+/** Whether either user has blocked the other (calls are mutually disallowed). */
+async function isBlockedBetween(a: string, b: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: blockedUsersTable.blockerUserId })
+    .from(blockedUsersTable)
+    .where(
+      or(
+        and(
+          eq(blockedUsersTable.blockerUserId, a),
+          eq(blockedUsersTable.blockedUserId, b),
+        ),
+        and(
+          eq(blockedUsersTable.blockerUserId, b),
+          eq(blockedUsersTable.blockedUserId, a),
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Seconds the two parties were actually connected, or null if never answered. */
+function callDurationSec(c: Call): number | null {
+  if (!c.acceptedAt || !c.endedAt) return null;
+  return Math.max(0, Math.round((c.endedAt.getTime() - c.acceptedAt.getTime()) / 1000));
 }
 
 async function createToken(roomName: string, identity: string, name: string): Promise<string> {
@@ -78,13 +107,23 @@ async function postCallMessage(roomId: string, callerId: string, callId: string)
     );
 }
 
-// Flips the in-chat call card to "ended" so its "통화 참여" button disappears.
-// The call row has no roomId, so the card is located by its callId substring in
-// the JSON content (avoids a migration).
-async function endCallMessage(callId: string): Promise<void> {
+// Flips the in-chat call card to its FINAL state so the "통화 참여" button
+// disappears and the card can render a distinct result (ended / missed /
+// declined / cancelled) with an optional duration. The card is located by its
+// callId substring in the JSON content (avoids a migration).
+async function endCallMessage(
+  callId: string,
+  status: "ended" | "missed" | "declined" | "cancelled",
+  durationSec?: number | null,
+): Promise<void> {
+  const payload: { callId: string; status: string; durationSec?: number } = {
+    callId,
+    status,
+  };
+  if (typeof durationSec === "number") payload.durationSec = durationSec;
   await db
     .update(messagesTable)
-    .set({ content: JSON.stringify({ callId, status: "ended" }) })
+    .set({ content: JSON.stringify(payload) })
     .where(
       and(eq(messagesTable.type, "call"), like(messagesTable.content, `%"callId":"${callId}"%`)),
     );
@@ -96,9 +135,15 @@ function serializeCall(c: Call) {
     roomName: c.roomName,
     callerId: c.callerId,
     calleeId: c.calleeId,
+    chatRoomId: c.chatRoomId ?? null,
     status: c.status,
     createdAt: c.createdAt.toISOString(),
+    acceptedAt: c.acceptedAt?.toISOString() ?? null,
+    declinedAt: c.declinedAt?.toISOString() ?? null,
+    missedAt: c.missedAt?.toISOString() ?? null,
+    cancelledAt: c.cancelledAt?.toISOString() ?? null,
     endedAt: c.endedAt?.toISOString() ?? null,
+    durationSec: callDurationSec(c),
   };
 }
 
@@ -130,16 +175,18 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const roomName = `call_${crypto.randomUUID()}`;
-  const [call] = await db
-    .insert(callsTable)
-    .values({ roomName, callerId: userId, calleeId, status: "ringing" })
-    .returning();
+  // Block list is mutual for calls: if either side blocked the other, the call
+  // is refused. 403 (not 404) so the caller gets a clear, honest failure.
+  if (await isBlockedBetween(userId, calleeId)) {
+    res.status(403).json({ error: "차단된 상대에게는 전화를 걸 수 없습니다" });
+    return;
+  }
 
-  // Post the in-chat call card so both parties can join from the conversation.
-  // Only after verifying roomId is a 1:1 room where BOTH caller and callee are
-  // members — otherwise an authenticated user could inject a call card and mutate
-  // room metadata (lastMessage/hiddenAt) in arbitrary rooms.
+  // Validate the originating 1:1 room up front (used both to store chatRoomId on
+  // the call row and to post the in-chat card). Only a "direct" room where BOTH
+  // parties are members is trusted — otherwise an authenticated user could inject
+  // a call card / mutate room metadata (lastMessage/hiddenAt) in arbitrary rooms.
+  let validRoomId: string | null = null;
   if (roomId) {
     try {
       const [room] = await db
@@ -151,25 +198,50 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
         .from(chatRoomMembersTable)
         .where(eq(chatRoomMembersTable.roomId, roomId));
       const memberIds = new Set(members.map((m) => m.userId));
-      const valid =
-        room?.type === "direct" && memberIds.has(userId) && memberIds.has(calleeId);
-      if (valid) {
-        await postCallMessage(roomId, userId, call.id);
+      if (room?.type === "direct" && memberIds.has(userId) && memberIds.has(calleeId)) {
+        validRoomId = roomId;
       } else {
         req.log.warn({ roomId, userId, calleeId }, "Skipped call card for invalid room");
       }
     } catch (err) {
-      req.log.error({ err, roomId, callId: call.id }, "Failed to post call message");
+      req.log.error({ err, roomId }, "Failed to validate call room");
+    }
+  }
+
+  const roomName = `call_${crypto.randomUUID()}`;
+  const [call] = await db
+    .insert(callsTable)
+    .values({
+      roomName,
+      callerId: userId,
+      calleeId,
+      chatRoomId: validRoomId,
+      status: "ringing",
+    })
+    .returning();
+
+  // Post the in-chat call card so both parties can join from the conversation.
+  if (validRoomId) {
+    try {
+      await postCallMessage(validRoomId, userId, call.id);
+    } catch (err) {
+      req.log.error({ err, roomId: validRoomId, callId: call.id }, "Failed to post call message");
     }
   }
 
   // Always-on voice-call push: ignores focus/away gating AND the user's
-  // notification toggle so an incoming call is never silently missed.
+  // notification toggle so an incoming call is never silently missed. The data
+  // payload lets the service worker route a tap straight to the incoming screen.
   void sendCallPush(calleeId, {
     title: "보이스톡",
     body: `${req.dbUser!.nickname}님이 음성 통화를 걸었습니다`,
-    url: roomId ? `/chat/${roomId}` : "/",
+    url: validRoomId ? `/chat/${validRoomId}` : "/",
     tag: `call-${call.id}`,
+    data: incomingCallData({
+      callId: call.id,
+      chatRoomId: validRoomId,
+      callerUserId: userId,
+    }),
   });
 
   const token = await createToken(roomName, userId, req.dbUser!.nickname);
@@ -193,11 +265,15 @@ router.get("/calls/incoming", requireAuth, async (req, res): Promise<void> => {
 
   const result = await Promise.all(
     rows.map(async (c) => {
-      const [caller] = await db.select().from(usersTable).where(eq(usersTable.id, c.callerId));
-      return { ...serializeCall(c), caller: caller ? toPublicUser(caller) : null };
+      // Authoritatively expire a >45s ringing call so it never surfaces as a
+      // fresh incoming ring (the 60s query window is wider than the timeout).
+      const fresh = await maybeExpire(c);
+      if (fresh.status !== "ringing") return null;
+      const [caller] = await db.select().from(usersTable).where(eq(usersTable.id, fresh.callerId));
+      return caller ? { ...serializeCall(fresh), caller: toPublicUser(caller) } : null;
     }),
   );
-  res.json(result.filter((r) => r.caller));
+  res.json(result.filter((r) => r !== null));
 });
 
 router.get("/calls/:id", requireAuth, async (req, res): Promise<void> => {
@@ -224,21 +300,31 @@ router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> =>
     res.status(404).json({ error: "Call not found" });
     return;
   }
+  // Enforce the server-authoritative ring timeout here too: a >45s ringing call
+  // must flip to "missed" and become unacceptable even if no prior GET/join
+  // touched it. The status-guarded UPDATE below then fails to find a "ringing"
+  // row and we fall through to the dead-call 409.
+  const fresh = await maybeExpire(call);
+  // Stamp acceptedAt only on the ringing→active transition (so a repeat accept
+  // on an already-active call doesn't reset the connect time used for duration).
+  const now = new Date();
   const [updated] = await db
     .update(callsTable)
-    .set({ status: "active" })
-    .where(
-      and(
-        eq(callsTable.id, raw),
-        or(eq(callsTable.status, "ringing"), eq(callsTable.status, "active")),
-      ),
-    )
+    .set({ status: "active", acceptedAt: now })
+    .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
     .returning();
   if (!updated) {
+    // Already active (re-accept) is fine — return current token. Anything else
+    // (ended/declined/missed/etc.) is a dead call.
+    if (fresh.status === "active") {
+      const token = await createToken(fresh.roomName, userId, req.dbUser!.nickname);
+      res.json({ call: serializeCall(fresh), token, url: LIVEKIT_URL });
+      return;
+    }
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
-  const token = await createToken(call.roomName, userId, req.dbUser!.nickname);
+  const token = await createToken(updated.roomName, userId, req.dbUser!.nickname);
   res.json({ call: serializeCall(updated), token, url: LIVEKIT_URL });
 });
 
@@ -250,13 +336,36 @@ router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> =
     res.status(404).json({ error: "Call not found" });
     return;
   }
+  const now = new Date();
   const [updated] = await db
     .update(callsTable)
-    .set({ status: "declined", endedAt: new Date() })
+    .set({ status: "declined", declinedAt: now, endedAt: now })
     .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
     .returning();
-  if (updated) await endCallMessage(raw);
+  if (updated) await endCallMessage(raw, "declined");
   // If it was already accepted/ended, leave it as-is and return current state.
+  res.json(serializeCall(updated ?? call));
+});
+
+// Cancel an outgoing call before it is answered. Caller-only; only a still-
+// ringing call can be cancelled (once accepted, use /end instead).
+router.post("/calls/:id/cancel", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
+  if (!call || call.callerId !== userId) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  const now = new Date();
+  const [updated] = await db
+    .update(callsTable)
+    .set({ status: "cancelled", cancelledAt: now, endedAt: now })
+    .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
+    .returning();
+  if (updated) await endCallMessage(raw, "cancelled");
+  // If the callee answered/declined in the race, return the current state so the
+  // caller's UI converges instead of forcing a cancelled card over a live call.
   res.json(serializeCall(updated ?? call));
 });
 
@@ -268,16 +377,49 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  if (call.status === "ended" || call.status === "declined") {
+  // Terminal states are immutable.
+  if (
+    call.status === "ended" ||
+    call.status === "declined" ||
+    call.status === "missed" ||
+    call.status === "cancelled"
+  ) {
     res.json(serializeCall(call));
     return;
   }
+  // A caller hanging up a still-ringing call (callee never answered) is a cancel,
+  // not an "ended" call — render it as cancelled so it isn't mistaken for a real
+  // (0s) conversation.
+  if (call.status === "ringing" && call.callerId === userId) {
+    const now = new Date();
+    const [cancelled] = await db
+      .update(callsTable)
+      .set({ status: "cancelled", cancelledAt: now, endedAt: now })
+      .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
+      .returning();
+    if (cancelled) {
+      await endCallMessage(raw, "cancelled");
+      res.json(serializeCall(cancelled));
+      return;
+    }
+  }
+  // Compare-and-set on the status we read so a concurrent decline/cancel/expire
+  // that terminalized the row between our read and this write is NOT clobbered
+  // back to "ended" (which would also flip the chat card to the wrong result).
+  const now = new Date();
   const [updated] = await db
     .update(callsTable)
-    .set({ status: "ended", endedAt: new Date() })
-    .where(eq(callsTable.id, raw))
+    .set({ status: "ended", endedAt: now })
+    .where(and(eq(callsTable.id, raw), eq(callsTable.status, call.status)))
     .returning();
-  await endCallMessage(raw);
+  if (!updated) {
+    // Someone else won the race and set a terminal state; converge to it without
+    // touching the card (the winning handler already wrote the correct card).
+    const [latest] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
+    res.json(serializeCall(latest ?? call));
+    return;
+  }
+  await endCallMessage(raw, "ended", callDurationSec(updated));
   res.json(serializeCall(updated));
 });
 
@@ -311,7 +453,7 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
   if (call.calleeId === userId && call.status === "ringing") {
     const [updated] = await db
       .update(callsTable)
-      .set({ status: "active" })
+      .set({ status: "active", acceptedAt: new Date() })
       .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
       .returning();
     if (!updated) {

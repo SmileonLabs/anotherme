@@ -11,6 +11,7 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
 import {
   useAcceptCall,
+  useCancelCall,
   useCreateCall,
   useDeclineCall,
   useEndCall,
@@ -26,7 +27,9 @@ import {
   primeAudioPlayback,
   setMuted,
   startRingback,
+  startRingtone,
   stopRingback,
+  stopRingtone,
   voiceCallSupported,
 } from "@/lib/voiceCall";
 import { useColors } from "@/hooks/useColors";
@@ -80,6 +83,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const createCall = useCreateCall();
   const acceptCall = useAcceptCall();
   const declineCall = useDeclineCall();
+  const cancelCall = useCancelCall();
   const endCall = useEndCall();
   const joinCallMut = useJoinCall();
 
@@ -118,6 +122,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
 
   const reset = useCallback(async () => {
     stopRingback();
+    stopRingtone();
     await leaveCall();
     setMode("idle");
     setActiveCall(null);
@@ -127,16 +132,28 @@ function CallManager({ children }: { children: React.ReactNode }) {
     setConnecting(false);
   }, []);
 
+  // Ring the incoming ringtone (벨소리) while the incoming modal is up, and stop
+  // it the moment we leave the incoming state (accept/decline/timeout/cancel).
+  useEffect(() => {
+    if (mode === "incoming") {
+      startRingtone();
+      return () => stopRingtone();
+    }
+  }, [mode]);
+
   useEffect(() => {
     if (!watched) return;
     const ended =
       watched.status === "declined" ||
       watched.status === "ended" ||
-      watched.status === "missed";
+      watched.status === "missed" ||
+      watched.status === "cancelled";
 
     if (modeRef.current === "incoming") {
-      // Caller hung up or the call expired before we answered → dismiss the modal.
+      // Caller cancelled/hung up or the call expired before we answered →
+      // dismiss the modal (the ringtone stops via the mode effect's cleanup).
       if (ended) {
+        stopRingtone();
         setIncoming(null);
         setMode("idle");
       }
@@ -236,13 +253,20 @@ function CallManager({ children }: { children: React.ReactNode }) {
 
   const handleEnd = useCallback(async () => {
     const id = activeCall?.id;
+    // A caller hanging up while still ringing (callee never answered) is a
+    // cancel, not an end — so it records as "cancelled" rather than a 0s call.
+    const wasRinging = modeRef.current === "outgoing";
     await reset();
     if (id) {
       try {
-        await endCall.mutateAsync({ id });
+        if (wasRinging) {
+          await cancelCall.mutateAsync({ id });
+        } else {
+          await endCall.mutateAsync({ id });
+        }
       } catch {}
     }
-  }, [activeCall, endCall, reset]);
+  }, [activeCall, cancelCall, endCall, reset]);
 
   const toggleMute = useCallback(async () => {
     const next = !muted;

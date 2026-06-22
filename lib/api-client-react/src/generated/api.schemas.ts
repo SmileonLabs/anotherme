@@ -618,15 +618,41 @@ export interface CreateCallInput {
   roomId?: string;
 }
 
+export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
+
+
+export const CallStatus = {
+  ringing: 'ringing',
+  active: 'active',
+  accepted: 'accepted',
+  declined: 'declined',
+  missed: 'missed',
+  cancelled: 'cancelled',
+  ended: 'ended',
+  failed: 'failed',
+} as const;
+
 export interface Call {
   id: string;
   roomName: string;
   callerId: string;
   calleeId: string;
-  status: string;
+  /** @nullable */
+  chatRoomId?: string | null;
+  status: CallStatus;
   createdAt: string;
   /** @nullable */
+  acceptedAt?: string | null;
+  /** @nullable */
+  declinedAt?: string | null;
+  /** @nullable */
+  missedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
   endedAt?: string | null;
+  /** @nullable */
+  durationSec?: number | null;
 }
 
 export interface CallWithCaller {
@@ -634,7 +660,9 @@ export interface CallWithCaller {
   roomName: string;
   callerId: string;
   calleeId: string;
-  status: string;
+  /** @nullable */
+  chatRoomId?: string | null;
+  status: CallStatus;
   createdAt: string;
   /** @nullable */
   endedAt?: string | null;

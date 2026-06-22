@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CallStatus } from './callStatus';
 import type { PublicUser } from './publicUser';
 
 export interface CallWithCaller {
@@ -12,7 +13,9 @@ export interface CallWithCaller {
   roomName: string;
   callerId: string;
   calleeId: string;
-  status: string;
+  /** @nullable */
+  chatRoomId?: string | null;
+  status: CallStatus;
   createdAt: string;
   /** @nullable */
   endedAt?: string | null;

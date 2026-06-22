@@ -9,6 +9,10 @@ export function startRingback(): void {}
 
 export function stopRingback(): void {}
 
+export function startRingtone(): void {}
+
+export function stopRingtone(): void {}
+
 export async function joinCall(_url: string, _token: string): Promise<void> {
   throw new Error("음성 통화는 웹에서만 지원됩니다");
 }

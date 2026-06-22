@@ -1003,7 +1003,8 @@ export const ListIncomingCallsResponseItem = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "endedAt": zod.string().nullish(),
   "caller": zod.object({
@@ -1029,9 +1030,15 @@ export const GetCallResponse = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
-  "endedAt": zod.string().nullish()
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 })
 
 
@@ -1048,9 +1055,15 @@ export const AcceptCallResponse = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
-  "endedAt": zod.string().nullish()
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 }),
   "token": zod.string(),
   "url": zod.string()
@@ -1070,9 +1083,15 @@ export const JoinCallResponse = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
-  "endedAt": zod.string().nullish()
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 }),
   "token": zod.string(),
   "url": zod.string()
@@ -1091,9 +1110,39 @@ export const DeclineCallResponse = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
-  "endedAt": zod.string().nullish()
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
+})
+
+
+/**
+ * @summary Cancel an outgoing call before it is answered (caller only)
+ */
+export const CancelCallParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CancelCallResponse = zod.object({
+  "id": zod.string(),
+  "roomName": zod.string(),
+  "callerId": zod.string(),
+  "calleeId": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "createdAt": zod.string(),
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 })
 
 
@@ -1109,9 +1158,15 @@ export const EndCallResponse = zod.object({
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
-  "status": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
-  "endedAt": zod.string().nullish()
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 })
 
 

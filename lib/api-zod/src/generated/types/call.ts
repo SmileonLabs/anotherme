@@ -5,14 +5,27 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CallStatus } from './callStatus';
 
 export interface Call {
   id: string;
   roomName: string;
   callerId: string;
   calleeId: string;
-  status: string;
+  /** @nullable */
+  chatRoomId?: string | null;
+  status: CallStatus;
   createdAt: string;
   /** @nullable */
+  acceptedAt?: string | null;
+  /** @nullable */
+  declinedAt?: string | null;
+  /** @nullable */
+  missedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
   endedAt?: string | null;
+  /** @nullable */
+  durationSec?: number | null;
 }

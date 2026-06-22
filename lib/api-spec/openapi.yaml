@@ -1354,6 +1354,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/Call"
 
+  /calls/{id}/cancel:
+    post:
+      operationId: cancelCall
+      tags: [calls]
+      summary: Cancel an outgoing call before it is answered (caller only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Call cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+
   /calls/{id}/end:
     post:
       operationId: endCall
@@ -3323,6 +3343,20 @@ components:
         roomId:
           type: string
 
+    CallStatus:
+      type: string
+      enum:
+        [
+          ringing,
+          active,
+          accepted,
+          declined,
+          missed,
+          cancelled,
+          ended,
+          failed,
+        ]
+
     Call:
       type: object
       required: [id, roomName, callerId, calleeId, status, createdAt]
@@ -3335,12 +3369,24 @@ components:
           type: string
         calleeId:
           type: string
+        chatRoomId:
+          type: ["string", "null"]
         status:
-          type: string
+          $ref: "#/components/schemas/CallStatus"
         createdAt:
           type: string
+        acceptedAt:
+          type: ["string", "null"]
+        declinedAt:
+          type: ["string", "null"]
+        missedAt:
+          type: ["string", "null"]
+        cancelledAt:
+          type: ["string", "null"]
         endedAt:
           type: ["string", "null"]
+        durationSec:
+          type: ["number", "null"]
 
     CallWithCaller:
       type: object
@@ -3354,8 +3400,10 @@ components:
           type: string
         calleeId:
           type: string
+        chatRoomId:
+          type: ["string", "null"]
         status:
-          type: string
+          $ref: "#/components/schemas/CallStatus"
         createdAt:
           type: string
         endedAt:

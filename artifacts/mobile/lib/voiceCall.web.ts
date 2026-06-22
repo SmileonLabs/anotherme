@@ -345,6 +345,108 @@ export function stopRingback(): void {
   }
 }
 
+// Incoming-call ringtone (벨소리) for the CALLEE — deliberately distinct from
+// the caller's ringback tone above so the two ends sound different. A brisk
+// "double-ring" cadence (two short bursts, then a gap) on a higher pair of
+// tones. Like the ringback it runs on its OWN dedicated AudioContext so it is
+// never torn down by the call audio graph, and is fully owned by
+// start/stopRingtone.
+//
+// NOTE: browsers may block this from starting without a prior user gesture
+// (autoplay policy). It is best-effort: a silent ringtone never blocks the
+// incoming UI, and the visible incoming modal is always shown regardless.
+let ringtoneCtx: AudioContext | null = null;
+let ringtoneOscillators: OscillatorNode[] = [];
+let ringtoneGain: GainNode | null = null;
+let ringtoneTimer: ReturnType<typeof setInterval> | null = null;
+let ringtoneActive = false;
+
+function ringtoneBurst(): void {
+  if (!ringtoneGain || !ringtoneCtx) return;
+  const now = ringtoneCtx.currentTime;
+  const g = ringtoneGain.gain;
+  g.cancelScheduledValues(now);
+  // Two short "rings" (0.35s on / 0.18s gap) then the interval's longer silence.
+  const ring = (start: number) => {
+    g.setValueAtTime(0.0001, start);
+    g.exponentialRampToValueAtTime(0.2, start + 0.04);
+    g.setValueAtTime(0.2, start + 0.3);
+    g.exponentialRampToValueAtTime(0.0001, start + 0.35);
+  };
+  ring(now);
+  ring(now + 0.53);
+}
+
+export function startRingtone(): void {
+  if (ringtoneActive) return;
+  let ctx: AudioContext | null = null;
+  try {
+    const Ctor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctor) return;
+    ctx = new Ctor();
+    void ctx.resume().catch(() => {});
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(ctx.destination);
+    const o1 = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+    // Higher, brighter pair than the 440/480 ringback so the callee's ringtone
+    // is clearly a different sound.
+    o1.frequency.value = 660;
+    o2.frequency.value = 550;
+    o1.connect(gain);
+    o2.connect(gain);
+    o1.start();
+    o2.start();
+    ringtoneCtx = ctx;
+    ringtoneOscillators = [o1, o2];
+    ringtoneGain = gain;
+    ringtoneActive = true;
+    ringtoneBurst();
+    // double-ring (~0.9s) + ~1.1s silence = 2s cadence.
+    ringtoneTimer = setInterval(ringtoneBurst, 2000);
+  } catch {
+    ringtoneActive = false;
+    if (ctx) void ctx.close().catch(() => {});
+  }
+}
+
+export function stopRingtone(): void {
+  ringtoneActive = false;
+  if (ringtoneTimer) {
+    clearInterval(ringtoneTimer);
+    ringtoneTimer = null;
+  }
+  ringtoneOscillators.forEach((o) => {
+    try {
+      o.stop();
+    } catch {
+      // already stopped
+    }
+    try {
+      o.disconnect();
+    } catch {
+      // already disconnected
+    }
+  });
+  ringtoneOscillators = [];
+  if (ringtoneGain) {
+    try {
+      ringtoneGain.disconnect();
+    } catch {
+      // already disconnected
+    }
+    ringtoneGain = null;
+  }
+  if (ringtoneCtx) {
+    void ringtoneCtx.close().catch(() => {});
+    ringtoneCtx = null;
+  }
+}
+
 const AUDIO_ATTR = "data-livekit-audio";
 
 function getAudioElements(): HTMLAudioElement[] {

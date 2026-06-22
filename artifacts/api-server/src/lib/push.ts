@@ -25,6 +25,12 @@ export interface PushPayload {
   tag?: string;
   /** When "call", the service worker keeps the banner up even while focused. */
   type?: string;
+  /**
+   * Structured payload the service worker forwards to the app on notification
+   * tap. For incoming calls: { type:"incoming_call", callId, chatRoomId,
+   * callerUserId } so the client can open the ringing/incoming screen directly.
+   */
+  data?: Record<string, unknown>;
 }
 
 function isValidSubscription(obj: unknown): obj is PushSubscription {
@@ -183,4 +189,18 @@ export async function sendCallPush(
   payload: Omit<PushPayload, "type">,
 ): Promise<void> {
   await sendPushToUser(userId, { ...payload, type: "call" }, { force: true });
+}
+
+/** Build the structured data payload for an incoming-call push. */
+export function incomingCallData(args: {
+  callId: string;
+  chatRoomId: string | null;
+  callerUserId: string;
+}): Record<string, unknown> {
+  return {
+    type: "incoming_call",
+    callId: args.callId,
+    chatRoomId: args.chatRoomId,
+    callerUserId: args.callerUserId,
+  };
 }

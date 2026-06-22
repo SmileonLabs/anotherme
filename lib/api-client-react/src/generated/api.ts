@@ -4143,6 +4143,76 @@ export const useDeclineCall = <TError = ErrorType<unknown>,
       return useMutation(getDeclineCallMutationOptions(options));
     }
 
+export const getCancelCallUrl = (id: string,) => {
+
+
+
+
+  return `/api/calls/${id}/cancel`
+}
+
+/**
+ * @summary Cancel an outgoing call before it is answered (caller only)
+ */
+export const cancelCall = async (id: string, options?: RequestInit): Promise<Call> => {
+
+  return customFetch<Call>(getCancelCallUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelCallMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCall>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelCall>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['cancelCall'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelCall>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelCall(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelCallMutationResult = NonNullable<Awaited<ReturnType<typeof cancelCall>>>
+
+    export type CancelCallMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Cancel an outgoing call before it is answered (caller only)
+ */
+export const useCancelCall = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCall>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelCall>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getCancelCallMutationOptions(options));
+    }
+
 export const getEndCallUrl = (id: string,) => {
 
 

@@ -28,8 +28,28 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+// The Expo web app ships no service worker by default, so push (which requires
+// one) is inert until we register ours. It is served as a static file from the
+// `public/` dir. Registration is idempotent — the browser dedupes by scope/URL.
+// Best-effort: a failure (e.g. SW not served under the current base path) leaves
+// push disabled but never throws into the caller.
+let swRegistered = false;
+export async function registerPushServiceWorker(): Promise<void> {
+  if (!webPushSupported) return;
+  if (swRegistered) return;
+  try {
+    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    swRegistered = true;
+  } catch {
+    // best-effort — push simply stays unavailable on this platform/host.
+  }
+}
+
 async function getOrCreateSubscription(): Promise<PushSubscription | null> {
   if (!webPushSupported || !VAPID_PUBLIC_KEY) return null;
+  // Make sure our SW is registered before awaiting `.ready` (which only resolves
+  // once a registration exists), otherwise the await would hang forever.
+  await registerPushServiceWorker();
   const reg = await navigator.serviceWorker.ready;
   const existing = await reg.pushManager.getSubscription();
   if (existing) return existing;

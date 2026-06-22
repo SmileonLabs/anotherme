@@ -24,3 +24,5 @@ export async function subscribeWebPush(
 export async function ensureWebPushIfGranted(
   _register: (token: string) => Promise<unknown>,
 ): Promise<void> {}
+
+export async function registerPushServiceWorker(): Promise<void> {}

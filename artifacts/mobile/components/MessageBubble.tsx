@@ -25,16 +25,32 @@ interface MessageBubbleProps {
   onJoinCall?: (callId: string) => void;
 }
 
-// A "call" message carries { callId, status } JSON so the in-chat card can show
-// a "통화 참여" button while ringing/active and flip to "통화 종료" once finished.
-function parseCallContent(raw: string): { callId: string; status: string } | null {
+// A "call" message carries { callId, status, durationSec? } JSON so the in-chat
+// card can show a "통화 참여" button while ringing/active and flip to a distinct
+// result card (종료/부재중/거절/취소) once finished.
+function parseCallContent(
+  raw: string,
+): { callId: string; status: string; durationSec?: number } | null {
   try {
     const obj = JSON.parse(raw);
     if (obj && typeof obj.callId === "string" && typeof obj.status === "string") {
-      return { callId: obj.callId, status: obj.status };
+      return {
+        callId: obj.callId,
+        status: obj.status,
+        durationSec: typeof obj.durationSec === "number" ? obj.durationSec : undefined,
+      };
     }
   } catch {}
   return null;
+}
+
+// "3분 5초" / "12초" — Korean, minutes only when present.
+function formatCallDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m > 0) return r > 0 ? `${m}분 ${r}초` : `${m}분`;
+  return `${r}초`;
 }
 
 function MessageBubbleComponent({
@@ -66,27 +82,56 @@ function MessageBubbleComponent({
     );
   }
 
-  // Voice-call card: a centered notice either party can tap to join, shown for
-  // both caller and callee so the call can be (re)entered from the conversation.
+  // Voice-call card. While ringing/active it is a centered notice either party
+  // can tap to join; once finished it flips to a distinct result card per final
+  // status (종료 + 통화 시간 / 부재중 / 거절 / 취소), worded for caller vs callee.
   if (type === "call") {
     const call = parseCallContent(content);
-    const ended = !call || call.status === "ended";
-    const title = ended ? "보이스톡 종료" : isMe ? "보이스톡 발신" : "보이스톡 수신";
+    const status = call?.status ?? "ended";
+    const live = !!call && (status === "ringing" || status === "active");
+
+    let icon: React.ComponentProps<typeof Feather>["name"] = "phone-off";
+    let title: string;
+    let subtitle = time;
+
+    if (live) {
+      icon = "phone-call";
+      title = isMe ? "보이스톡 발신" : "보이스톡 수신";
+    } else if (status === "ended") {
+      icon = "phone";
+      title = "보이스톡";
+      if (typeof call?.durationSec === "number") {
+        subtitle = `통화 시간 ${formatCallDuration(call.durationSec)} · ${time}`;
+      }
+    } else if (status === "missed") {
+      icon = "phone-missed";
+      title = isMe ? "응답 없음" : "부재중 전화";
+    } else if (status === "declined") {
+      icon = "phone-off";
+      title = isMe ? "상대가 통화를 거절함" : "통화 거절";
+    } else if (status === "cancelled") {
+      icon = "phone-missed";
+      title = isMe ? "통화 취소" : "부재중 전화";
+    } else {
+      // failed / unknown terminal state
+      icon = "phone-off";
+      title = "보이스톡 종료";
+    }
+
+    const accent = live ? colors.primary : colors.mutedForeground;
+    const iconBg = live ? colors.accent : colors.muted;
+
     return (
       <View style={styles.callRow}>
         <View style={[styles.callCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.callIcon, { backgroundColor: ended ? colors.muted : colors.accent }]}>
-            <Feather
-              name={ended ? "phone-off" : "phone-call"}
-              size={18}
-              color={ended ? colors.mutedForeground : colors.primary}
-            />
+          <View style={[styles.callIcon, { backgroundColor: iconBg }]}>
+            <Feather name={icon} size={18} color={accent} />
           </View>
           <View style={styles.callInfo}>
             <Text style={[styles.callTitle, { color: colors.foreground }]}>{title}</Text>
-            <Text style={[styles.callTime, { color: colors.mutedForeground }]}>{time}</Text>
+            <Text style={[styles.callTime, { color: colors.mutedForeground }]}>{subtitle}</Text>
           </View>
-          {!ended && call && onJoinCall ? (
+          {live && call && onJoinCall ? (
             <Pressable
               onPress={() => onJoinCall(call.callId)}
               style={({ pressed }) => [
