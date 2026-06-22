@@ -11,8 +11,9 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
-        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsucHVua3Zpc20tYW0ucmVwbGl0LmFwcCQ",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app",
+        "EXPO_PUBLIC_CLERK_PROXY_URL": "https://punkvism-am.replit.app/api/__clerk"
       }
     },
     "preview": {
@@ -21,8 +22,9 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
-        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsucHVua3Zpc20tYW0ucmVwbGl0LmFwcCQ",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app",
+        "EXPO_PUBLIC_CLERK_PROXY_URL": "https://punkvism-am.replit.app/api/__clerk"
       }
     },
     "production": {
@@ -31,8 +33,9 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
-        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsucHVua3Zpc20tYW0ucmVwbGl0LmFwcCQ",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app",
+        "EXPO_PUBLIC_CLERK_PROXY_URL": "https://punkvism-am.replit.app/api/__clerk"
       }
     }
   },
