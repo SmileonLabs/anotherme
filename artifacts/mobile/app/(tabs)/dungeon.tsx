@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   },
   randomBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
   sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 26, marginBottom: 12 },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
   themeCard: {
     width: "48%",
     borderRadius: 16,
