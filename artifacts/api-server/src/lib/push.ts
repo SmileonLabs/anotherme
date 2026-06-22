@@ -2,6 +2,7 @@ import webpush, { type PushSubscription } from "web-push";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "./logger";
+import { addFcmToken, sendFcmCallToUser } from "./fcm";
 
 const publicKey = process.env.VAPID_PUBLIC_KEY;
 const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -81,9 +82,10 @@ export async function addSubscription(userId: string, rawToken: string): Promise
     incoming = null;
   }
   if (!incoming) {
-    // Not a valid web-push subscription — ignore it rather than overwrite (and
-    // destroy) the user's existing device list.
-    logger.warn({ userId }, "Ignored invalid push subscription token");
+    // Not a valid web-push subscription. The mobile app registers a raw native
+    // FCM device token here (an opaque string, not a subscription object), so
+    // route it to native FCM storage instead of dropping it.
+    await addFcmToken(userId, rawToken);
     return;
   }
   const sub = incoming;
@@ -188,7 +190,23 @@ export async function sendCallPush(
   userId: string,
   payload: Omit<PushPayload, "type">,
 ): Promise<void> {
+  // Web/PWA delivery (Web Push / VAPID).
   await sendPushToUser(userId, { ...payload, type: "call" }, { force: true });
+  // Native delivery (Android FCM). Best-effort and independent of web push so a
+  // user with both a browser subscription and a native device gets rung on both.
+  const data = payload.data ?? {};
+  await sendFcmCallToUser(userId, {
+    title: payload.title,
+    body: payload.body,
+    tag: payload.tag,
+    data: {
+      type: typeof data.type === "string" ? data.type : "incoming_call",
+      callId: typeof data.callId === "string" ? data.callId : "",
+      chatRoomId: typeof data.chatRoomId === "string" ? data.chatRoomId : "",
+      callerUserId: typeof data.callerUserId === "string" ? data.callerUserId : "",
+      callerName: payload.title,
+    },
+  });
 }
 
 /** Build the structured data payload for an incoming-call push. */
