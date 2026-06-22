@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "sbEFX7eTjkNn1k3R604Fk"
+uri = "file://artifacts/landing/public/images/hero-abstract.png"
+type = "image"
+title = "Abstract glowing neon energy sphere"
+
+[[generated]]
+id = "NncUKtqtAARajcSd4-VWN"
+uri = "file://artifacts/landing/public/images/persona-brain.png"
+type = "image"
+title = "Neon digital persona brain network"
