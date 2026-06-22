@@ -89,12 +89,25 @@ export default function Home() {
 
       {/* Hero Section */}
       <section className="relative pt-40 pb-24 px-6 min-h-[95vh] flex flex-col justify-center overflow-hidden">
+        {/* Main visual background */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <img
+            src={`${import.meta.env.BASE_URL}images/visual.png`}
+            alt=""
+            aria-hidden="true"
+            className="w-full h-full object-cover object-center"
+          />
+          {/* Readability overlay: darken left for text, keep right artwork visible */}
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/40" />
+          {/* Vertical blend into the page + next section */}
+          <div className="absolute inset-0 bg-gradient-to-b from-background/70 via-transparent to-background" />
+        </div>
+
         {/* Abstract Background Orbs for Hero */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[150px] pointer-events-none mix-blend-screen" />
-        <div className="absolute top-1/4 right-0 w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
-        
-        <div className="container mx-auto max-w-7xl relative z-10 grid lg:grid-cols-2 gap-16 items-center">
-          <div className="space-y-8 animate-fade-in-up">
+        <div className="absolute top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-primary/15 rounded-full blur-[150px] pointer-events-none mix-blend-screen z-0" />
+
+        <div className="container mx-auto max-w-7xl relative z-10">
+          <div className="space-y-8 animate-fade-in-up max-w-2xl">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border-primary/30 text-sm font-medium text-white/90">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               디지털 자아 육성 소셜 RPG
@@ -110,15 +123,6 @@ export default function Home() {
             </p>
             
             <PrimaryActions className="pt-4 justify-start" />
-          </div>
-
-          <div className="relative hidden lg:block animate-float">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-secondary/20 rounded-full blur-3xl" />
-            <img 
-              src={`${import.meta.env.BASE_URL}images/hero-abstract.png`} 
-              alt="Digital Consciousness" 
-              className="w-full h-auto rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(139,92,246,0.2)] object-cover mix-blend-lighten"
-            />
           </div>
         </div>
       </section>
