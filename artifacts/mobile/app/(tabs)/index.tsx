@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
+  ImageBackground,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -29,8 +30,12 @@ import {
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 
-/** Cosmic gradient used by the always-dark hero / feature cards (matches mockup). */
-const HERO_GRADIENT = ["#161630", "#1C1838", "#2A1B4D"] as const;
+/** Dark overlay over the hero background image so foreground text stays legible. */
+const HERO_OVERLAY = [
+  "rgba(12,10,28,0.45)",
+  "rgba(12,10,28,0.55)",
+  "rgba(12,10,28,0.82)",
+] as const;
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 
 /** Mockup hero stats (order + Korean label) mapped to PersonaStats keys. */
@@ -325,12 +330,17 @@ export default function HomeScreen() {
         }
       >
         {/* Persona hero card */}
-        <LinearGradient
-          colors={HERO_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <ImageBackground
+          source={require("@/assets/images/persona-card-bg.png")}
+          imageStyle={styles.heroBgImage}
           style={styles.hero}
         >
+          <LinearGradient
+            colors={HERO_OVERLAY}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
           <View style={styles.heroTop}>
             <View style={styles.heroInfo}>
               <View style={styles.archetypeRow}>
@@ -397,7 +407,7 @@ export default function HomeScreen() {
               {isAnalyzing ? "분석 중…" : "분석 업데이트"}
             </Text>
           </Pressable>
-        </LinearGradient>
+        </ImageBackground>
 
         {/* Daily quests */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
@@ -756,6 +766,12 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(147,140,255,0.25)",
+    overflow: "hidden",
+    backgroundColor: "#0C0A1C",
+  },
+  heroBgImage: {
+    borderRadius: 20,
+    resizeMode: "cover",
   },
   heroTop: { flexDirection: "row", alignItems: "center" },
   heroInfo: { flex: 1 },
