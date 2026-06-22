@@ -18,17 +18,21 @@ function NativeTabLayout() {
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>홈</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="friends">
-        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
-        <Label>친구</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="chats">
         <Icon sf={{ default: "bubble.left.and.bubble.right", selected: "bubble.left.and.bubble.right.fill" }} />
         <Label>채팅</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="settings">
-        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
-        <Label>설정</Label>
+      <NativeTabs.Trigger name="battle">
+        <Icon sf={{ default: "mic", selected: "mic.fill" }} />
+        <Label>배틀</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="dungeon">
+        <Icon sf={{ default: "map", selected: "map.fill" }} />
+        <Label>던전</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="persona">
+        <Icon sf={{ default: "person", selected: "person.fill" }} />
+        <Label>자아</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -40,6 +44,16 @@ function ClassicTabLayout() {
   const isDark = scheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+
+  const tabIcon = (
+    ios: string,
+    feather: keyof typeof Feather.glyphMap,
+  ) => ({ color }: { color: string }) =>
+    isIOS ? (
+      <SymbolView name={ios as any} tintColor={color} size={24} />
+    ) : (
+      <Feather name={feather} size={22} color={color} />
+    );
 
   return (
     <Tabs
@@ -72,51 +86,23 @@ function ClassicTabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: "홈",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="house" tintColor={color} size={24} />
-            ) : (
-              <Feather name="home" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="friends"
-        options={{
-          title: "친구",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="person.2" tintColor={color} size={24} />
-            ) : (
-              <Feather name="users" size={22} color={color} />
-            ),
-        }}
+        options={{ title: "홈", tabBarIcon: tabIcon("house", "home") }}
       />
       <Tabs.Screen
         name="chats"
-        options={{
-          title: "채팅",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="bubble.left.and.bubble.right" tintColor={color} size={24} />
-            ) : (
-              <Feather name="message-circle" size={22} color={color} />
-            ),
-        }}
+        options={{ title: "채팅", tabBarIcon: tabIcon("bubble.left.and.bubble.right", "message-circle") }}
       />
       <Tabs.Screen
-        name="settings"
-        options={{
-          title: "설정",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="gearshape" tintColor={color} size={24} />
-            ) : (
-              <Feather name="settings" size={22} color={color} />
-            ),
-        }}
+        name="battle"
+        options={{ title: "배틀", tabBarIcon: tabIcon("mic", "mic") }}
+      />
+      <Tabs.Screen
+        name="dungeon"
+        options={{ title: "던전", tabBarIcon: tabIcon("map", "compass") }}
+      />
+      <Tabs.Screen
+        name="persona"
+        options={{ title: "자아", tabBarIcon: tabIcon("person", "user") }}
       />
     </Tabs>
   );

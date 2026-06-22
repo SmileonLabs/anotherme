@@ -157,7 +157,18 @@ export default function PersonaScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.muted }]}>
-      <CustomScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+      <View style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}>
+        <Text style={[styles.screenTitle, { color: colors.foreground }]}>어나더 미</Text>
+        <Pressable
+          accessibilityLabel="가문"
+          hitSlop={8}
+          onPress={() => router.push("/clan")}
+          style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
+        >
+          <Feather name="shield" size={22} color={colors.foreground} />
+        </Pressable>
+      </View>
+      <CustomScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
         {isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.primary} />
@@ -425,8 +436,18 @@ export default function PersonaScreen() {
                 <View style={styles.eventsEmpty}>
                   <Feather name="clock" size={20} color={colors.mutedForeground} />
                   <Text style={[styles.eventsEmptyText, { color: colors.mutedForeground }]}>
-                    아직 성장 기록이 없어요. 채팅·배틀·던전으로 어나더 미를 키워보세요.
+                    아직 성장 기록이 없어요.{"\n"}활동할수록 또 다른 내가 깨어납니다.
                   </Text>
+                  <Pressable
+                    onPress={() => router.push("/(tabs)/battle")}
+                    style={({ pressed }) => [
+                      styles.emptyCta,
+                      { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                    ]}
+                  >
+                    <Feather name="mic" size={14} color={colors.background} />
+                    <Text style={[styles.emptyCtaText, { color: colors.background }]}>토크배틀 시작</Text>
+                  </Pressable>
                 </View>
               )}
             </View>
@@ -575,6 +596,15 @@ function TipRow({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  screenHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  screenTitle: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  headerBtn: { padding: 6 },
   center: { paddingTop: 80, alignItems: "center", gap: 16 },
   errorText: { fontSize: 14, fontFamily: "Inter_500Medium" },
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
@@ -665,6 +695,16 @@ const styles = StyleSheet.create({
   eventMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
   eventXp: { fontSize: 13, fontFamily: "Inter_700Bold" },
   eventsEmpty: { alignItems: "center", gap: 10, paddingVertical: 20, paddingHorizontal: 16 },
+  emptyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 11,
+    marginTop: 2,
+  },
+  emptyCtaText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   eventsEmptyText: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",

@@ -169,6 +169,18 @@ export default function ClanMemoriesScreen() {
             <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
               전투와 던전에서 얻은 교훈을 가문의 기억으로 남겨보세요.
             </Text>
+            {clanId ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/clan/memory-new", params: { clanId } })}
+                style={({ pressed }) => [
+                  styles.emptyCta,
+                  { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Feather name="edit-3" size={14} color={colors.background} />
+                <Text style={[styles.emptyCtaText, { color: colors.background }]}>기억 남기기</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <View style={{ gap: 12 }}>
@@ -278,6 +290,16 @@ const styles = StyleSheet.create({
   center: { paddingTop: 60, alignItems: "center", gap: 12, paddingHorizontal: 24 },
   bodyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
   emptyText: { fontSize: 15, fontFamily: "Inter_600SemiBold", textAlign: "center" },
+  emptyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  emptyCtaText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   emptySub: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",

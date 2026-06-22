@@ -142,6 +142,14 @@ export default function SettingsScreen() {
           { paddingTop: insets.top + 8, backgroundColor: colors.muted },
         ]}
       >
+        <Pressable
+          accessibilityLabel="뒤로"
+          hitSlop={8}
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.5 : 1 }]}
+        >
+          <Feather name="chevron-left" size={26} color={colors.foreground} />
+        </Pressable>
         <Text style={[styles.title, { color: colors.foreground }]}>설정</Text>
       </View>
 
@@ -186,7 +194,7 @@ export default function SettingsScreen() {
             icon="user"
             label="어나더 미"
             sublabel="내 또 다른 자아의 성장 보기"
-            onPress={() => router.push("/profile/persona")}
+            onPress={() => router.push("/persona")}
             last
           />
         </View>
@@ -226,9 +234,13 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     paddingHorizontal: 20,
     paddingBottom: 10,
   },
+  backBtn: { padding: 6, marginLeft: -6 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   profile: {
     flexDirection: "row",

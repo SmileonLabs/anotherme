@@ -58,6 +58,7 @@ function RootLayoutNav() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
       <Stack.Screen
         name="friends/add"
@@ -92,10 +93,8 @@ function RootLayoutNav() {
         name="profile/edit"
         options={{ title: "프로필 수정", headerBackTitle: "Back" }}
       />
-      <Stack.Screen
-        name="profile/persona"
-        options={{ title: "어나더 미", headerBackTitle: "Back" }}
-      />
+      <Stack.Screen name="friends/index" options={{ headerShown: false }} />
+      <Stack.Screen name="settings/index" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile/ranking"
         options={{ title: "랭킹", headerBackTitle: "Back" }}

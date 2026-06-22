@@ -65,8 +65,22 @@ export default function ClanWarsScreen() {
           <View style={[styles.empty, { backgroundColor: colors.background, borderColor: colors.border }]}>
             <Feather name="zap" size={20} color={colors.mutedForeground} />
             <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-              아직 가문전이 없어요. 첫 도전을 열어보세요.
+              {canCreate
+                ? "아직 가문전이 없어요.\n다른 가문에 첫 도전장을 던져보세요."
+                : "아직 가문전이 없어요.\n가문장·원로가 도전을 열 수 있어요."}
             </Text>
+            {canCreate ? (
+              <Pressable
+                onPress={() => router.push("/clan/war-create")}
+                style={({ pressed }) => [
+                  styles.emptyCta,
+                  { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Feather name="zap" size={14} color={colors.background} />
+                <Text style={[styles.emptyCtaText, { color: colors.background }]}>가문전 열기</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <>
@@ -171,6 +185,16 @@ const styles = StyleSheet.create({
   muted: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center" },
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
   retryText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  emptyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  emptyCtaText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   empty: {
     alignItems: "center",
     gap: 10,

@@ -59,7 +59,17 @@ export default function FriendsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.brand, { color: colors.foreground }]}>친구</Text>
+        <View style={styles.headerLeft}>
+          <Pressable
+            accessibilityLabel="뒤로"
+            hitSlop={8}
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="chevron-left" size={26} color={colors.foreground} />
+          </Pressable>
+          <Text style={[styles.brand, { color: colors.foreground }]}>친구</Text>
+        </View>
         <View style={styles.headerActions}>
           <Pressable
             accessibilityLabel="친구 요청"
@@ -220,6 +230,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   brand: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 4 },
   headerActions: { flexDirection: "row", gap: 6 },
   iconBtn: { padding: 6 },
   searchWrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },

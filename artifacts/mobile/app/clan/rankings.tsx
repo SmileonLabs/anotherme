@@ -219,6 +219,16 @@ export default function ClanRankingScreen() {
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               가문원들과 함께 토크배틀과 던전을 플레이해보세요.
             </Text>
+            <Pressable
+              onPress={() => router.push("/(tabs)/battle")}
+              style={({ pressed }) => [
+                styles.emptyCta,
+                { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Feather name="mic" size={14} color={colors.background} />
+              <Text style={[styles.emptyCtaText, { color: colors.background }]}>토크배틀 하러가기</Text>
+            </Pressable>
           </View>
         ) : (
           <View style={[styles.listCard, { backgroundColor: colors.background }]}>
@@ -361,6 +371,16 @@ const styles = StyleSheet.create({
   emptyCard: { margin: 16, marginTop: 8, borderRadius: 16, padding: 28, alignItems: "center", gap: 10 },
   emptyTitle: { fontSize: 15, fontFamily: "Inter_700Bold", textAlign: "center" },
   emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 19 },
+  emptyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  emptyCtaText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
 
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   retryText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },

@@ -107,50 +107,49 @@ export default function HomeScreen() {
     onPress: () => void;
   }[] = [
     {
-      key: "ai",
-      label: "중2병 AI와 말빨 배틀",
-      sub: "AI 캐릭터에 도전",
-      icon: "award",
+      key: "chat",
+      label: "대화",
+      sub: "친구와 채팅 시작",
+      icon: "message-circle",
       bg: isDark ? "#10322A" : "#E3F9F0",
       fg: "#00B488",
-      onPress: () => router.push({ pathname: "/battle/create", params: { mode: "ai" } }),
+      onPress: () => router.push("/(tabs)/chats"),
     },
     {
       key: "battle",
-      label: "친구와 말빨 배틀",
-      sub: "친구와 배틀하기",
-      icon: "zap",
+      label: "토크배틀",
+      sub: "AI·친구와 말빨 대결",
+      icon: "mic",
       bg: isDark ? "#2A2440" : "#EDE9FE",
       fg: "#7C5CFC",
-      onPress: () => router.push({ pathname: "/battle/create", params: { mode: "friend" } }),
+      onPress: () => router.push("/(tabs)/battle"),
     },
     {
-      key: "mud",
-      label: "텍스트형 RPG",
-      sub: "머드 게임 모험",
+      key: "dungeon",
+      label: "던전",
+      sub: "AI와 떠나는 모험",
       icon: "compass",
       bg: isDark ? "#3A2618" : "#FFF0E1",
       fg: "#FB923C",
-      onPress: () => router.push("/dungeon/create"),
+      onPress: () => router.push("/(tabs)/dungeon"),
     },
     {
-      key: "persona",
-      label: "어나더 미",
-      sub: "내 또 다른 자아 성장",
-      icon: "user",
-      bg: isDark ? "#2A1E3A" : "#F3EAFE",
-      fg: "#9D5CFC",
-      onPress: () => router.push("/profile/persona"),
-    },
-    {
-      key: "invite",
-      label: "친구 초대",
-      sub: "함께 즐겨요",
-      icon: "user-plus",
+      key: "clan",
+      label: "가문",
+      sub: "함께 성장하고 경쟁",
+      icon: "shield",
       bg: isDark ? "#1E2A45" : "#E5EDFF",
       fg: "#4F7BF5",
-      onPress: () => router.push("/friends/add"),
+      onPress: () => router.push("/clan"),
     },
+  ];
+
+  const GROWTH_LOOP: { icon: keyof typeof Feather.glyphMap; label: string }[] = [
+    { icon: "message-circle", label: "활동" },
+    { icon: "trending-up", label: "성장" },
+    { icon: "user", label: "정체성" },
+    { icon: "shield", label: "가문" },
+    { icon: "award", label: "경쟁" },
   ];
 
   return (
@@ -162,17 +161,35 @@ export default function HomeScreen() {
         ) : (
           <LogoWhite width={130} height={16} accessibilityLabel="anotherme" />
         )}
-        <Pressable
-          accessibilityLabel="알림"
-          hitSlop={8}
-          onPress={() => router.push("/friends/requests")}
-          style={({ pressed }) => [styles.bellBtn, { opacity: pressed ? 0.5 : 1 }]}
-        >
-          <Feather name="bell" size={22} color={colors.foreground} />
-          {hasRequests ? (
-            <View style={[styles.bellDot, { borderColor: colors.background }]} />
-          ) : null}
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="친구"
+            hitSlop={8}
+            onPress={() => router.push("/friends")}
+            style={({ pressed }) => [styles.bellBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="users" size={22} color={colors.foreground} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="알림"
+            hitSlop={8}
+            onPress={() => router.push("/friends/requests")}
+            style={({ pressed }) => [styles.bellBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="bell" size={22} color={colors.foreground} />
+            {hasRequests ? (
+              <View style={[styles.bellDot, { borderColor: colors.background }]} />
+            ) : null}
+          </Pressable>
+          <Pressable
+            accessibilityLabel="설정"
+            hitSlop={8}
+            onPress={() => router.push("/settings")}
+            style={({ pressed }) => [styles.bellBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="settings" size={22} color={colors.foreground} />
+          </Pressable>
+        </View>
       </View>
 
       <CustomScrollView
@@ -219,6 +236,29 @@ export default function HomeScreen() {
               </Text>
             </Pressable>
           ))}
+        </View>
+
+        {/* Growth loop explainer */}
+        <View style={[styles.loopCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.loopTitle, { color: colors.foreground }]}>성장 루프</Text>
+          <Text style={[styles.loopSub, { color: colors.mutedForeground }]}>
+            매일의 활동이 또 다른 나를 키웁니다
+          </Text>
+          <View style={styles.loopRow}>
+            {GROWTH_LOOP.map((step, i) => (
+              <React.Fragment key={step.label}>
+                <View style={styles.loopStep}>
+                  <View style={[styles.loopIcon, { backgroundColor: colors.accent }]}>
+                    <Feather name={step.icon} size={16} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.loopLabel, { color: colors.foreground }]}>{step.label}</Text>
+                </View>
+                {i < GROWTH_LOOP.length - 1 ? (
+                  <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                ) : null}
+              </React.Fragment>
+            ))}
+          </View>
         </View>
 
         {/* Recent conversations */}
@@ -529,6 +569,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   bellBtn: { padding: 6 },
   bellDot: {
     position: "absolute",
@@ -621,6 +662,15 @@ const styles = StyleSheet.create({
   },
   quickLabel: { fontSize: 15, fontFamily: "Inter_700Bold" },
   quickSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
+
+  // Growth loop
+  loopCard: { borderRadius: 18, padding: 16, marginTop: 14 },
+  loopTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  loopSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2, marginBottom: 14 },
+  loopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  loopStep: { alignItems: "center", gap: 5, flexShrink: 1 },
+  loopIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  loopLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
 
   // Sections
   sectionHeader: {
