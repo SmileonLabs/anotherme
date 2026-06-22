@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useGetMe, useGetMyPersona } from "@workspace/api-client-react";
+import { useGetMe, useGetMyPersona, useAnalyzeMyPersona } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
@@ -83,6 +83,25 @@ function personaTitle(level: number): string {
   return "씨앗 자아";
 }
 
+const ANALYSIS_FIELDS: {
+  key:
+    | "languageStyle"
+    | "personalityTraits"
+    | "valuesBeliefs"
+    | "knowledgeDomains"
+    | "emotionalPatterns"
+    | "decisionStyle";
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+}[] = [
+  { key: "languageStyle", label: "말투·표현", icon: "message-square" },
+  { key: "personalityTraits", label: "성격 경향", icon: "user" },
+  { key: "valuesBeliefs", label: "가치관", icon: "compass" },
+  { key: "knowledgeDomains", label: "관심 분야", icon: "book" },
+  { key: "emotionalPatterns", label: "감정 표현", icon: "heart" },
+  { key: "decisionStyle", label: "결정 방식", icon: "git-branch" },
+];
+
 export default function PersonaScreen() {
   const router = useRouter();
   const colors = useColors();
@@ -92,6 +111,32 @@ export default function PersonaScreen() {
 
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
+
+  const [analysisError, setAnalysisError] = React.useState<string | null>(null);
+  const { mutate: analyze, isPending: isAnalyzing } = useAnalyzeMyPersona({
+    mutation: {
+      onMutate: () => setAnalysisError(null),
+      onSuccess: () => {
+        refetch();
+      },
+      onError: (err: unknown) => {
+        const data = (err as { data?: { message?: string } } | null)?.data;
+        setAnalysisError(
+          data?.message ?? "분석에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        );
+      },
+    },
+  });
+
+  const hasAnalysis = Boolean(
+    persona?.summary ||
+      persona?.languageStyle ||
+      persona?.personalityTraits ||
+      persona?.valuesBeliefs ||
+      persona?.knowledgeDomains ||
+      persona?.emotionalPatterns ||
+      persona?.decisionStyle,
+  );
 
   const level = persona?.level ?? 1;
   const xpInto = persona?.xpIntoLevel ?? 0;
@@ -262,18 +307,86 @@ export default function PersonaScreen() {
               )}
             </View>
 
-            {/* AI summary (reserved for a later phase) */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>AI 분석</Text>
-            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
-              {persona?.summary ? (
-                <Text style={[styles.summaryText, { color: colors.foreground }]}>
-                  {persona.summary}
+            {/* AI analysis */}
+            <View style={styles.analysisHeader}>
+              <Text style={[styles.sectionTitle, styles.analysisHeaderTitle, { color: colors.mutedForeground }]}>
+                AI 분석
+              </Text>
+              <Pressable
+                onPress={() => analyze()}
+                disabled={isAnalyzing}
+                style={({ pressed }) => [
+                  styles.analyzeBtn,
+                  {
+                    backgroundColor: `${colors.primary}18`,
+                    opacity: isAnalyzing ? 0.7 : pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                {isAnalyzing ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Feather name="refresh-cw" size={13} color={colors.primary} />
+                )}
+                <Text style={[styles.analyzeBtnText, { color: colors.primary }]}>
+                  {isAnalyzing ? "분석 중…" : "분석 업데이트"}
                 </Text>
+              </Pressable>
+            </View>
+
+            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
+              {analysisError ? (
+                <View style={styles.analysisErrorRow}>
+                  <Feather name="alert-circle" size={16} color="#EF4444" />
+                  <Text style={[styles.analysisErrorText, { color: colors.mutedForeground }]}>
+                    {analysisError}
+                  </Text>
+                </View>
+              ) : null}
+
+              {isAnalyzing && !hasAnalysis ? (
+                <View style={styles.summaryEmpty}>
+                  <ActivityIndicator color={colors.primary} />
+                  <Text style={[styles.summaryEmptyText, { color: colors.mutedForeground }]}>
+                    당신의 또 다른 자아를 분석하고 있어요…
+                  </Text>
+                </View>
+              ) : hasAnalysis ? (
+                <>
+                  {persona?.summary ? (
+                    <Text style={[styles.summaryText, { color: colors.foreground }]}>
+                      {persona.summary}
+                    </Text>
+                  ) : null}
+
+                  {ANALYSIS_FIELDS.map((f) => {
+                    const value = persona?.[f.key];
+                    if (!value) return null;
+                    return (
+                      <View key={f.key} style={styles.analysisField}>
+                        <View style={styles.analysisFieldHead}>
+                          <Feather name={f.icon} size={13} color={colors.primary} />
+                          <Text style={[styles.analysisFieldLabel, { color: colors.foreground }]}>
+                            {f.label}
+                          </Text>
+                        </View>
+                        <Text style={[styles.analysisFieldText, { color: colors.mutedForeground }]}>
+                          {value}
+                        </Text>
+                      </View>
+                    );
+                  })}
+
+                  <Text style={[styles.analysisDisclaimer, { color: colors.mutedForeground }]}>
+                    ※ 앱 활동을 바탕으로 한 추정이며, 확정적인 진단이 아니에요.
+                    {persona?.lastAnalyzedAt ? ` · ${formatEventTime(persona.lastAnalyzedAt)} 분석` : ""}
+                  </Text>
+                </>
               ) : (
                 <View style={styles.summaryEmpty}>
                   <Feather name="cpu" size={20} color={colors.mutedForeground} />
                   <Text style={[styles.summaryEmptyText, { color: colors.mutedForeground }]}>
-                    활동을 쌓으면 AI가 당신의 또 다른 자아를 분석해줍니다.
+                    활동을 쌓고 "분석 업데이트"를 누르면 AI가 당신의 또 다른 자아를 분석해줍니다.
                   </Text>
                 </View>
               )}
@@ -424,13 +537,48 @@ const styles = StyleSheet.create({
   },
 
   summaryCard: { marginHorizontal: 16, borderRadius: 16, padding: 18 },
-  summaryText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },
+  summaryText: { fontSize: 14, fontFamily: "Inter_500Medium", lineHeight: 21 },
   summaryEmpty: { alignItems: "center", gap: 10, paddingVertical: 8 },
   summaryEmptyText: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     lineHeight: 19,
+  },
+
+  analysisHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingRight: 16,
+  },
+  analysisHeaderTitle: { flex: 1 },
+  analyzeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: 12,
+  },
+  analyzeBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  analysisErrorRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingBottom: 12,
+  },
+  analysisErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  analysisField: { marginTop: 14, gap: 5 },
+  analysisFieldHead: { flexDirection: "row", alignItems: "center", gap: 7 },
+  analysisFieldLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  analysisFieldText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  analysisDisclaimer: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 16,
+    marginTop: 16,
   },
 
   tipsCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden", paddingHorizontal: 16 },

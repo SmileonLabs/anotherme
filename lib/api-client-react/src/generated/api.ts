@@ -48,6 +48,7 @@ import type {
   MessageInput,
   MuteInput,
   MyBattleStats,
+  PersonaAnalysisError,
   PersonaProfile,
   PublicUser,
   PushTokenInput,
@@ -592,6 +593,78 @@ export function useGetMyPersona<TData = Awaited<ReturnType<typeof getMyPersona>>
 
 
 
+
+export const getAnalyzeMyPersonaUrl = () => {
+
+
+
+
+  return `/api/users/me/persona/analyze`
+}
+
+/**
+ * Triggered only by the user. Analyzes recent app activity and updates the qualitative AI fields. Rate-limited to once per 10 minutes per user.
+
+ * @summary Run an on-demand AI analysis of my Another Me persona
+ */
+export const analyzeMyPersona = async ( options?: RequestInit): Promise<PersonaProfile> => {
+
+  return customFetch<PersonaProfile>(getAnalyzeMyPersonaUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAnalyzeMyPersonaMutationOptions = <TError = ErrorType<void | PersonaAnalysisError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeMyPersona>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeMyPersona>>, TError,void, TContext> => {
+
+const mutationKey = ['analyzeMyPersona'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeMyPersona>>, void> = () => {
+
+
+          return  analyzeMyPersona(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeMyPersonaMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeMyPersona>>>
+
+    export type AnalyzeMyPersonaMutationError = ErrorType<void | PersonaAnalysisError>
+
+    /**
+ * @summary Run an on-demand AI analysis of my Another Me persona
+ */
+export const useAnalyzeMyPersona = <TError = ErrorType<void | PersonaAnalysisError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeMyPersona>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeMyPersona>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAnalyzeMyPersonaMutationOptions(options));
+    }
 
 export const getSearchUsersUrl = (params: SearchUsersParams,) => {
   const normalizedParams = new URLSearchParams();

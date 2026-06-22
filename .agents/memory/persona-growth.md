@@ -33,3 +33,35 @@ ones.
 growth. Battle filters on `!isAI`; dungeon growth only fires on a real player
 action (not the AI opening scene); chat growth only runs on the authenticated
 sender route.
+
+## AI persona analysis (Phase 2)
+
+On-demand only — the user presses "분석 업데이트"; there is NO per-message AI.
+A single endpoint analyzes a bounded slice of recent activity and overwrites only
+the persona's qualitative AI fields.
+
+**Cost + abuse control.** Per-user 10-minute cooldown keyed off the persona's
+`lastAnalyzedAt`, which is bumped ONLY on a successful analysis — so a failed
+attempt does not lock the user out, but a success blocks re-runs. Each source is
+independently capped and trivially short chat (< a few chars) is dropped.
+**Why:** realtime analysis would be prohibitively expensive; cooldown + caps keep
+one analysis to a single bounded model call.
+
+**Failure isolation.** `analyzePersona` returns a result union
+(cooldown / no_api_key / insufficient_data / ai_failed / ok) — it never throws to
+the route. On ANY model failure (empty content, bad JSON, schema mismatch) it
+leaves the existing persona analysis untouched (no partial writes). Missing API
+key is detected by catching the `getOpenAI()` throw and surfaced as a friendly
+message, distinct from a real AI failure.
+**Why:** analysis must never crash or corrupt the persona; the user always gets a
+soft Korean message.
+
+**Estimative, non-diagnostic.** The prompt mandates: data is only in-app behavior
+(not the whole person), everything is phrased as 추정/경향, sparse fields say
+"데이터 부족", and sensitive attributes (politics, religion, health, sexuality,
+criminal history) are never asserted. The mobile screen repeats this disclaimer.
+
+**Server has no direct `zod`** — it bundles via esbuild and uses `@workspace/api-zod`.
+Importing `zod/v4` directly in api-server code requires adding `zod` (catalog, v3.25+
+ships the `/v4` subpath) to api-server's own deps or the esbuild bundle fails to
+resolve it.

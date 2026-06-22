@@ -122,6 +122,61 @@ export const GetMyPersonaResponse = zod.object({
   "createdAt": zod.string()
 })),
   "summary": zod.string().nullish(),
+  "languageStyle": zod.string().nullish(),
+  "personalityTraits": zod.string().nullish(),
+  "valuesBeliefs": zod.string().nullish(),
+  "knowledgeDomains": zod.string().nullish(),
+  "emotionalPatterns": zod.string().nullish(),
+  "decisionStyle": zod.string().nullish(),
+  "analysisConfidence": zod.number().nullish(),
+  "lastAnalyzedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * Triggered only by the user. Analyzes recent app activity and updates the qualitative AI fields. Rate-limited to once per 10 minutes per user.
+
+ * @summary Run an on-demand AI analysis of my Another Me persona
+ */
+export const AnalyzeMyPersonaResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "xpIntoLevel": zod.number(),
+  "xpForNextLevel": zod.number(),
+  "stats": zod.object({
+  "logic": zod.number(),
+  "empathy": zod.number(),
+  "wit": zod.number(),
+  "knowledge": zod.number(),
+  "conviction": zod.number(),
+  "emotion": zod.number(),
+  "decisiveness": zod.number()
+}),
+  "recentEvents": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.string(),
+  "eventType": zod.string(),
+  "sourceId": zod.string().nullish(),
+  "expDelta": zod.number(),
+  "statChanges": zod.record(zod.string(), zod.number()).optional(),
+  "reason": zod.string().nullish(),
+  "beforeLevel": zod.number(),
+  "afterLevel": zod.number(),
+  "beforeExp": zod.number(),
+  "afterExp": zod.number(),
+  "createdAt": zod.string()
+})),
+  "summary": zod.string().nullish(),
+  "languageStyle": zod.string().nullish(),
+  "personalityTraits": zod.string().nullish(),
+  "valuesBeliefs": zod.string().nullish(),
+  "knowledgeDomains": zod.string().nullish(),
+  "emotionalPatterns": zod.string().nullish(),
+  "decisionStyle": zod.string().nullish(),
+  "analysisConfidence": zod.number().nullish(),
   "lastAnalyzedAt": zod.string().nullish(),
   "createdAt": zod.string()
 })

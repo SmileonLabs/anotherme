@@ -586,6 +586,7 @@ export async function runDungeonTurn(
         kind: "dungeon_action",
         sourceId: roomId,
         sourceKey: `dungeon_action:${roomId}:${state.turn}:${action.userId}`,
+        metadata: { action: action.text },
         log,
       });
 

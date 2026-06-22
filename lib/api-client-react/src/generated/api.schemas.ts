@@ -84,8 +84,28 @@ export interface PersonaProfile {
   /** @nullable */
   summary?: string | null;
   /** @nullable */
+  languageStyle?: string | null;
+  /** @nullable */
+  personalityTraits?: string | null;
+  /** @nullable */
+  valuesBeliefs?: string | null;
+  /** @nullable */
+  knowledgeDomains?: string | null;
+  /** @nullable */
+  emotionalPatterns?: string | null;
+  /** @nullable */
+  decisionStyle?: string | null;
+  /** @nullable */
+  analysisConfidence?: number | null;
+  /** @nullable */
   lastAnalyzedAt?: string | null;
   createdAt: string;
+}
+
+export interface PersonaAnalysisError {
+  error: string;
+  message: string;
+  retryAfterSec?: number;
 }
 
 export interface UserProfileUpdate {
