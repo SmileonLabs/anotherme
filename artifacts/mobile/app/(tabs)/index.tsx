@@ -26,9 +26,9 @@ import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
+import LogoBlack from "../../assets/images/logo_black.svg";
+import LogoWhite from "../../assets/images/logo_white.svg";
 
-const logoLight = require("../../assets/images/logo-light.png");
-const logoDark = require("../../assets/images/logo-dark.png");
 const banner = require("../../assets/images/banner.png");
 
 const CARD_W = Math.min(Dimensions.get("window").width - 32, 600);
@@ -148,12 +148,11 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Image
-          source={isDark ? logoDark : logoLight}
-          style={styles.brandLogo}
-          contentFit="contain"
-          accessibilityLabel="솔로몬"
-        />
+        {isDark ? (
+          <LogoBlack width={130} height={16} accessibilityLabel="anotherme" />
+        ) : (
+          <LogoWhite width={130} height={16} accessibilityLabel="anotherme" />
+        )}
         <Pressable
           accessibilityLabel="알림"
           hitSlop={8}
@@ -521,7 +520,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
-  brandLogo: { height: 32, aspectRatio: 875 / 426 },
   bellBtn: { padding: 6 },
   bellDot: {
     position: "absolute",

@@ -14,12 +14,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Image } from "expo-image";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
-
-const logoLight = require("../../assets/images/logo-light.png");
-const logoDark = require("../../assets/images/logo-dark.png");
+import LogoBlack from "../../assets/images/logo_black.svg";
+import LogoWhite from "../../assets/images/logo_white.svg";
 
 export default function SignInScreen() {
   const { signIn, errors, fetchStatus } = useSignIn();
@@ -132,12 +130,11 @@ export default function SignInScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <Image
-            source={scheme === "dark" ? logoDark : logoLight}
-            style={styles.brandLogo}
-            contentFit="contain"
-            accessibilityLabel="솔로몬"
-          />
+          {scheme === "dark" ? (
+            <LogoBlack width={240} height={30} accessibilityLabel="anotherme" />
+          ) : (
+            <LogoWhite width={240} height={30} accessibilityLabel="anotherme" />
+          )}
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
             계속하려면 로그인하세요
           </Text>
@@ -214,7 +211,6 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, paddingHorizontal: 24, gap: 32 },
   header: { alignItems: "center", gap: 12 },
-  brandLogo: { width: 220, height: 108 },
   title: { fontSize: 28, fontFamily: "Inter_700Bold" },
   subtitle: { fontSize: 15, fontFamily: "Inter_400Regular" },
   form: { gap: 16 },
