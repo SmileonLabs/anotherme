@@ -157,25 +157,17 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
         try {
           await msg.send({
             token,
-            // Data is what the app reads to drive the full-screen incoming UI.
-            data: payload.data,
-            // A notification block ensures the OS surfaces the call even when the
-            // app is killed (true full-screen-over-lockscreen additionally needs
-            // a native FCM background handler — see replit.md).
-            notification: { title: payload.title, body: payload.body },
-            android: {
-              priority: "high",
-              notification: {
-                channelId: payload.channelId ?? "incoming-calls",
-                priority: "max",
-                tag: payload.tag,
-                sound: "default",
-              },
-            },
-            apns: {
-              headers: { "apns-priority": "10" },
-              payload: { aps: { sound: "default", contentAvailable: true } },
-            },
+            // DATA-ONLY (no `notification` block) on purpose. A notification
+            // payload makes Android deliver straight to the system tray and SKIP
+            // the JS background handler when the app is killed; data-only + high
+            // priority instead wakes the app's setBackgroundMessageHandler (see
+            // mobile lib/fcmBackground.ts), which renders the notifee full-screen
+            // incoming call over the lock screen. title/body ride along in data
+            // as a fallback. Tradeoff: if the handler can't run (force-stopped /
+            // aggressive battery optimization) nothing shows — inherent to the
+            // full-screen-call pattern.
+            data: { ...payload.data, title: payload.title, body: payload.body },
+            android: { priority: "high" },
           });
         } catch (err: unknown) {
           const code = (err as { code?: string; errorInfo?: { code?: string } })?.code

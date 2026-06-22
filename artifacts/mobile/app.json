@@ -56,13 +56,7 @@
       "expo-web-browser",
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/icon.png",
-          "color": "#00F7AF"
-        }
-      ]
+      "@react-native-firebase/app"
     ],
     "experiments": {
       "typedRoutes": true,
