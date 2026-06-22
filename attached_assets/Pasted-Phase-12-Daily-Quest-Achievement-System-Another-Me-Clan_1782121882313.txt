@@ -1,0 +1,344 @@
+Phase 12 — Daily Quest & Achievement System
+
+목표:
+
+현재 구현된 Another Me 성장 시스템과 Clan 시스템 위에 “매일 돌아올 이유”를 만드는 Daily Quest와 Achievement 시스템을 추가합니다.
+
+이번 단계는 신규 도메인 기능이 아니라, 기존 활동을 추적해 보상을 주는 리텐션 시스템입니다.
+
+---
+
+핵심 원칙
+
+* 기존 Persona XP 로직을 깨지 말 것
+* 기존 Clan XP 로직을 깨지 말 것
+* 기존 Ranking / Clan War / Clan Memory / Wisdom 로직을 수정하지 말 것
+* Quest/Achievement 보상은 별도 source_key로 멱등 처리
+* 기존 활동 기록 xp_events, clan_wars, clan_memories 등을 재활용
+* 실시간 AI 호출 없음
+* 모바일 우선 UI
+
+---
+
+1. Daily Quest 개념
+
+사용자는 매일 3~5개의 퀘스트를 받습니다.
+
+퀘스트는 기존 활동을 기반으로 자동 완료됩니다.
+
+예시:
+
+1. 오늘 첫 대화
+
+* 조건: 채팅 메시지 1개 작성
+* 보상: Persona EXP +10
+
+2. 토크배틀 참여
+
+* 조건: 토크배틀 발언 또는 배틀 완료 1회
+* 보상: Persona EXP +20
+
+3. 던전 행동
+
+* 조건: 던전 행동 3회
+* 보상: Persona EXP +15
+
+4. 가문 기여
+
+* 조건: Clan Memory 작성 또는 Clan War 참여 1회
+* 보상: Persona EXP +20
+
+5. 분석 업데이트
+
+* 조건: Another Me AI 분석 1회 실행
+* 보상: Persona EXP +10
+
+---
+
+2. Weekly Quest 개념
+
+주간 퀘스트도 추가합니다.
+
+예시:
+
+1. 토론가의 한 주
+
+* 조건: 토크배틀 5회 참여
+* 보상: Persona EXP +100
+
+2. 던전 탐험가
+
+* 조건: 던전 행동 20회
+* 보상: Persona EXP +100
+
+3. 가문의 기둥
+
+* 조건: Clan 활동 5회
+* 보상: Persona EXP +120
+
+4. 성장하는 자아
+
+* 조건: 일일 퀘스트 5개 완료
+* 보상: Persona EXP +150
+
+---
+
+3. Achievement 개념
+
+업적은 1회성 보상입니다.
+
+예시:
+
+* 첫 대화
+* 첫 토크배틀 참여
+* 첫 토크배틀 승리
+* 첫 던전 행동
+* 첫 던전 목표 달성
+* 첫 가문 가입
+* 첫 가문 기억 작성
+* 첫 가문전 참여
+* 첫 가문전 승리
+* Persona Lv.10 달성
+* Persona Lv.30 달성
+* Clan 생성
+* Clan Lv.5 달성
+
+각 업적은:
+
+* unlocked_at
+* reward_claimed_at
+* reward_exp
+  를 가집니다.
+
+---
+
+4. DB 스키마
+
+quest_progress
+
+필드:
+
+* id
+* user_id
+* quest_key
+* quest_type
+
+  * daily
+  * weekly
+* period_key
+
+  * 예: 2026-06-22
+  * 예: 2026-W26
+* progress
+* target
+* completed_at nullable
+* reward_claimed_at nullable
+* reward_exp
+* created_at
+* updated_at
+
+unique:
+
+* user_id + quest_key + period_key
+
+achievements
+
+필드:
+
+* id
+* user_id
+* achievement_key
+* unlocked_at
+* reward_claimed_at nullable
+* reward_exp
+* metadata jsonb
+* created_at
+* updated_at
+
+unique:
+
+* user_id + achievement_key
+
+---
+
+5. Quest Progress 계산 방식
+
+권장 방식:
+
+실시간 카운트보다 “조회 시 계산 + 저장” 방식.
+
+GET /users/me/quests 호출 시:
+
+1. 오늘/이번 주 quest_progress 조회
+2. xp_events, clan_memories, clan_wars 등 기존 활동 기록을 기준으로 progress 계산
+3. quest_progress upsert
+4. completed_at 자동 표시
+5. reward_claimed_at은 사용자가 보상 받기 버튼 눌렀을 때만 설정
+
+주의:
+보상은 자동 지급하지 말고 사용자가 “보상 받기”를 눌렀을 때 지급
+
+---
+
+6. 보상 지급
+
+POST /users/me/quests/:questKey/claim
+
+규칙:
+
+* 완료되지 않은 퀘스트는 claim 불가
+* 이미 받은 보상은 중복 claim 불가
+* Persona EXP 지급
+* source_key 예:
+  quest:{periodKey}:{questKey}:{userId}
+
+Achievement 보상:
+POST /users/me/achievements/:achievementKey/claim
+
+source_key 예:
+achievement:{achievementKey}:{userId}
+
+보상 지급은 기존 addPersonaExp 또는 성장 엔진을 재사용하되,
+기존 이벤트와 충돌하지 않게 event_type/source_type을 quest/achievement로 분리
+
+---
+
+7. Achievement 판정 방식
+
+GET /users/me/achievements 호출 시 기존 활동 데이터로 unlock 가능 여부 계산
+
+예:
+
+* 첫 대화: xp_events source_type=chat 존재
+* 첫 토크배틀 승리: xp_events event_type=battle_result + metadata.result=win
+* 첫 던전 목표 달성: xp_events event_type=dungeon_result + metadata.goalCompleted=true
+* 첫 가문 가입: clan_members 존재
+* 첫 가문 기억 작성: clan_memories created_by_user_id=userId 존재
+* Persona Lv.10: persona level >= 10
+
+unlock 조건 충족 시 achievements upsert
+
+---
+
+8. API
+
+GET /users/me/quests
+
+* 오늘 Daily + 이번 주 Weekly 반환
+
+POST /users/me/quests/:questKey/claim
+
+* 퀘스트 보상 받기
+
+GET /users/me/achievements
+
+* 업적 목록 반환
+
+POST /users/me/achievements/:achievementKey/claim
+
+* 업적 보상 받기
+
+응답에는:
+
+* title
+* description
+* progress
+* target
+* completed
+* rewardClaimed
+* rewardExp
+* category
+  포함
+
+---
+
+9. 모바일 UI
+
+새 화면:
+
+Quest 화면
+
+접근:
+Home 또는 Another Me 화면에서 “오늘의 퀘스트” 버튼 추가
+
+구성:
+
+상단:
+
+* “오늘의 성장”
+* “작은 활동이 Another Me를 성장시킵니다.”
+
+탭:
+
+* 일일
+* 주간
+* 업적
+
+Daily Quest 카드:
+
+* 제목
+* 설명
+* 진행도 바
+* 보상 EXP
+* 완료 상태
+* 보상 받기 버튼
+
+Weekly Quest 카드:
+동일
+
+Achievement 카드:
+
+* 아이콘
+* 제목
+* 설명
+* 잠금/해금 상태
+* 보상 받기 버튼
+
+빈 상태:
+
+* “아직 시작된 퀘스트가 없습니다.”
+* “채팅, 배틀, 던전을 플레이해보세요.”
+
+---
+
+10. 알림/뱃지
+
+이번 단계에서는 Push 알림 금지.
+
+대신 UI 뱃지만 구현 가능:
+
+* 받을 수 있는 보상이 있으면 홈/자아 화면에 “받을 보상 있음” 표시
+* 하단 탭이나 카드에 작은 점 표시 가능
+
+---
+
+11. 테스트
+
+확인할 것:
+
+1. Daily Quest 진행도 계산 정상
+2. Weekly Quest 진행도 계산 정상
+3. Achievement 해금 정상
+4. 완료 전 claim 차단
+5. 중복 claim 차단
+6. claim 시 Persona EXP 지급
+7. source_key 멱등성 정상
+8. period_key 기준으로 일일/주간 분리 정상
+9. 미인증 요청 401
+10. 기존 Persona XP/Clan XP/Ranking/Clan War 로직 영향 없음
+11. AI 호출 없음
+12. 타입체크 통과
+
+---
+
+완료 후 한국어로 정리:
+
+1. 변경 파일 목록
+2. 추가 DB 구조
+3. 추가 API
+4. Daily/Weekly Quest 목록
+5. Achievement 목록
+6. 보상 지급/중복 방지 방식
+7. 모바일 화면 접근 방법
+8. 테스트 결과
+9. 다음 단계 Streak / Season Pass 연결 포인트

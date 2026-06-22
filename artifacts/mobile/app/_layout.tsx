@@ -131,6 +131,7 @@ function RootLayoutNav() {
         name="clan/war/[id]"
         options={{ title: "가문전", headerBackTitle: "Back" }}
       />
+      <Stack.Screen name="quests/index" options={{ headerShown: false }} />
       <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}

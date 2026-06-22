@@ -5,6 +5,64 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+export type QuestType = typeof QuestType[keyof typeof QuestType];
+
+
+export const QuestType = {
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export interface Quest {
+  key: string;
+  type: QuestType;
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  completed: boolean;
+  rewardClaimed: boolean;
+  rewardExp: number;
+}
+
+export type AchievementCategory = typeof AchievementCategory[keyof typeof AchievementCategory];
+
+
+export const AchievementCategory = {
+  chat: 'chat',
+  battle: 'battle',
+  dungeon: 'dungeon',
+  clan: 'clan',
+  persona: 'persona',
+} as const;
+
+export interface Achievement {
+  key: string;
+  title: string;
+  description: string;
+  category: AchievementCategory;
+  icon: string;
+  unlocked: boolean;
+  rewardClaimed: boolean;
+  rewardExp: number;
+}
+
+export interface RewardClaimResult {
+  ok: boolean;
+  rewardExp: number;
+}
+
+export interface RewardClaimError {
+  error: string;
+  message?: string;
+}
+
+export interface RewardsSummary {
+  claimableQuests: number;
+  claimableAchievements: number;
+  total: number;
+}
+
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;

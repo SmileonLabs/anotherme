@@ -267,3 +267,86 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
     log.error({ err, userId, kind }, "recordActivity failed");
   }
 }
+
+export interface RecordRewardParams {
+  userId: string;
+  /** "quest" | "achievement" — keeps reward grants distinct from core activity. */
+  sourceType: Extract<GrowthSourceType, "quest" | "achievement">;
+  eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward">;
+  /** Deterministic idempotency key, e.g. `quest:{periodKey}:{questKey}:{userId}`. */
+  sourceKey: string;
+  /** Flat Persona EXP reward. Must be > 0 to grant. */
+  expDelta: number;
+  reason: string;
+  metadata?: Record<string, unknown>;
+  log?: Logger;
+}
+
+/**
+ * Grant a flat Persona EXP reward for a claimed quest / achievement. This is a
+ * sibling of {@link recordActivity} that grants ONLY XP (no stat changes) and,
+ * crucially, never touches Clan EXP — rewards are a self-contained retention
+ * layer on top of growth, not new clan activity.
+ *
+ * Idempotency + atomicity match recordActivity exactly: the persona row is locked
+ * `FOR UPDATE`, the xp_event is inserted with `ON CONFLICT (source_key) DO NOTHING`,
+ * and the persona is bumped only when the insert produced a row. Returns `true`
+ * iff this call actually granted (a replay of the same sourceKey returns `false`),
+ * so callers can decide whether to mark the reward claimed.
+ *
+ * Unlike recordActivity (fire-and-forget), this rethrows on unexpected DB errors
+ * so a claim endpoint can surface a real failure to the user rather than silently
+ * marking a reward claimed without granting it.
+ */
+export async function recordReward(params: RecordRewardParams): Promise<boolean> {
+  const { userId, sourceType, eventType, sourceKey, expDelta, reason, metadata } = params;
+  if (expDelta <= 0) return false;
+
+  const ensured = await ensurePersona(userId);
+  if (!ensured) throw new Error("persona unavailable for reward");
+
+  let granted = false;
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(personasTable)
+      .where(eq(personasTable.userId, userId))
+      .for("update");
+    if (!locked) return;
+
+    const beforeExp = locked.xp;
+    const beforeLevel = locked.level;
+    const afterExp = beforeExp + expDelta;
+    const afterLevel = computeLevel(afterExp);
+
+    const inserted = await tx
+      .insert(xpEventsTable)
+      .values({
+        userId,
+        sourceType,
+        sourceId: null,
+        sourceKey,
+        eventType,
+        expDelta,
+        statChanges: {},
+        reason,
+        metadata: metadata ?? null,
+        beforeLevel,
+        afterLevel,
+        beforeExp,
+        afterExp,
+      })
+      .onConflictDoNothing({ target: xpEventsTable.sourceKey })
+      .returning({ id: xpEventsTable.id });
+
+    if (inserted.length === 0) return;
+
+    await tx
+      .update(personasTable)
+      .set({ xp: afterExp, level: afterLevel })
+      .where(eq(personasTable.userId, userId));
+    granted = true;
+  });
+
+  return granted;
+}

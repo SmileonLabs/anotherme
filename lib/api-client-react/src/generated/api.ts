@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Achievement,
   BattleCreateInput,
   BattleHistoryItem,
   BattlePersonaList,
@@ -75,8 +76,12 @@ import type {
   PersonaRanking,
   PublicUser,
   PushTokenInput,
+  Quest,
   ReadInput,
   RedeemInviteInput,
+  RewardClaimError,
+  RewardClaimResult,
+  RewardsSummary,
   RoomInput,
   SearchUsersParams,
   SubmitClanWarArgumentBody,
@@ -5894,4 +5899,379 @@ export const useCancelClanWar = <TError = ErrorType<void | ClanError>,
       > => {
       return useMutation(getCancelClanWarMutationOptions(options));
     }
+
+export const getGetMyQuestsUrl = () => {
+
+
+
+
+  return `/api/users/me/quests`
+}
+
+/**
+ * Returns today's daily quests and this week's weekly quests. Progress is recomputed on read from existing activity (chat, battle, dungeon, clan, analysis); no new domain activity is created and no AI is called.
+
+ * @summary Get my daily & weekly quests
+ */
+export const getMyQuests = async ( options?: RequestInit): Promise<Quest[]> => {
+
+  return customFetch<Quest[]>(getGetMyQuestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyQuestsQueryKey = () => {
+    return [
+    `/api/users/me/quests`
+    ] as const;
+    }
+
+
+export const getGetMyQuestsQueryOptions = <TData = Awaited<ReturnType<typeof getMyQuests>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyQuests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyQuestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyQuests>>> = ({ signal }) => getMyQuests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyQuests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyQuestsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyQuests>>>
+export type GetMyQuestsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get my daily & weekly quests
+ */
+
+export function useGetMyQuests<TData = Awaited<ReturnType<typeof getMyQuests>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyQuests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyQuestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getClaimQuestRewardUrl = (questKey: string,) => {
+
+
+
+
+  return `/api/users/me/quests/${questKey}/claim`
+}
+
+/**
+ * @summary Claim a completed quest's reward
+ */
+export const claimQuestReward = async (questKey: string, options?: RequestInit): Promise<RewardClaimResult> => {
+
+  return customFetch<RewardClaimResult>(getClaimQuestRewardUrl(questKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getClaimQuestRewardMutationOptions = <TError = ErrorType<void | RewardClaimError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimQuestReward>>, TError,{questKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof claimQuestReward>>, TError,{questKey: string}, TContext> => {
+
+const mutationKey = ['claimQuestReward'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof claimQuestReward>>, {questKey: string}> = (props) => {
+          const {questKey} = props ?? {};
+
+          return  claimQuestReward(questKey,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClaimQuestRewardMutationResult = NonNullable<Awaited<ReturnType<typeof claimQuestReward>>>
+
+    export type ClaimQuestRewardMutationError = ErrorType<void | RewardClaimError>
+
+    /**
+ * @summary Claim a completed quest's reward
+ */
+export const useClaimQuestReward = <TError = ErrorType<void | RewardClaimError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimQuestReward>>, TError,{questKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof claimQuestReward>>,
+        TError,
+        {questKey: string},
+        TContext
+      > => {
+      return useMutation(getClaimQuestRewardMutationOptions(options));
+    }
+
+export const getGetMyAchievementsUrl = () => {
+
+
+
+
+  return `/api/users/me/achievements`
+}
+
+/**
+ * Returns all achievements with unlock/claim state. Unlock is computed on read from existing activity; no AI is called and no domain activity is created.
+
+ * @summary Get my achievements
+ */
+export const getMyAchievements = async ( options?: RequestInit): Promise<Achievement[]> => {
+
+  return customFetch<Achievement[]>(getGetMyAchievementsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyAchievementsQueryKey = () => {
+    return [
+    `/api/users/me/achievements`
+    ] as const;
+    }
+
+
+export const getGetMyAchievementsQueryOptions = <TData = Awaited<ReturnType<typeof getMyAchievements>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyAchievements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyAchievementsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyAchievements>>> = ({ signal }) => getMyAchievements({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyAchievements>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyAchievementsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyAchievements>>>
+export type GetMyAchievementsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get my achievements
+ */
+
+export function useGetMyAchievements<TData = Awaited<ReturnType<typeof getMyAchievements>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyAchievements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyAchievementsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getClaimAchievementRewardUrl = (achievementKey: string,) => {
+
+
+
+
+  return `/api/users/me/achievements/${achievementKey}/claim`
+}
+
+/**
+ * @summary Claim an unlocked achievement's reward
+ */
+export const claimAchievementReward = async (achievementKey: string, options?: RequestInit): Promise<RewardClaimResult> => {
+
+  return customFetch<RewardClaimResult>(getClaimAchievementRewardUrl(achievementKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getClaimAchievementRewardMutationOptions = <TError = ErrorType<void | RewardClaimError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimAchievementReward>>, TError,{achievementKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof claimAchievementReward>>, TError,{achievementKey: string}, TContext> => {
+
+const mutationKey = ['claimAchievementReward'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof claimAchievementReward>>, {achievementKey: string}> = (props) => {
+          const {achievementKey} = props ?? {};
+
+          return  claimAchievementReward(achievementKey,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClaimAchievementRewardMutationResult = NonNullable<Awaited<ReturnType<typeof claimAchievementReward>>>
+
+    export type ClaimAchievementRewardMutationError = ErrorType<void | RewardClaimError>
+
+    /**
+ * @summary Claim an unlocked achievement's reward
+ */
+export const useClaimAchievementReward = <TError = ErrorType<void | RewardClaimError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimAchievementReward>>, TError,{achievementKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof claimAchievementReward>>,
+        TError,
+        {achievementKey: string},
+        TContext
+      > => {
+      return useMutation(getClaimAchievementRewardMutationOptions(options));
+    }
+
+export const getGetMyRewardsSummaryUrl = () => {
+
+
+
+
+  return `/api/users/me/rewards/summary`
+}
+
+/**
+ * @summary Count of claimable quest/achievement rewards (for badges)
+ */
+export const getMyRewardsSummary = async ( options?: RequestInit): Promise<RewardsSummary> => {
+
+  return customFetch<RewardsSummary>(getGetMyRewardsSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyRewardsSummaryQueryKey = () => {
+    return [
+    `/api/users/me/rewards/summary`
+    ] as const;
+    }
+
+
+export const getGetMyRewardsSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getMyRewardsSummary>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyRewardsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyRewardsSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyRewardsSummary>>> = ({ signal }) => getMyRewardsSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyRewardsSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyRewardsSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getMyRewardsSummary>>>
+export type GetMyRewardsSummaryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Count of claimable quest/achievement rewards (for badges)
+ */
+
+export function useGetMyRewardsSummary<TData = Awaited<ReturnType<typeof getMyRewardsSummary>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyRewardsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyRewardsSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 

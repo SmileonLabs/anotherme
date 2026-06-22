@@ -18,6 +18,7 @@ import {
   useGetMe,
   useGetMyBattleHistory,
   useGetMyBattleStats,
+  useGetMyRewardsSummary,
   useListIncomingFriendRequests,
   useListRooms,
   type BattleHistoryItem,
@@ -78,13 +79,15 @@ export default function HomeScreen() {
   const { data: rooms = [], refetch: refetchRooms } = useListRooms();
   const { data: incomingRequests = [], refetch: refetchRequests } =
     useListIncomingFriendRequests();
+  const { data: rewardsSummary, refetch: refetchRewards } = useGetMyRewardsSummary();
 
   const refetchAll = React.useCallback(() => {
     refetchHistory();
     refetchStats();
     refetchRooms();
     refetchRequests();
-  }, [refetchHistory, refetchStats, refetchRooms, refetchRequests]);
+    refetchRewards();
+  }, [refetchHistory, refetchStats, refetchRooms, refetchRequests, refetchRewards]);
 
   // Refresh dashboard data whenever it regains focus (battles finished elsewhere,
   // new messages, etc.) without a manual pull.
@@ -162,6 +165,17 @@ export default function HomeScreen() {
           <LogoWhite width={130} height={16} accessibilityLabel="anotherme" />
         )}
         <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="퀘스트"
+            hitSlop={8}
+            onPress={() => router.push("/quests")}
+            style={({ pressed }) => [styles.bellBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="target" size={22} color={colors.foreground} />
+            {(rewardsSummary?.total ?? 0) > 0 ? (
+              <View style={[styles.bellDot, { borderColor: colors.background }]} />
+            ) : null}
+          </Pressable>
           <Pressable
             accessibilityLabel="친구"
             hitSlop={8}

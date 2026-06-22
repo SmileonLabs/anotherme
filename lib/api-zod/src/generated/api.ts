@@ -1767,3 +1767,76 @@ export const CancelClanWarResponse = zod.object({
 }))
 
 
+/**
+ * Returns today's daily quests and this week's weekly quests. Progress is recomputed on read from existing activity (chat, battle, dungeon, clan, analysis); no new domain activity is created and no AI is called.
+
+ * @summary Get my daily & weekly quests
+ */
+export const GetMyQuestsResponseItem = zod.object({
+  "key": zod.string(),
+  "type": zod.enum(['daily', 'weekly']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "progress": zod.number(),
+  "target": zod.number(),
+  "completed": zod.boolean(),
+  "rewardClaimed": zod.boolean(),
+  "rewardExp": zod.number()
+})
+export const GetMyQuestsResponse = zod.array(GetMyQuestsResponseItem)
+
+
+/**
+ * @summary Claim a completed quest's reward
+ */
+export const ClaimQuestRewardParams = zod.object({
+  "questKey": zod.coerce.string()
+})
+
+export const ClaimQuestRewardResponse = zod.object({
+  "ok": zod.boolean(),
+  "rewardExp": zod.number()
+})
+
+
+/**
+ * Returns all achievements with unlock/claim state. Unlock is computed on read from existing activity; no AI is called and no domain activity is created.
+
+ * @summary Get my achievements
+ */
+export const GetMyAchievementsResponseItem = zod.object({
+  "key": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "category": zod.enum(['chat', 'battle', 'dungeon', 'clan', 'persona']),
+  "icon": zod.string(),
+  "unlocked": zod.boolean(),
+  "rewardClaimed": zod.boolean(),
+  "rewardExp": zod.number()
+})
+export const GetMyAchievementsResponse = zod.array(GetMyAchievementsResponseItem)
+
+
+/**
+ * @summary Claim an unlocked achievement's reward
+ */
+export const ClaimAchievementRewardParams = zod.object({
+  "achievementKey": zod.coerce.string()
+})
+
+export const ClaimAchievementRewardResponse = zod.object({
+  "ok": zod.boolean(),
+  "rewardExp": zod.number()
+})
+
+
+/**
+ * @summary Count of claimable quest/achievement rewards (for badges)
+ */
+export const GetMyRewardsSummaryResponse = zod.object({
+  "claimableQuests": zod.number(),
+  "claimableAchievements": zod.number(),
+  "total": zod.number()
+})
+
+

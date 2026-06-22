@@ -7,7 +7,14 @@ import type { PersonaStats } from "./persona";
  * (not an enum) so adding a category never requires a migration. `voice` and
  * `system` are reserved for future sources (voice calls, admin/system grants).
  */
-export type GrowthSourceType = "chat" | "battle" | "dungeon" | "voice" | "system";
+export type GrowthSourceType =
+  | "chat"
+  | "battle"
+  | "dungeon"
+  | "voice"
+  | "system"
+  | "quest"
+  | "achievement";
 
 /**
  * Specific event within a source. One source can emit several event types
@@ -19,7 +26,9 @@ export type GrowthEventType =
   | "battle_speech"
   | "battle_result"
   | "dungeon_action"
-  | "dungeon_result";
+  | "dungeon_result"
+  | "quest_reward"
+  | "achievement_reward";
 
 /**
  * Append-only log of every growth-granting activity. One row records the XP and

@@ -9,6 +9,7 @@ import {
   useGetMe,
   useGetMyPersona,
   useGetMyPersonaCard,
+  useGetMyRewardsSummary,
   useAnalyzeMyPersona,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
@@ -118,6 +119,7 @@ export default function PersonaScreen() {
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
   const { data: card, refetch: refetchCard } = useGetMyPersonaCard();
+  const { data: rewardsSummary } = useGetMyRewardsSummary();
 
   const [analysisError, setAnalysisError] = React.useState<string | null>(null);
   const { mutate: analyze, isPending: isAnalyzing } = useAnalyzeMyPersona({
@@ -159,14 +161,27 @@ export default function PersonaScreen() {
     <View style={[styles.container, { backgroundColor: colors.muted }]}>
       <View style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}>
         <Text style={[styles.screenTitle, { color: colors.foreground }]}>어나더 미</Text>
-        <Pressable
-          accessibilityLabel="가문"
-          hitSlop={8}
-          onPress={() => router.push("/clan")}
-          style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
-        >
-          <Feather name="shield" size={22} color={colors.foreground} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="퀘스트"
+            hitSlop={8}
+            onPress={() => router.push("/quests")}
+            style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="target" size={22} color={colors.foreground} />
+            {(rewardsSummary?.total ?? 0) > 0 ? (
+              <View style={[styles.headerDot, { borderColor: colors.muted }]} />
+            ) : null}
+          </Pressable>
+          <Pressable
+            accessibilityLabel="가문"
+            hitSlop={8}
+            onPress={() => router.push("/clan")}
+            style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="shield" size={22} color={colors.foreground} />
+          </Pressable>
+        </View>
       </View>
       <CustomScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
         {isLoading ? (
@@ -605,6 +620,17 @@ const styles = StyleSheet.create({
   },
   screenTitle: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   headerBtn: { padding: 6 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  headerDot: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+  },
   center: { paddingTop: 80, alignItems: "center", gap: 16 },
   errorText: { fontSize: 14, fontFamily: "Inter_500Medium" },
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },

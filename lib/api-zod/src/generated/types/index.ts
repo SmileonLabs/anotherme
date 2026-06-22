@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './achievement';
+export * from './achievementCategory';
 export * from './battleCreateInput';
 export * from './battleEvaluation';
 export * from './battleHistoryItem';
@@ -100,8 +102,13 @@ export * from './personaRankingMyRank';
 export * from './personaStats';
 export * from './publicUser';
 export * from './pushTokenInput';
+export * from './quest';
+export * from './questType';
 export * from './readInput';
 export * from './redeemInviteInput';
+export * from './rewardClaimError';
+export * from './rewardClaimResult';
+export * from './rewardsSummary';
 export * from './roomInput';
 export * from './searchUsersParams';
 export * from './submitClanWarArgumentBody';

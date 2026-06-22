@@ -110,3 +110,29 @@ chat/battle/dungeon content. An E2E test asserts the item key-set exactly.
 "탐험가형"(explorer) and "재담꾼형"(entertainer), NOT the spec's "탐구자형"/"엔터테이너형".
 Mobile archetype filter chips must mirror the labels `computeIdentity` actually
 produces, or filtering by key won't line up with what users see on their card.
+
+## Quest / Achievement retention layer (Phase 12)
+
+Quests/achievements are a **recompute-on-read** layer over EXISTING activity
+(xp_events, clan_memories, clan_war_participants, persona.lastAnalyzedAt, clans) —
+they never add new tracking calls into core flows. Rewards grant ONLY Persona EXP
+via `recordReward` (sibling of recordActivity), which touches NO stats and NEVER
+clan exp. **Why:** rewards are a self-contained layer; pulling clan exp into a
+claim would double-count and violate the "don't touch clan XP" constraint.
+
+**recordReward rethrows (unlike recordActivity which swallows).** A claim is
+user-initiated and synchronous, so a real DB failure must surface as an error, not
+silently mark a reward claimed without granting. recordActivity stays
+fire-and-forget because it rides core flows.
+
+**Two-source claim state — the xp_event source_key is the truth, `rewardClaimedAt`
+is only a UI flag.** Grant (recordReward) and flag-stamp (update rewardClaimedAt)
+are separate writes, so a crash between them can leave EXP granted but the row
+unflagged. Fix: the claim flow stamps `rewardClaimedAt` whenever it `IS NULL`
+*regardless* of whether this call granted — self-healing a prior partial claim.
+Reward source_keys: `quest:{periodKey}:{questKey}:{userId}`,
+`achievement:{achievementKey}:{userId}`.
+
+**Recompute upsert must never clear `completedAt`.** Use
+`coalesce(completed_at, <now-or-null>)` on conflict — writing a bare `null` when
+the current recompute is below target would erase an earlier completion.
