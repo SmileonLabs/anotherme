@@ -78,6 +78,14 @@ export interface BattleState {
   ended: boolean;
   /** Winner's userId, or null for a draw / not-yet-ended. */
   winnerUserId: string | null;
+  /**
+   * Monotonic game counter within a room. Starts at 0 and increments on every
+   * restart/rematch. Growth idempotency keys embed it so a rematch in the same
+   * room legitimately re-grants XP (otherwise the per-room `source_key` would
+   * collide). Optional for backward compatibility with sessions created before
+   * this field existed (absent ⇒ treated as 0).
+   */
+  matchSeq?: number;
 }
 
 export const battleSessionsTable = pgTable("battle_sessions", {

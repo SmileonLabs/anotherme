@@ -107,6 +107,20 @@ export const GetMyPersonaResponse = zod.object({
   "emotion": zod.number(),
   "decisiveness": zod.number()
 }),
+  "recentEvents": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.string(),
+  "eventType": zod.string(),
+  "sourceId": zod.string().nullish(),
+  "expDelta": zod.number(),
+  "statChanges": zod.record(zod.string(), zod.number()).optional(),
+  "reason": zod.string().nullish(),
+  "beforeLevel": zod.number(),
+  "afterLevel": zod.number(),
+  "beforeExp": zod.number(),
+  "afterExp": zod.number(),
+  "createdAt": zod.string()
+})),
   "summary": zod.string().nullish(),
   "lastAnalyzedAt": zod.string().nullish(),
   "createdAt": zod.string()

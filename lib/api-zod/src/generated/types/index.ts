@@ -36,6 +36,8 @@ export * from './errorEnvelope';
 export * from './friendRequest';
 export * from './friendRequestInput';
 export * from './friendRequestWithUser';
+export * from './growthEvent';
+export * from './growthEventStatChanges';
 export * from './healthStatus';
 export * from './invite';
 export * from './inviteMembersInput';

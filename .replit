@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-3.11"]
+modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -36,3 +36,6 @@ externalPort = 3000
 [userenv.shared]
 VAPID_PUBLIC_KEY = "BFHcuezJSvvMd5ZNprmHuqMpVNbVvdBUNxereuL7vo_Yc40vwaYJelhjjMt8ZJu0IPzxJYQyeNW-owUeoFbPZu0"
 VAPID_SUBJECT = "mailto:support@anotherme.app"
+
+[nix]
+channel = "stable-25_05"

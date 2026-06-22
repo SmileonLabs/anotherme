@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { GrowthEvent } from './growthEvent';
 import type { PersonaStats } from './personaStats';
 
 export interface PersonaProfile {
@@ -15,6 +16,7 @@ export interface PersonaProfile {
   xpIntoLevel: number;
   xpForNextLevel: number;
   stats: PersonaStats;
+  recentEvents: GrowthEvent[];
   /** @nullable */
   summary?: string | null;
   /** @nullable */

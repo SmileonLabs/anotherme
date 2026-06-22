@@ -53,6 +53,25 @@ export interface PersonaStats {
   decisiveness: number;
 }
 
+export type GrowthEventStatChanges = {[key: string]: number};
+
+export interface GrowthEvent {
+  id: string;
+  sourceType: string;
+  eventType: string;
+  /** @nullable */
+  sourceId?: string | null;
+  expDelta: number;
+  statChanges?: GrowthEventStatChanges;
+  /** @nullable */
+  reason?: string | null;
+  beforeLevel: number;
+  afterLevel: number;
+  beforeExp: number;
+  afterExp: number;
+  createdAt: string;
+}
+
 export interface PersonaProfile {
   id: string;
   userId: string;
@@ -61,6 +80,7 @@ export interface PersonaProfile {
   xpIntoLevel: number;
   xpForNextLevel: number;
   stats: PersonaStats;
+  recentEvents: GrowthEvent[];
   /** @nullable */
   summary?: string | null;
   /** @nullable */

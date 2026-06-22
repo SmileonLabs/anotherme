@@ -35,6 +35,45 @@ const STAT_META: {
   { key: "decisiveness", label: "결단", icon: "target", color: "#FB923C" },
 ];
 
+const STAT_LABELS: Record<StatKey, string> = {
+  logic: "논리",
+  empathy: "공감",
+  wit: "위트",
+  knowledge: "지식",
+  conviction: "신념",
+  emotion: "감정",
+  decisiveness: "결단",
+};
+
+const SOURCE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  chat: "message-circle",
+  battle: "award",
+  dungeon: "compass",
+  voice: "phone",
+  system: "settings",
+};
+
+/** "공감 +1, 위트 +1" — readable Korean summary of a growth event's stat deltas. */
+function formatStatChanges(changes?: Record<string, number> | null): string {
+  if (!changes) return "";
+  return Object.entries(changes)
+    .filter(([, v]) => (v ?? 0) !== 0)
+    .map(([k, v]) => `${STAT_LABELS[k as StatKey] ?? k} +${v}`)
+    .join(", ");
+}
+
+function formatEventTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const diffMin = Math.floor((Date.now() - then) / 60000);
+  if (diffMin < 1) return "방금";
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}시간 전`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}일 전`;
+  return new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+}
+
 function personaTitle(level: number): string {
   if (level >= 30) return "또 다른 자아 · 각성";
   if (level >= 20) return "또 다른 자아 · 완성형";
@@ -177,6 +216,52 @@ export default function PersonaScreen() {
               })}
             </View>
 
+            {/* Recent growth log */}
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+              최근 성장 기록
+            </Text>
+            <View style={[styles.eventsCard, { backgroundColor: colors.background }]}>
+              {persona?.recentEvents && persona.recentEvents.length > 0 ? (
+                persona.recentEvents.map((ev, i) => {
+                  const icon = SOURCE_ICONS[ev.sourceType] ?? "activity";
+                  const changes = formatStatChanges(ev.statChanges);
+                  return (
+                    <View
+                      key={ev.id}
+                      style={[
+                        styles.eventRow,
+                        {
+                          borderTopColor: colors.border,
+                          borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.eventIcon, { backgroundColor: `${colors.primary}18` }]}>
+                        <Feather name={icon} size={15} color={colors.primary} />
+                      </View>
+                      <View style={styles.eventBody}>
+                        <Text style={[styles.eventTitle, { color: colors.foreground }]} numberOfLines={1}>
+                          {ev.reason ?? "성장"}
+                          {changes ? `으로 ${changes}` : ""}
+                        </Text>
+                        <Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>
+                          {formatEventTime(ev.createdAt)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.eventXp, { color: colors.primary }]}>+{ev.expDelta} XP</Text>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={styles.eventsEmpty}>
+                  <Feather name="clock" size={20} color={colors.mutedForeground} />
+                  <Text style={[styles.eventsEmptyText, { color: colors.mutedForeground }]}>
+                    아직 성장 기록이 없어요. 채팅·배틀·던전으로 어나더 미를 키워보세요.
+                  </Text>
+                </View>
+              )}
+            </View>
+
             {/* AI summary (reserved for a later phase) */}
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>AI 분석</Text>
             <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
@@ -310,6 +395,33 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   statValue: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   statBarTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+
+  eventsCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden" },
+  eventRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  eventIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventBody: { flex: 1, gap: 2 },
+  eventTitle: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  eventMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  eventXp: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  eventsEmpty: { alignItems: "center", gap: 10, paddingVertical: 20, paddingHorizontal: 16 },
+  eventsEmptyText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    lineHeight: 19,
+  },
 
   summaryCard: { marginHorizontal: 16, borderRadius: 16, padding: 18 },
   summaryText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },

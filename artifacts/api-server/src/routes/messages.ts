@@ -225,7 +225,13 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
 
   // Grow the sender's Another Me persona from this chat activity. Fire-and-forget
   // and self-isolated: growth tracking must never affect message delivery.
-  void recordActivity(userId, "chat_message", { refId: message.id, log: req.log });
+  void recordActivity({
+    userId,
+    kind: "chat_message",
+    sourceId: message.id,
+    sourceKey: `chat:${message.id}:${userId}`,
+    log: req.log,
+  });
 
   // In a dungeon room, a player's text message is an in-game action: let the
   // AI Dungeon Master respond (fire-and-forget, serialized per room).

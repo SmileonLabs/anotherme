@@ -1148,9 +1148,42 @@ components:
         decisiveness:
           type: integer
 
+    GrowthEvent:
+      type: object
+      required:
+        [id, sourceType, eventType, expDelta, beforeLevel, afterLevel, beforeExp, afterExp, createdAt]
+      properties:
+        id:
+          type: string
+        sourceType:
+          type: string
+        eventType:
+          type: string
+        sourceId:
+          type: ["string", "null"]
+        expDelta:
+          type: integer
+        statChanges:
+          type: object
+          additionalProperties:
+            type: integer
+        reason:
+          type: ["string", "null"]
+        beforeLevel:
+          type: integer
+        afterLevel:
+          type: integer
+        beforeExp:
+          type: integer
+        afterExp:
+          type: integer
+        createdAt:
+          type: string
+
     PersonaProfile:
       type: object
-      required: [id, userId, level, xp, xpIntoLevel, xpForNextLevel, stats, createdAt]
+      required:
+        [id, userId, level, xp, xpIntoLevel, xpForNextLevel, stats, recentEvents, createdAt]
       properties:
         id:
           type: string
@@ -1166,6 +1199,10 @@ components:
           type: integer
         stats:
           $ref: "#/components/schemas/PersonaStats"
+        recentEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrowthEvent"
         summary:
           type: ["string", "null"]
         lastAnalyzedAt:

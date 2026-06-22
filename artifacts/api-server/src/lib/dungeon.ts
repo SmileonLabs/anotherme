@@ -581,15 +581,29 @@ export async function runDungeonTurn(
     // Grow the acting player's persona (self-isolated). Only player-driven turns
     // (action != null) count; the AI-generated opening scene does not.
     if (result && action) {
-      void recordActivity(action.userId, "dungeon_turn", { refId: roomId, log });
+      void recordActivity({
+        userId: action.userId,
+        kind: "dungeon_action",
+        sourceId: roomId,
+        sourceKey: `dungeon_action:${roomId}:${state.turn}:${action.userId}`,
+        log,
+      });
 
       // Award goal growth when goals flip from not-done to done this turn. The
-      // acting player gets credit for advancing the party's mission.
+      // acting player gets credit for advancing the party's mission. The goal
+      // text is part of the sourceKey so each goal is rewarded at most once.
       const prevDone = (state.goals ?? []).filter((g) => g.done).map((g) => g.text);
       const prevDoneSet = new Set(prevDone);
       const newlyDone = nextGoals.filter((g) => g.done && !prevDoneSet.has(g.text));
-      for (const _goal of newlyDone) {
-        void recordActivity(action.userId, "dungeon_goal", { refId: roomId, log });
+      for (const goal of newlyDone) {
+        void recordActivity({
+          userId: action.userId,
+          kind: "dungeon_goal",
+          sourceId: roomId,
+          sourceKey: `dungeon_result:${roomId}:${action.userId}:${goal.text}`,
+          metadata: { goal: goal.text },
+          log,
+        });
       }
     }
 

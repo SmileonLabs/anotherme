@@ -522,7 +522,11 @@ export function battleLevelInfo(mp: number): BattleLevelInfo {
  * recorded again. Best-effort: failures are logged, never thrown (the battle is
  * already ended regardless).
  */
-export async function recordBattleResultStats(state: BattleState, log: Logger): Promise<void> {
+export async function recordBattleResultStats(
+  roomId: string,
+  state: BattleState,
+  log: Logger,
+): Promise<void> {
   const humans = state.participants.filter((p) => !p.isAI);
   for (const p of humans) {
     const outcome: "win" | "loss" | "draw" =
@@ -570,8 +574,18 @@ export async function recordBattleResultStats(state: BattleState, log: Logger): 
     }
 
     // Grow the participant's persona from the battle outcome (self-isolated).
-    const growthSource = isWin ? "battle_win" : isLoss ? "battle_loss" : "battle_draw";
-    void recordActivity(p.userId, growthSource, { log });
+    // One result per (room, user) — re-evaluating an already-ended battle grants
+    // nothing twice thanks to the unique sourceKey.
+    const growthKind = isWin ? "battle_win" : isLoss ? "battle_loss" : "battle_draw";
+    void recordActivity({
+      userId: p.userId,
+      kind: growthKind,
+      sourceId: roomId,
+      sourceKey: `battle_result:${roomId}:${state.matchSeq ?? 0}:${p.userId}`,
+      reason: isWin ? "토크배틀 승리" : isLoss ? "토크배틀 패배" : "토크배틀 무승부",
+      metadata: { outcome },
+      log,
+    });
   }
 }
 
@@ -868,10 +882,16 @@ export async function submitBattleTurn(
     // Grow the speaker's persona from this turn (human speakers only; AI turns
     // never run through here). Self-isolated fire-and-forget.
     if (speaker && !speaker.isAI) {
-      void recordActivity(userId, "battle_turn", { refId: roomId, log });
+      void recordActivity({
+        userId,
+        kind: "battle_speech",
+        sourceId: roomId,
+        sourceKey: `battle_speech:${roomId}:${state.matchSeq ?? 0}:${turnIndex}:${userId}`,
+        log,
+      });
     }
 
-    if (state.ended) await recordBattleResultStats(state, log);
+    if (state.ended) await recordBattleResultStats(roomId, state, log);
 
     return { ok: true, state };
   });
@@ -955,7 +975,7 @@ export async function resolveExpiredTurn(roomId: string, log: Logger): Promise<b
         .set({ state, status: state.phase })
         .where(eq(battleSessionsTable.roomId, roomId));
     });
-    if (state.ended) await recordBattleResultStats(state, log);
+    if (state.ended) await recordBattleResultStats(roomId, state, log);
     log.info({ roomId, turnIndex }, "Battle turn auto-forfeited (timeout)");
     return true;
   });
@@ -1076,7 +1096,7 @@ export async function resolveAITurn(roomId: string, log: Logger): Promise<boolea
           .set({ state, status: state.phase })
           .where(eq(battleSessionsTable.roomId, roomId));
       });
-      if (state.ended) await recordBattleResultStats(state, log);
+      if (state.ended) await recordBattleResultStats(roomId, state, log);
       log.info({ roomId, turnIndex, personaId: persona.id }, "Battle AI turn resolved");
       return true;
     });
@@ -1154,6 +1174,9 @@ export async function restartBattle(roomId: string): Promise<SubmitResult> {
       turnStartedAt: null,
       ended: false,
       winnerUserId: null,
+      // Bump the game counter so this rematch's growth events get fresh,
+      // non-colliding idempotency keys.
+      matchSeq: (prev.matchSeq ?? 0) + 1,
     };
     await db
       .update(battleSessionsTable)

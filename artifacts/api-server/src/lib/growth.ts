@@ -1,15 +1,41 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { Logger } from "pino";
 import { db } from "@workspace/db";
 import {
   DEFAULT_PERSONA_STATS,
   personasTable,
   xpEventsTable,
+  type GrowthEventType,
+  type GrowthSourceType,
   type Persona,
   type PersonaStats,
-  type XpSourceType,
+  type XpEvent,
 } from "@workspace/db";
 import { logger as defaultLogger } from "./logger";
+
+/**
+ * Internal grant kinds. These are finer-grained than the stored `eventType`
+ * (e.g. battle win/loss/draw all map to the `battle_result` event type) because
+ * the XP/stat payout differs per outcome. Callers pass a `GrowthKind`; the rule
+ * below decides the stored `sourceType`/`eventType`, the XP, the stat deltas, and
+ * a default human-readable Korean reason.
+ */
+export type GrowthKind =
+  | "chat_message"
+  | "battle_speech"
+  | "battle_win"
+  | "battle_loss"
+  | "battle_draw"
+  | "dungeon_action"
+  | "dungeon_goal";
+
+interface GrowthRule {
+  sourceType: GrowthSourceType;
+  eventType: GrowthEventType;
+  xp: number;
+  stats: Partial<PersonaStats>;
+  reason: string;
+}
 
 /**
  * Deterministic growth rules. Each activity grants a fixed amount of XP and a
@@ -17,14 +43,56 @@ import { logger as defaultLogger } from "./logger";
  * actions (chat) grant little, and rare-but-meaningful ones (battle win, dungeon
  * goal) grant a lot.
  */
-const GROWTH_CONFIG: Record<XpSourceType, { xp: number; stats: Partial<PersonaStats> }> = {
-  chat_message: { xp: 2, stats: { empathy: 1 } },
-  battle_turn: { xp: 5, stats: { logic: 1, wit: 1 } },
-  battle_win: { xp: 30, stats: { conviction: 2, logic: 1 } },
-  battle_loss: { xp: 10, stats: { emotion: 1 } },
-  battle_draw: { xp: 15, stats: { conviction: 1, emotion: 1 } },
-  dungeon_turn: { xp: 4, stats: { decisiveness: 1 } },
-  dungeon_goal: { xp: 20, stats: { knowledge: 2, decisiveness: 1 } },
+const GROWTH_RULES: Record<GrowthKind, GrowthRule> = {
+  chat_message: {
+    sourceType: "chat",
+    eventType: "chat_message",
+    xp: 2,
+    stats: { empathy: 1 },
+    reason: "채팅 참여",
+  },
+  battle_speech: {
+    sourceType: "battle",
+    eventType: "battle_speech",
+    xp: 5,
+    stats: { logic: 1, wit: 1 },
+    reason: "토크배틀 발언",
+  },
+  battle_win: {
+    sourceType: "battle",
+    eventType: "battle_result",
+    xp: 30,
+    stats: { conviction: 2, logic: 1 },
+    reason: "토크배틀 승리",
+  },
+  battle_loss: {
+    sourceType: "battle",
+    eventType: "battle_result",
+    xp: 10,
+    stats: { emotion: 1 },
+    reason: "토크배틀 패배",
+  },
+  battle_draw: {
+    sourceType: "battle",
+    eventType: "battle_result",
+    xp: 15,
+    stats: { conviction: 1, emotion: 1 },
+    reason: "토크배틀 무승부",
+  },
+  dungeon_action: {
+    sourceType: "dungeon",
+    eventType: "dungeon_action",
+    xp: 4,
+    stats: { decisiveness: 1 },
+    reason: "던전 모험",
+  },
+  dungeon_goal: {
+    sourceType: "dungeon",
+    eventType: "dungeon_result",
+    xp: 20,
+    stats: { knowledge: 2, decisiveness: 1 },
+    reason: "던전 목표 달성",
+  },
 };
 
 /**
@@ -89,31 +157,54 @@ export async function ensurePersona(userId: string): Promise<Persona | undefined
   return after;
 }
 
+/** The most recent growth events for a user, newest first. */
+export async function recentGrowthEvents(userId: string, limit = 20): Promise<XpEvent[]> {
+  return db
+    .select()
+    .from(xpEventsTable)
+    .where(eq(xpEventsTable.userId, userId))
+    .orderBy(desc(xpEventsTable.createdAt))
+    .limit(limit);
+}
+
+export interface RecordActivityParams {
+  userId: string;
+  kind: GrowthKind;
+  /** Deterministic idempotency key — must be unique per real-world activity. */
+  sourceKey: string;
+  /** Opaque source pointer (message/room id). */
+  sourceId?: string | null;
+  /** Overrides the rule's default Korean reason when present. */
+  reason?: string;
+  /** Extra structured context for future AI/family/ranking features. */
+  metadata?: Record<string, unknown>;
+  log?: Logger;
+}
+
 /**
  * Record a single growth event and apply it to the user's persona. This is the
  * one entry point existing features call. It NEVER throws — any failure is
  * logged and swallowed so growth tracking can never break a core action. Callers
  * may safely fire-and-forget it.
+ *
+ * Idempotency + atomicity: the persona row is locked (`FOR UPDATE`) so concurrent
+ * events for the same user serialize instead of racing on a stale read-modify-
+ * write. The event insert uses `ON CONFLICT (source_key) DO NOTHING`; if the key
+ * already exists the persona is left untouched, so a replay grants nothing twice.
+ * The log insert and the persona bump share one transaction so the append-only
+ * log and the rolled-up totals can never diverge.
  */
-export async function recordActivity(
-  userId: string,
-  sourceType: XpSourceType,
-  opts?: { refId?: string | null; log?: Logger },
-): Promise<void> {
-  const log = opts?.log ?? defaultLogger;
+export async function recordActivity(params: RecordActivityParams): Promise<void> {
+  const { userId, kind, sourceKey, sourceId, reason, metadata } = params;
+  const log = params.log ?? defaultLogger;
   try {
-    const cfg = GROWTH_CONFIG[sourceType];
-    if (!cfg) return;
+    const rule = GROWTH_RULES[kind];
+    if (!rule) return;
 
     // Make sure the persona exists before we try to lock it.
     const ensured = await ensurePersona(userId);
     if (!ensured) return;
 
-    // Apply the event and the persona increment atomically. We lock the persona
-    // row (`FOR UPDATE`) so concurrent events for the same user serialize instead
-    // of racing on a stale read-modify-write (which would drop XP/stat gains).
-    // Logging the event and bumping the persona share one transaction so the
-    // append-only log and the rolled-up totals can never diverge.
     await db.transaction(async (tx) => {
       const [locked] = await tx
         .select()
@@ -122,28 +213,45 @@ export async function recordActivity(
         .for("update");
       if (!locked) return;
 
-      await tx.insert(xpEventsTable).values({
-        userId,
-        sourceType,
-        xpAmount: cfg.xp,
-        statDeltas: cfg.stats,
-        refId: opts?.refId ?? null,
-      });
-
-      const newXp = locked.xp + cfg.xp;
+      const beforeExp = locked.xp;
+      const beforeLevel = locked.level;
+      const afterExp = beforeExp + rule.xp;
+      const afterLevel = computeLevel(afterExp);
       const newStats: PersonaStats = { ...DEFAULT_PERSONA_STATS, ...locked.stats };
-      for (const [key, delta] of Object.entries(cfg.stats)) {
+      for (const [key, delta] of Object.entries(rule.stats)) {
         const k = key as keyof PersonaStats;
         newStats[k] = (newStats[k] ?? 0) + (delta ?? 0);
       }
-      const newLevel = computeLevel(newXp);
+
+      const inserted = await tx
+        .insert(xpEventsTable)
+        .values({
+          userId,
+          sourceType: rule.sourceType,
+          sourceId: sourceId ?? null,
+          sourceKey,
+          eventType: rule.eventType,
+          expDelta: rule.xp,
+          statChanges: rule.stats,
+          reason: reason ?? rule.reason,
+          metadata: metadata ?? null,
+          beforeLevel,
+          afterLevel,
+          beforeExp,
+          afterExp,
+        })
+        .onConflictDoNothing({ target: xpEventsTable.sourceKey })
+        .returning({ id: xpEventsTable.id });
+
+      // Duplicate activity (sourceKey already recorded) — grant nothing twice.
+      if (inserted.length === 0) return;
 
       await tx
         .update(personasTable)
-        .set({ xp: newXp, stats: newStats, level: newLevel })
+        .set({ xp: afterExp, stats: newStats, level: afterLevel })
         .where(eq(personasTable.userId, userId));
     });
   } catch (err) {
-    log.error({ err, userId, sourceType }, "recordActivity failed");
+    log.error({ err, userId, kind }, "recordActivity failed");
   }
 }
