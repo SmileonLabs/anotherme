@@ -30,11 +30,11 @@ import {
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 
-/** Dark overlay over the hero background image so foreground text stays legible. */
+/** Light-touch overlay so the hero background image shows through while text stays legible. */
 const HERO_OVERLAY = [
-  "rgba(12,10,28,0.45)",
-  "rgba(12,10,28,0.55)",
-  "rgba(12,10,28,0.82)",
+  "rgba(10,8,24,0.15)",
+  "rgba(10,8,24,0.30)",
+  "rgba(10,8,24,0.78)",
 ] as const;
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 
