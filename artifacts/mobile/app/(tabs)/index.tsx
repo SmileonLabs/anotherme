@@ -331,7 +331,7 @@ export default function HomeScreen() {
       >
         {/* Persona hero card */}
         <ImageBackground
-          source={require("@/assets/images/persona-card-bg.png")}
+          source={require("../../assets/images/persona-card-bg.png")}
           imageStyle={styles.heroBgImage}
           style={styles.hero}
         >
