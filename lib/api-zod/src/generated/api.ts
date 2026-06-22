@@ -209,6 +209,47 @@ export const AnalyzeMyPersonaResponse = zod.object({
 
 
 /**
+ * Read-only cumulative leaderboards derived from existing persona stats. No AI call and no XP/stat mutation. Only non-sensitive fields are returned (name, avatar, level, title, archetype, score, primary stat).
+
+ * @summary Get persona leaderboards
+ */
+export const getPersonaRankingsQueryTypeDefault = `overall`;
+export const getPersonaRankingsQueryLimitDefault = 50;
+export const getPersonaRankingsQueryLimitMax = 100;
+
+
+
+export const GetPersonaRankingsQueryParams = zod.object({
+  "type": zod.enum(['overall', 'persuasion', 'logic', 'empathy', 'strategy', 'archetype']).default(getPersonaRankingsQueryTypeDefault),
+  "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional().describe('Only used when type=archetype.'),
+  "limit": zod.coerce.number().min(1).max(getPersonaRankingsQueryLimitMax).default(getPersonaRankingsQueryLimitDefault)
+})
+
+export const GetPersonaRankingsResponse = zod.object({
+  "type": zod.string(),
+  "archetype": zod.string().nullish(),
+  "items": zod.array(zod.object({
+  "rank": zod.number(),
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "archetype": zod.string(),
+  "archetypeLabel": zod.string(),
+  "score": zod.number(),
+  "primaryStatLabel": zod.string(),
+  "primaryStatValue": zod.number()
+})),
+  "myRank": zod.union([zod.object({
+  "rank": zod.number(),
+  "score": zod.number(),
+  "pointsToNextRank": zod.number()
+}),zod.null()]).optional()
+})
+
+
+/**
  * @summary Search users by email
  */
 export const SearchUsersQueryParams = zod.object({

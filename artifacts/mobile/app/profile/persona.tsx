@@ -217,6 +217,19 @@ export default function PersonaScreen() {
               <Text style={[styles.xpText, { color: colors.mutedForeground }]}>
                 다음 레벨까지 {Math.max(0, xpFor - xpInto)} XP · {xpInto} / {xpFor}
               </Text>
+
+              <Pressable
+                onPress={() => router.push("/profile/ranking")}
+                style={({ pressed }) => [
+                  styles.rankingBtn,
+                  { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Feather name="bar-chart-2" size={15} color={colors.background} />
+                <Text style={[styles.rankingBtnText, { color: colors.background }]}>
+                  랭킹 보기
+                </Text>
+              </Pressable>
             </LinearGradient>
 
             {/* Identity — Persona Card */}
@@ -572,6 +585,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   xpText: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 8 },
+  rankingBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  rankingBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
   sectionTitle: {
     fontSize: 13,

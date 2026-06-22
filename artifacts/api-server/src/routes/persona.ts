@@ -3,6 +3,14 @@ import { requireAuth } from "../lib/auth";
 import { ensurePersona, levelProgress, recentGrowthEvents } from "../lib/growth";
 import { analyzePersona } from "../lib/personaAnalysis";
 import { getPersonaCard } from "../lib/personaIdentity";
+import {
+  getRankings,
+  ARCHETYPE_KEYS,
+  RANKING_TYPES,
+  RANKING_LIMIT_DEFAULT,
+  type ArchetypeKey,
+  type RankingType,
+} from "../lib/ranking";
 import type { Persona } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -118,6 +126,33 @@ router.post("/users/me/persona/analyze", requireAuth, async (req, res): Promise<
       });
       return;
   }
+});
+
+/**
+ * Persona leaderboard. Read-only — never mutates XP, AI analysis, or persona-card
+ * history. Supports overall, per-stat, and per-archetype rankings. Exposes only
+ * non-sensitive fields (name, avatar, level, title, archetype, score, primary
+ * stat); no AI detail, chat/battle/dungeon content, or contact info is returned.
+ */
+router.get("/users/persona/rankings", requireAuth, async (req, res): Promise<void> => {
+  const user = req.dbUser!;
+
+  const rawType = String(req.query.type ?? "overall");
+  const type: RankingType = (RANKING_TYPES as readonly string[]).includes(rawType)
+    ? (rawType as RankingType)
+    : "overall";
+
+  const rawArchetype = req.query.archetype ? String(req.query.archetype) : null;
+  const archetype: ArchetypeKey | null =
+    rawArchetype && (ARCHETYPE_KEYS as readonly string[]).includes(rawArchetype)
+      ? (rawArchetype as ArchetypeKey)
+      : null;
+
+  const parsedLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+  const limit = Number.isFinite(parsedLimit) ? parsedLimit : RANKING_LIMIT_DEFAULT;
+
+  const result = await getRankings({ type, archetype, limit, meUserId: user.id });
+  res.json(result);
 });
 
 export default router;

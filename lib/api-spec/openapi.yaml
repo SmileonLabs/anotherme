@@ -196,6 +196,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/PersonaAnalysisError"
 
+  /users/persona/rankings:
+    get:
+      operationId: getPersonaRankings
+      tags: [users]
+      summary: Get persona leaderboards
+      description: >
+        Read-only cumulative leaderboards derived from existing persona stats. No
+        AI call and no XP/stat mutation. Only non-sensitive fields are returned
+        (name, avatar, level, title, archetype, score, primary stat).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [overall, persuasion, logic, empathy, strategy, archetype]
+            default: overall
+        - name: archetype
+          in: query
+          required: false
+          description: Only used when type=archetype.
+          schema:
+            type: string
+            enum:
+              [
+                strategist,
+                harmonizer,
+                explorer,
+                pioneer,
+                sage,
+                entertainer,
+                activist,
+                observer,
+              ]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Ranking list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaRanking"
+        "401":
+          description: Unauthorized
+
   /users/search:
     get:
       operationId: searchUsers
@@ -1350,6 +1403,73 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PersonaIdentityHistoryItem"
+
+    PersonaRankingItem:
+      type: object
+      required:
+        [
+          rank,
+          userId,
+          displayName,
+          level,
+          title,
+          archetype,
+          archetypeLabel,
+          score,
+          primaryStatLabel,
+          primaryStatValue,
+        ]
+      properties:
+        rank:
+          type: integer
+        userId:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        level:
+          type: integer
+        title:
+          type: string
+        archetype:
+          type: string
+        archetypeLabel:
+          type: string
+        score:
+          type: integer
+        primaryStatLabel:
+          type: string
+        primaryStatValue:
+          type: integer
+
+    PersonaRankingMyRank:
+      type: object
+      required: [rank, score, pointsToNextRank]
+      properties:
+        rank:
+          type: integer
+        score:
+          type: integer
+        pointsToNextRank:
+          type: integer
+
+    PersonaRanking:
+      type: object
+      required: [type, items]
+      properties:
+        type:
+          type: string
+        archetype:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonaRankingItem"
+        myRank:
+          oneOf:
+            - $ref: "#/components/schemas/PersonaRankingMyRank"
+            - type: "null"
 
     PersonaAnalysisError:
       type: object

@@ -126,6 +126,35 @@ export interface PersonaCard {
   history: PersonaIdentityHistoryItem[];
 }
 
+export interface PersonaRankingItem {
+  rank: number;
+  userId: string;
+  displayName: string;
+  /** @nullable */
+  avatarUrl?: string | null;
+  level: number;
+  title: string;
+  archetype: string;
+  archetypeLabel: string;
+  score: number;
+  primaryStatLabel: string;
+  primaryStatValue: number;
+}
+
+export interface PersonaRankingMyRank {
+  rank: number;
+  score: number;
+  pointsToNextRank: number;
+}
+
+export interface PersonaRanking {
+  type: string;
+  /** @nullable */
+  archetype?: string | null;
+  items: PersonaRankingItem[];
+  myRank?: PersonaRankingMyRank | null;
+}
+
 export interface PersonaAnalysisError {
   error: string;
   message: string;
@@ -486,6 +515,45 @@ export interface CallSession {
   token: string;
   url: string;
 }
+
+export type GetPersonaRankingsParams = {
+type?: GetPersonaRankingsType;
+/**
+ * Only used when type=archetype.
+ */
+archetype?: GetPersonaRankingsArchetype;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type GetPersonaRankingsType = typeof GetPersonaRankingsType[keyof typeof GetPersonaRankingsType];
+
+
+export const GetPersonaRankingsType = {
+  overall: 'overall',
+  persuasion: 'persuasion',
+  logic: 'logic',
+  empathy: 'empathy',
+  strategy: 'strategy',
+  archetype: 'archetype',
+} as const;
+
+export type GetPersonaRankingsArchetype = typeof GetPersonaRankingsArchetype[keyof typeof GetPersonaRankingsArchetype];
+
+
+export const GetPersonaRankingsArchetype = {
+  strategist: 'strategist',
+  harmonizer: 'harmonizer',
+  explorer: 'explorer',
+  pioneer: 'pioneer',
+  sage: 'sage',
+  entertainer: 'entertainer',
+  activist: 'activist',
+  observer: 'observer',
+} as const;
 
 export type SearchUsersParams = {
 email: string;

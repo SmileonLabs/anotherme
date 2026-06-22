@@ -87,3 +87,26 @@ duplicate consecutive archetype rows.
 
 **Card fetch must stay read-only w.r.t. progression.** Building the card only ever
 writes to `persona_identity_history`; it never touches xp/stats/level/xp_events.
+
+## Persona ranking (Phase 4)
+
+Leaderboards are a **read-only derived view** — no table, no season, no cache yet;
+one live `personas ⨝ users` query enriched in-process with `computeLevel` +
+`computeIdentity` (no AI). Kept service-shaped (`getRankings`) so a future
+season/cache layer can wrap it without touching the route.
+
+**Spec stat-name mapping:** the product spec's "설득력(persuasion)" → `conviction`
+stat, "전략성(strategy)" → `decisiveness` stat (the app has no separate
+persuasion/strategy stat). Overall score = `level*1000 + xp + totalStats*10`.
+Stat rankings sort by that stat then tie-break `level > xp > userId`; archetype
+ranking filters to one `archetypeKey`.
+
+**Privacy is the load-bearing invariant.** Ranking rows expose ONLY
+name/avatar/level/title/archetype(+label)/score/primaryStat (+userId, rank). The
+query must select only non-sensitive columns — never email, AI-analysis text, or
+chat/battle/dungeon content. An E2E test asserts the item key-set exactly.
+
+**Archetype display labels differ from the spec wording:** the app uses
+"탐험가형"(explorer) and "재담꾼형"(entertainer), NOT the spec's "탐구자형"/"엔터테이너형".
+Mobile archetype filter chips must mirror the labels `computeIdentity` actually
+produces, or filtering by key won't line up with what users see on their card.

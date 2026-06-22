@@ -97,6 +97,10 @@ function RootLayoutNav() {
         options={{ title: "어나더 미", headerBackTitle: "Back" }}
       />
       <Stack.Screen
+        name="profile/ranking"
+        options={{ title: "랭킹", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}
       />

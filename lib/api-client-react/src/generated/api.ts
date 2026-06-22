@@ -41,6 +41,7 @@ import type {
   FriendRequest,
   FriendRequestInput,
   FriendRequestWithUser,
+  GetPersonaRankingsParams,
   HealthStatus,
   Invite,
   InviteMembersInput,
@@ -51,6 +52,7 @@ import type {
   PersonaAnalysisError,
   PersonaCard,
   PersonaProfile,
+  PersonaRanking,
   PublicUser,
   PushTokenInput,
   ReadInput,
@@ -745,6 +747,92 @@ export const useAnalyzeMyPersona = <TError = ErrorType<void | PersonaAnalysisErr
       > => {
       return useMutation(getAnalyzeMyPersonaMutationOptions(options));
     }
+
+export const getGetPersonaRankingsUrl = (params?: GetPersonaRankingsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/users/persona/rankings?${stringifiedParams}` : `/api/users/persona/rankings`
+}
+
+/**
+ * Read-only cumulative leaderboards derived from existing persona stats. No AI call and no XP/stat mutation. Only non-sensitive fields are returned (name, avatar, level, title, archetype, score, primary stat).
+
+ * @summary Get persona leaderboards
+ */
+export const getPersonaRankings = async (params?: GetPersonaRankingsParams, options?: RequestInit): Promise<PersonaRanking> => {
+
+  return customFetch<PersonaRanking>(getGetPersonaRankingsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPersonaRankingsQueryKey = (params?: GetPersonaRankingsParams,) => {
+    return [
+    `/api/users/persona/rankings`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPersonaRankingsQueryOptions = <TData = Awaited<ReturnType<typeof getPersonaRankings>>, TError = ErrorType<void>>(params?: GetPersonaRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonaRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPersonaRankingsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonaRankings>>> = ({ signal }) => getPersonaRankings(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPersonaRankings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPersonaRankingsQueryResult = NonNullable<Awaited<ReturnType<typeof getPersonaRankings>>>
+export type GetPersonaRankingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get persona leaderboards
+ */
+
+export function useGetPersonaRankings<TData = Awaited<ReturnType<typeof getPersonaRankings>>, TError = ErrorType<void>>(
+ params?: GetPersonaRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonaRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPersonaRankingsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getSearchUsersUrl = (params: SearchUsersParams,) => {
   const normalizedParams = new URLSearchParams();
