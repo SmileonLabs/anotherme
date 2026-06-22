@@ -334,6 +334,49 @@ export const CreateClanBody = zod.object({
 
 
 /**
+ * Read-only clan leaderboards. No AI call and no XP / clan-EXP mutation. Only non-sensitive clan-level fields are returned (name, emblem, level, exp, member count, dominant archetype, clan power, strengths, score) — never any per-member PII.
+
+ * @summary Get clan leaderboards
+ */
+export const getClanRankingsQueryTypeDefault = `overall`;
+export const getClanRankingsQueryLimitDefault = 50;
+export const getClanRankingsQueryLimitMax = 100;
+
+
+
+export const GetClanRankingsQueryParams = zod.object({
+  "type": zod.enum(['overall', 'level', 'contribution', 'average_level', 'archetype']).default(getClanRankingsQueryTypeDefault),
+  "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional().describe('Only used when type=archetype.'),
+  "limit": zod.coerce.number().min(1).max(getClanRankingsQueryLimitMax).default(getClanRankingsQueryLimitDefault)
+})
+
+export const GetClanRankingsResponse = zod.object({
+  "type": zod.enum(['overall', 'level', 'contribution', 'average_level', 'archetype']),
+  "archetype": zod.string().nullish(),
+  "items": zod.array(zod.object({
+  "rank": zod.number(),
+  "clanId": zod.string(),
+  "name": zod.string(),
+  "emblemUrl": zod.string().nullable(),
+  "level": zod.number(),
+  "exp": zod.number(),
+  "memberCount": zod.number(),
+  "dominantArchetype": zod.string(),
+  "dominantArchetypeLabel": zod.string(),
+  "clanPower": zod.number(),
+  "averageLevel": zod.number(),
+  "topStrengths": zod.array(zod.string()),
+  "score": zod.number()
+})),
+  "myClanRank": zod.union([zod.object({
+  "rank": zod.number(),
+  "score": zod.number(),
+  "pointsToNextRank": zod.number()
+}),zod.null()]).optional()
+})
+
+
+/**
  * @summary Get clan detail with members
  */
 export const GetClanDetailParams = zod.object({

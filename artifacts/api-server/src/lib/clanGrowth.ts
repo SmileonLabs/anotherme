@@ -194,31 +194,32 @@ export interface ClanIdentityView {
   topStrengths: string[];
 }
 
+/** The read-only collective metrics shared by clan identity and clan ranking. */
+export interface ClanMetrics {
+  clanPower: number;
+  averageLevel: number;
+  dominantArchetype: string;
+  dominantArchetypeLabel: string;
+  topStrengths: string[];
+}
+
 /**
- * Compute a clan's collective identity. Read-only: reads members' persona xp/stats
- * and derives level/archetype in-process (computeLevel + computeIdentity, no AI,
- * no mutation). Never exposes any per-member PII. Returns null if the clan is gone.
+ * Derive a clan's collective metrics from its members' persona xp/stats. Pure and
+ * read-only: it computes level/archetype in-process (computeLevel + computeIdentity,
+ * no AI, no DB, no mutation). `clanPower` mirrors the ranking overall-score formula
+ * summed across members. Shared by `getClanIdentity` and the clan-ranking service so
+ * both stay consistent.
  */
-export async function getClanIdentity(clanId: string): Promise<ClanIdentityView | null> {
-  const [clan] = await db
-    .select({ id: clansTable.id, exp: clansTable.exp })
-    .from(clansTable)
-    .where(eq(clansTable.id, clanId));
-  if (!clan) return null;
-
-  const rows = await db
-    .select({ xp: personasTable.xp, stats: personasTable.stats })
-    .from(clanMembersTable)
-    .leftJoin(personasTable, eq(personasTable.userId, clanMembersTable.userId))
-    .where(eq(clanMembersTable.clanId, clanId));
-
-  const memberCount = rows.length;
+export function computeClanMetrics(
+  members: { xp: number | null; stats: PersonaStats | null }[],
+): ClanMetrics {
+  const memberCount = members.length;
   const archetypeCounts = new Map<string, number>();
   const statTotals: Record<StatKey, number> = { ...DEFAULT_PERSONA_STATS };
   let totalLevel = 0;
   let clanPower = 0;
 
-  for (const r of rows) {
+  for (const r of members) {
     const stats: PersonaStats = { ...DEFAULT_PERSONA_STATS, ...(r.stats ?? {}) };
     const xp = r.xp ?? 0;
     const level = computeLevel(xp);
@@ -252,6 +253,34 @@ export async function getClanIdentity(clanId: string): Promise<ClanIdentityView 
     .slice(0, 3)
     .map((s) => STAT_LABEL[s.k]);
 
+  return {
+    clanPower,
+    averageLevel: memberCount ? Math.round(totalLevel / memberCount) : 0,
+    dominantArchetype,
+    dominantArchetypeLabel: archetypeLabelOf(dominantArchetype),
+    topStrengths,
+  };
+}
+
+/**
+ * Compute a clan's collective identity. Read-only: reads members' persona xp/stats
+ * and derives level/archetype in-process (computeLevel + computeIdentity, no AI,
+ * no mutation). Never exposes any per-member PII. Returns null if the clan is gone.
+ */
+export async function getClanIdentity(clanId: string): Promise<ClanIdentityView | null> {
+  const [clan] = await db
+    .select({ id: clansTable.id, exp: clansTable.exp })
+    .from(clansTable)
+    .where(eq(clansTable.id, clanId));
+  if (!clan) return null;
+
+  const rows = await db
+    .select({ xp: personasTable.xp, stats: personasTable.stats })
+    .from(clanMembersTable)
+    .leftJoin(personasTable, eq(personasTable.userId, clanMembersTable.userId))
+    .where(eq(clanMembersTable.clanId, clanId));
+
+  const metrics = computeClanMetrics(rows);
   const progress = clanLevelProgress(clan.exp);
 
   return {
@@ -260,12 +289,12 @@ export async function getClanIdentity(clanId: string): Promise<ClanIdentityView 
     exp: progress.exp,
     expIntoLevel: progress.expIntoLevel,
     expForNextLevel: progress.expForNextLevel,
-    memberCount,
-    averageLevel: memberCount ? Math.round(totalLevel / memberCount) : 0,
-    clanPower,
-    dominantArchetype,
-    dominantArchetypeLabel: archetypeLabelOf(dominantArchetype),
-    topStrengths,
+    memberCount: rows.length,
+    averageLevel: metrics.averageLevel,
+    clanPower: metrics.clanPower,
+    dominantArchetype: metrics.dominantArchetype,
+    dominantArchetypeLabel: metrics.dominantArchetypeLabel,
+    topStrengths: metrics.topStrengths,
   };
 }
 

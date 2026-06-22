@@ -604,6 +604,46 @@ export interface ClanIdentity {
   topStrengths: string[];
 }
 
+export interface ClanRankingItem {
+  rank: number;
+  clanId: string;
+  name: string;
+  emblemUrl: string | null;
+  level: number;
+  exp: number;
+  memberCount: number;
+  dominantArchetype: string;
+  dominantArchetypeLabel: string;
+  clanPower: number;
+  averageLevel: number;
+  topStrengths: string[];
+  score: number;
+}
+
+export interface ClanRankingMyRank {
+  rank: number;
+  score: number;
+  pointsToNextRank: number;
+}
+
+export type ClanRankingType = typeof ClanRankingType[keyof typeof ClanRankingType];
+
+
+export const ClanRankingType = {
+  overall: 'overall',
+  level: 'level',
+  contribution: 'contribution',
+  average_level: 'average_level',
+  archetype: 'archetype',
+} as const;
+
+export interface ClanRanking {
+  type: ClanRankingType;
+  archetype?: string | null;
+  items: ClanRankingItem[];
+  myClanRank?: ClanRankingMyRank | null;
+}
+
 export type ClanCreatePreferredArchetype = typeof ClanCreatePreferredArchetype[keyof typeof ClanCreatePreferredArchetype];
 
 
@@ -697,6 +737,44 @@ export type ListClansArchetype = typeof ListClansArchetype[keyof typeof ListClan
 
 
 export const ListClansArchetype = {
+  strategist: 'strategist',
+  harmonizer: 'harmonizer',
+  explorer: 'explorer',
+  pioneer: 'pioneer',
+  sage: 'sage',
+  entertainer: 'entertainer',
+  activist: 'activist',
+  observer: 'observer',
+} as const;
+
+export type GetClanRankingsParams = {
+type?: GetClanRankingsType;
+/**
+ * Only used when type=archetype.
+ */
+archetype?: GetClanRankingsArchetype;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type GetClanRankingsType = typeof GetClanRankingsType[keyof typeof GetClanRankingsType];
+
+
+export const GetClanRankingsType = {
+  overall: 'overall',
+  level: 'level',
+  contribution: 'contribution',
+  average_level: 'average_level',
+  archetype: 'archetype',
+} as const;
+
+export type GetClanRankingsArchetype = typeof GetClanRankingsArchetype[keyof typeof GetClanRankingsArchetype];
+
+
+export const GetClanRankingsArchetype = {
   strategist: 'strategist',
   harmonizer: 'harmonizer',
   explorer: 'explorer',

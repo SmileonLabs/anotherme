@@ -18,6 +18,11 @@ import {
   type ClanArchetypeKey,
 } from "../lib/clan";
 import { getClanIdentity } from "../lib/clanGrowth";
+import {
+  CLAN_RANKING_LIMIT_DEFAULT,
+  CLAN_RANKING_TYPES,
+  getClanRankings,
+} from "../lib/clanRanking";
 
 const router: IRouter = Router();
 
@@ -64,6 +69,30 @@ router.get("/clans", requireAuth, async (req, res): Promise<void> => {
     q: q ?? null,
     archetype: (archetype as ClanArchetypeKey | undefined) ?? null,
     limit: limit ?? CLAN_LIST_LIMIT_DEFAULT,
+  });
+  res.json(result);
+});
+
+/** GET /clans/rankings — clan leaderboards (read-only). Registered before
+ * `/clans/:id` so "rankings" is not captured as an :id path param. */
+const rankingQuerySchema = z.object({
+  type: z.enum(CLAN_RANKING_TYPES).optional(),
+  archetype: z.enum(CLAN_ARCHETYPE_KEYS).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+router.get("/clans/rankings", requireAuth, async (req, res): Promise<void> => {
+  const parsed = rankingQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "잘못된 요청이에요." });
+    return;
+  }
+  const { type, archetype, limit } = parsed.data;
+  const result = await getClanRankings({
+    type: type ?? "overall",
+    archetype: (archetype as ClanArchetypeKey | undefined) ?? null,
+    limit: limit ?? CLAN_RANKING_LIMIT_DEFAULT,
+    meUserId: req.dbUser!.id,
   });
   res.json(result);
 });

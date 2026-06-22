@@ -5,7 +5,7 @@ description: Scope boundaries and invariants for the clan feature — what it mu
 
 # Clan system (가문)
 
-Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Still NO Clan War, Clan Memory, or Clan Ranking (forbidden).
+Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Still NO Clan War or Clan Memory (forbidden).
 
 ## Invariants (do not break in later phases)
 - **One active clan per user** is enforced at the DB level by a UNIQUE constraint on `clan_members.user_id`, plus service-level pre-checks inside transactions. Any "leave one / join another" flow must keep this UNIQUE valid (delete old membership before inserting new in the same tx).
@@ -24,3 +24,9 @@ Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Ident
 - `contributionExp` accrues the SAME delta as the clan in the same tx (`applyClanExp` updates both clan exp/level and member contributionExp). Keep them coupled.
 - `getClanIdentity` is read-only aggregate (clanPower mirrors ranking overall-score formula `level*1000 + xp + statSum*10` summed across members; dominant archetype = mode, tie-broken by `CLAN_ARCHETYPE_KEYS` order; topStrengths = top3 aggregate stats via `STAT_LABEL`). No PII, no AI, no writes.
 - Ranking route hook fires `awardClanRankTop10Bonus` AFTER `res.json(result)` so the ranking payload shape is never touched (hard constraint).
+
+## Clan ranking (Phase 7, read-only)
+- `getClanRankings` in `clanRanking.ts` is pure-read (only `select`, no writes). The shared `computeClanMetrics` helper was extracted from `getClanIdentity` — getClanIdentity now delegates to it and its output must stay byte-identical. **Why:** ranking and identity must agree on clanPower/archetype/strengths; one formula, two callers.
+- `score` is the type's primary metric (overall→clanPower, level→level, contribution→exp, average_level→averageLevel, archetype→clanPower). `pointsToNextRank = score(rank-1) - myScore`, 0 at rank 1. `myClanRank` is null when the user has no clan OR the clan is absent from the ranked set (e.g. archetype filter mismatch).
+- **Candidate pool is capped (perf), so always force-include the caller's clan** before the final sort, or `myClanRank` can be falsely null for a real member. **Why:** caught in review — capping must never hide the caller. Also order the candidate query by the *true* stored metric for level/contribution so the capped pool is exact; other types use a memberCount/level/exp strength proxy (approximate only beyond the cap). A future season/cache/aggregate table can replace this live path.
+- Route `GET /clans/rankings` MUST be registered before `GET /clans/:id` or it gets captured as an id lookup.

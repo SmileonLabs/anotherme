@@ -1,0 +1,229 @@
+Phase 7 — Clan Ranking System
+
+목표:
+
+현재 구현된 Clan Growth / Clan Identity를 기반으로 가문 간 랭킹 시스템을 구현합니다.
+
+Clan Ranking은 유저가 가문에 가입하고 활동할 이유를 강화하는 기능입니다.
+
+---
+
+핵심 원칙
+
+* 기존 개인 Persona XP 시스템 수정 금지
+* 기존 AI 분석 로직 수정 금지
+* 기존 Persona Ranking 로직 수정 금지
+* Clan XP 적립 로직 수정 금지
+* Clan Memory / Clan War는 아직 구현하지 않음
+* 이번 단계는 읽기 중심 랭킹 기능만 구현
+
+---
+
+1. 랭킹 종류
+
+구현할 랭킹:
+
+1. 종합 가문 랭킹
+
+* clanPower 기준
+* 동점 시 clan level → exp → memberCount 순
+
+2. 레벨 랭킹
+
+* clan level 기준
+* 동점 시 exp
+
+3. 기여도 랭킹
+
+* clan exp 기준
+
+4. 평균 레벨 랭킹
+
+* averageLevel 기준
+* 동점 시 clanPower
+
+5. 아키타입별 가문 랭킹
+
+* dominantArchetype 기준 필터
+
+---
+
+2. API 추가
+
+GET /clans/rankings
+
+Query params:
+
+* type
+
+  * overall
+  * level
+  * contribution
+  * average_level
+  * archetype
+
+* archetype
+
+  * strategist
+  * harmonizer
+  * explorer
+  * pioneer
+  * sage
+  * entertainer
+  * activist
+  * observer
+
+* limit
+
+  * 기본 50
+  * 최대 100
+
+응답 예시:
+
+{
+"type": "overall",
+"items": [
+{
+"rank": 1,
+"clanId": "...",
+"name": "불꽃개척단",
+"emblemUrl": null,
+"level": 8,
+"exp": 15320,
+"memberCount": 42,
+"dominantArchetype": "pioneer",
+"dominantArchetypeLabel": "개척자형",
+"clanPower": 88320,
+"averageLevel": 17,
+"topStrengths": ["결단력", "설득력", "논리력"],
+"score": 88320
+}
+],
+"myClanRank": {
+"rank": 12,
+"score": 18200,
+"pointsToNextRank": 340
+}
+}
+
+---
+
+3. 모바일 UI
+
+새 화면:
+
+Clan Ranking 화면
+
+접근 위치:
+Clan Home 화면에서 “가문 랭킹 보기” 버튼 추가
+
+화면 구성:
+
+상단:
+
+* “가문 랭킹”
+* “함께 성장한 Another Me들의 힘을 확인해보세요.”
+
+탭:
+
+* 종합
+* 레벨
+* 기여도
+* 평균 레벨
+* 아키타입
+
+아키타입 탭 하위 필터:
+
+* 전략가형
+* 조율자형
+* 탐험가형
+* 개척자형
+* 현자형
+* 재담꾼형
+* 행동가형
+* 관찰자형
+
+랭킹 리스트:
+
+* 순위
+* 가문 엠블럼
+* 가문 이름
+* 레벨
+* 멤버 수
+* 대표 아키타입
+* Clan Power
+* 대표 강점
+
+내 가문 순위 카드:
+
+* 내 가문 순위
+* 내 가문 점수
+* 다음 순위까지 필요한 점수
+
+빈 상태:
+
+* “아직 랭킹 데이터가 부족합니다.”
+* “가문원들과 함께 토크배틀과 던전을 플레이해보세요.”
+
+---
+
+4. 개인정보 정책
+
+표시 가능:
+
+* 가문 이름
+* 가문 설명 일부
+* 가문 엠블럼
+* 가문 레벨
+* 가문 EXP
+* 멤버 수
+* 대표 아키타입
+* 대표 강점
+* Clan Power
+
+표시 금지:
+
+* 개별 멤버의 이메일/전화번호
+* 개별 채팅 내용
+* 개별 AI 분석 상세
+* 배틀/던전 원문
+
+---
+
+5. 성능 주의
+
+* 처음에는 실시간 계산 가능
+* 단, clan identity 계산이 무거우면 후보 제한 후 계산
+* 랭킹 서비스 함수는 별도 파일로 분리
+* 추후 시즌/캐시/집계 테이블을 붙일 수 있게 구조화
+
+---
+
+6. 테스트
+
+확인할 것:
+
+1. 종합 가문 랭킹 정렬 정상
+2. 레벨 랭킹 정렬 정상
+3. 기여도 랭킹 정렬 정상
+4. 평균 레벨 랭킹 정렬 정상
+5. 아키타입별 필터 정상
+6. 내 가문 순위 표시 정상
+7. 가문 미소속 유저는 myClanRank=null
+8. limit 최대 100 제한
+9. 미인증 요청 401
+10. 개인정보가 응답에 포함되지 않음
+11. 기존 개인 랭킹/XP/AI 분석 영향 없음
+12. Clan XP 적립 로직 영향 없음
+
+---
+
+완료 후 한국어로 정리:
+
+1. 변경 파일 목록
+2. 추가 API
+3. 랭킹 산식
+4. 모바일 화면 접근 방법
+5. 개인정보 노출 정책
+6. 테스트 결과
+7. 다음 단계 Clan Memory 연결 포인트

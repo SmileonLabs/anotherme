@@ -39,6 +39,7 @@ import type {
   ClanError,
   ClanIdentity,
   ClanLeaveResult,
+  ClanRanking,
   ClanSummary,
   CreateCallInput,
   DungeonInput,
@@ -47,6 +48,7 @@ import type {
   FriendRequest,
   FriendRequestInput,
   FriendRequestWithUser,
+  GetClanRankingsParams,
   GetPersonaRankingsParams,
   HealthStatus,
   Invite,
@@ -1077,6 +1079,92 @@ export const useCreateClan = <TError = ErrorType<ClanError | void>,
       > => {
       return useMutation(getCreateClanMutationOptions(options));
     }
+
+export const getGetClanRankingsUrl = (params?: GetClanRankingsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/clans/rankings?${stringifiedParams}` : `/api/clans/rankings`
+}
+
+/**
+ * Read-only clan leaderboards. No AI call and no XP / clan-EXP mutation. Only non-sensitive clan-level fields are returned (name, emblem, level, exp, member count, dominant archetype, clan power, strengths, score) — never any per-member PII.
+
+ * @summary Get clan leaderboards
+ */
+export const getClanRankings = async (params?: GetClanRankingsParams, options?: RequestInit): Promise<ClanRanking> => {
+
+  return customFetch<ClanRanking>(getGetClanRankingsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClanRankingsQueryKey = (params?: GetClanRankingsParams,) => {
+    return [
+    `/api/clans/rankings`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetClanRankingsQueryOptions = <TData = Awaited<ReturnType<typeof getClanRankings>>, TError = ErrorType<void>>(params?: GetClanRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClanRankingsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClanRankings>>> = ({ signal }) => getClanRankings(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClanRankings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClanRankingsQueryResult = NonNullable<Awaited<ReturnType<typeof getClanRankings>>>
+export type GetClanRankingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get clan leaderboards
+ */
+
+export function useGetClanRankings<TData = Awaited<ReturnType<typeof getClanRankings>>, TError = ErrorType<void>>(
+ params?: GetClanRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClanRankingsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetClanDetailUrl = (id: string,) => {
 

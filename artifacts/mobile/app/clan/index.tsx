@@ -199,6 +199,14 @@ export default function ClanHomeScreen() {
             </View>
 
             <Pressable
+              onPress={() => router.push("/clan/rankings")}
+              style={[styles.rankingBtn, { backgroundColor: colors.foreground }]}
+            >
+              <Feather name="award" size={16} color={colors.background} />
+              <Text style={[styles.rankingText, { color: colors.background }]}>가문 랭킹 보기</Text>
+            </Pressable>
+
+            <Pressable
               onPress={onLeave}
               disabled={leave.isPending}
               style={[styles.leaveBtn, { borderColor: colors.destructive }]}
@@ -545,13 +553,24 @@ const styles = StyleSheet.create({
   },
   outlineBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
 
-  leaveBtn: {
+  rankingBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     marginHorizontal: 16,
     marginTop: 24,
+    paddingVertical: 13,
+    borderRadius: 12,
+  },
+  rankingText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  leaveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 12,
     paddingVertical: 13,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
