@@ -64,7 +64,7 @@ export default function Home() {
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 glass-panel border-b-0 py-4 px-6 md:px-12 flex justify-between items-center transition-all duration-300">
         <div className="flex items-center gap-2">
-          <img src={`${import.meta.env.BASE_URL}logo_white.svg`} alt="Another Me" className="h-7 md:h-9 opacity-90" />
+          <img src={`${import.meta.env.BASE_URL}logo_black.svg`} alt="Another Me" className="h-7 md:h-9 opacity-90" />
         </div>
         <div className="flex gap-3">
           <a href={`${import.meta.env.BASE_URL}anotherme.pdf`} download className="hidden md:block">
@@ -286,7 +286,7 @@ export default function Home() {
       <footer className="py-12 border-t border-white/10 text-center text-gray-500 glass-panel">
         <div className="container mx-auto max-w-7xl px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-4 opacity-50 hover:opacity-100 transition-opacity">
-            <img src={`${import.meta.env.BASE_URL}logo_white.svg`} alt="Another Me" className="h-6" />
+            <img src={`${import.meta.env.BASE_URL}logo_black.svg`} alt="Another Me" className="h-6" />
           </div>
           <p className="text-sm">© 2024 Another Me. All rights reserved. AI-driven Social RPG.</p>
           <div className="flex gap-4 text-sm">
