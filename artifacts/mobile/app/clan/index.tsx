@@ -12,11 +12,15 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  getGetClanDetailQueryKey,
+  getGetClanIdentityQueryKey,
   getGetMyClanQueryKey,
+  useGetClanDetail,
+  useGetClanIdentity,
   useGetMyClan,
   useLeaveClan,
 } from "@workspace/api-client-react";
-import type { ClanMember } from "@workspace/api-client-react";
+import type { ClanIdentity, ClanMember } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
@@ -50,7 +54,22 @@ export default function ClanHomeScreen() {
   const queryClient = useQueryClient();
 
   const { data: myClan, isLoading, isError, refetch } = useGetMyClan();
+  const clanId = myClan?.clan.id;
+  const { data: identity } = useGetClanIdentity(clanId ?? "", {
+    query: { enabled: !!clanId, queryKey: getGetClanIdentityQueryKey(clanId ?? "") },
+  });
+  const { data: detail } = useGetClanDetail(clanId ?? "", {
+    query: { enabled: !!clanId, queryKey: getGetClanDetailQueryKey(clanId ?? "") },
+  });
   const leave = useLeaveClan();
+
+  const topContributors = React.useMemo(
+    () =>
+      [...(detail?.members ?? [])]
+        .sort((a, b) => b.contributionExp - a.contributionExp)
+        .slice(0, 10),
+    [detail?.members],
+  );
 
   const onLeave = () => {
     if (!myClan) return;
@@ -128,12 +147,24 @@ export default function ClanHomeScreen() {
                 </Text>
               ) : null}
               <View style={styles.statRow}>
-                <Stat label="레벨" value={`Lv.${myClan.clan.level}`} colors={colors} />
-                <Stat label="EXP" value={myClan.clan.exp.toLocaleString()} colors={colors} />
+                <Stat label="레벨" value={`Lv.${identity?.level ?? myClan.clan.level}`} colors={colors} />
+                <Stat
+                  label="가문 전투력"
+                  value={(identity?.clanPower ?? 0).toLocaleString()}
+                  colors={colors}
+                />
                 <Stat label="멤버" value={`${myClan.memberCount}명`} colors={colors} />
                 <Stat label="내 역할" value={ROLE_LABEL[myClan.myRole] ?? myClan.myRole} colors={colors} />
               </View>
+
+              {identity ? (
+                <ExpBar identity={identity} colors={colors} isDark={isDark} />
+              ) : null}
             </LinearGradient>
+
+            {identity ? (
+              <IdentityCard identity={identity} colors={colors} />
+            ) : null}
 
             {myClan.clan.preferredArchetype ? (
               <InfoCard
@@ -145,6 +176,19 @@ export default function ClanHomeScreen() {
             ) : null}
             {myClan.clan.clanValues ? (
               <InfoCard colors={colors} icon="heart" title="가문 가치관" body={myClan.clan.clanValues} />
+            ) : null}
+
+            {topContributors.length > 0 ? (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+                  기여도 TOP 10
+                </Text>
+                <View style={[styles.listCard, { backgroundColor: colors.background }]}>
+                  {topContributors.map((m, i) => (
+                    <ContributorRow key={m.userId} member={m} rank={i + 1} colors={colors} />
+                  ))}
+                </View>
+              </>
             ) : null}
 
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>멤버</Text>
@@ -213,6 +257,119 @@ function EmptyState({
           <Text style={[styles.outlineBtnText, { color: colors.foreground }]}>가문 찾아보기</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+function ExpBar({
+  identity,
+  colors,
+  isDark,
+}: {
+  identity: ClanIdentity;
+  colors: ReturnType<typeof useColors>;
+  isDark: boolean;
+}) {
+  const span = identity.expForNextLevel;
+  const ratio = span > 0 ? Math.min(1, identity.expIntoLevel / span) : 1;
+  return (
+    <View style={styles.expWrap}>
+      <View style={styles.expHead}>
+        <Text style={[styles.expLabel, { color: colors.mutedForeground }]}>
+          다음 레벨까지
+        </Text>
+        <Text style={[styles.expLabel, { color: colors.mutedForeground }]}>
+          {identity.expIntoLevel.toLocaleString()} / {span.toLocaleString()} EXP
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.expTrack,
+          { backgroundColor: isDark ? "#ffffff22" : "#00000014" },
+        ]}
+      >
+        <View
+          style={[
+            styles.expFill,
+            { width: `${ratio * 100}%`, backgroundColor: colors.primary },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function IdentityCard({
+  identity,
+  colors,
+}: {
+  identity: ClanIdentity;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View style={[styles.infoCard, { backgroundColor: colors.background }]}>
+      <View style={styles.infoHead}>
+        <Feather name="users" size={14} color={colors.primary} />
+        <Text style={[styles.infoTitle, { color: colors.mutedForeground }]}>가문 정체성</Text>
+      </View>
+      <Text style={[styles.identityArchetype, { color: colors.foreground }]}>
+        {identity.dominantArchetypeLabel} 가문
+      </Text>
+      <View style={styles.identityMetaRow}>
+        <Text style={[styles.identityMeta, { color: colors.mutedForeground }]}>
+          평균 레벨 {identity.averageLevel}
+        </Text>
+        <Text style={[styles.identityMeta, { color: colors.mutedForeground }]}>
+          전투력 {identity.clanPower.toLocaleString()}
+        </Text>
+      </View>
+      {identity.topStrengths.length > 0 ? (
+        <View style={styles.chipRow}>
+          {identity.topStrengths.map((s) => (
+            <View key={s} style={[styles.chip, { backgroundColor: `${colors.primary}18` }]}>
+              <Text style={[styles.chipText, { color: colors.primary }]}>{s}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ContributorRow({
+  member,
+  rank,
+  colors,
+}: {
+  member: ClanMember;
+  rank: number;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View
+      style={[
+        styles.row,
+        {
+          borderTopColor: colors.border,
+          borderTopWidth: rank === 1 ? 0 : StyleSheet.hairlineWidth,
+        },
+      ]}
+    >
+      <Text style={[styles.rankNum, { color: rank <= 3 ? colors.primary : colors.mutedForeground }]}>
+        {rank}
+      </Text>
+      <Avatar uri={member.avatarUrl} name={member.displayName} size={36} />
+      <View style={styles.rowBody}>
+        <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
+          {member.displayName}
+        </Text>
+        <Text style={[styles.rowMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
+          Lv.{member.level} · {member.archetypeLabel}
+        </Text>
+      </View>
+      <Text style={[styles.contribValue, { color: colors.foreground }]}>
+        {member.contributionExp.toLocaleString()}
+      </Text>
     </View>
   );
 }
@@ -334,6 +491,22 @@ const styles = StyleSheet.create({
   infoHead: { flexDirection: "row", alignItems: "center", gap: 6 },
   infoTitle: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   infoBody: { fontSize: 14, fontFamily: "Inter_500Medium", lineHeight: 20 },
+
+  expWrap: { alignSelf: "stretch", marginTop: 18, gap: 6 },
+  expHead: { flexDirection: "row", justifyContent: "space-between" },
+  expLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  expTrack: { height: 7, borderRadius: 4, overflow: "hidden" },
+  expFill: { height: 7, borderRadius: 4 },
+
+  identityArchetype: { fontSize: 17, fontFamily: "Inter_700Bold", marginTop: 2 },
+  identityMetaRow: { flexDirection: "row", gap: 14, marginTop: 2 },
+  identityMeta: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  chipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+
+  rankNum: { width: 20, textAlign: "center", fontSize: 14, fontFamily: "Inter_700Bold" },
+  contribValue: { fontSize: 13, fontFamily: "Inter_700Bold" },
 
   sectionTitle: {
     fontSize: 13,

@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { date, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -52,6 +52,12 @@ export const clanMembersTable = pgTable("clan_members", {
   /** owner | elder | member */
   role: text("role").notNull().default("member"),
   contributionExp: integer("contribution_exp").notNull().default(0),
+  /**
+   * UTC date (YYYY-MM-DD) the member last received the ranking Top-10 clan-EXP
+   * bonus. Used purely for once-per-day idempotency of that bonus; null until the
+   * member first lands in the overall Top 10 while viewing rankings.
+   */
+  lastRankBonusOn: date("last_rank_bonus_on"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

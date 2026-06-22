@@ -37,6 +37,7 @@ import type {
   ClanCreate,
   ClanDetail,
   ClanError,
+  ClanIdentity,
   ClanLeaveResult,
   ClanSummary,
   CreateCallInput,
@@ -1142,6 +1143,83 @@ export function useGetClanDetail<TData = Awaited<ReturnType<typeof getClanDetail
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetClanDetailQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetClanIdentityUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/identity`
+}
+
+/**
+ * @summary Get a clan's collective identity (computed, read-only)
+ */
+export const getClanIdentity = async (id: string, options?: RequestInit): Promise<ClanIdentity> => {
+
+  return customFetch<ClanIdentity>(getGetClanIdentityUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClanIdentityQueryKey = (id: string,) => {
+    return [
+    `/api/clans/${id}/identity`
+    ] as const;
+    }
+
+
+export const getGetClanIdentityQueryOptions = <TData = Awaited<ReturnType<typeof getClanIdentity>>, TError = ErrorType<void | ClanError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanIdentity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClanIdentityQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClanIdentity>>> = ({ signal }) => getClanIdentity(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClanIdentity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClanIdentityQueryResult = NonNullable<Awaited<ReturnType<typeof getClanIdentity>>>
+export type GetClanIdentityQueryError = ErrorType<void | ClanError>
+
+
+/**
+ * @summary Get a clan's collective identity (computed, read-only)
+ */
+
+export function useGetClanIdentity<TData = Awaited<ReturnType<typeof getClanIdentity>>, TError = ErrorType<void | ClanError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanIdentity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClanIdentityQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

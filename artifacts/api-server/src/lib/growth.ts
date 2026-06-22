@@ -12,6 +12,7 @@ import {
   type XpEvent,
 } from "@workspace/db";
 import { logger as defaultLogger } from "./logger";
+import { awardClanExp, clanExpForGrowth } from "./clanGrowth";
 
 /**
  * Internal grant kinds. These are finer-grained than the stored `eventType`
@@ -205,6 +206,7 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
     const ensured = await ensurePersona(userId);
     if (!ensured) return;
 
+    let granted = false;
     await db.transaction(async (tx) => {
       const [locked] = await tx
         .select()
@@ -250,7 +252,17 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
         .update(personasTable)
         .set({ xp: afterExp, stats: newStats, level: afterLevel })
         .where(eq(personasTable.userId, userId));
+      granted = true;
     });
+
+    // Clan growth is a side effect of individual growth: it runs in its OWN
+    // transaction AFTER the persona update has committed, and only when this was a
+    // genuinely new (non-duplicate) grant. Doing it separately guarantees a clan-
+    // side failure can never roll back or block the user's persona XP. awardClanExp
+    // itself swallows its errors, so this never affects core flows.
+    if (granted) {
+      await awardClanExp(userId, clanExpForGrowth(kind, rule.xp), log);
+    }
   } catch (err) {
     log.error({ err, userId, kind }, "recordActivity failed");
   }

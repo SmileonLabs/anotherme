@@ -17,6 +17,7 @@ import {
   listClans,
   type ClanArchetypeKey,
 } from "../lib/clan";
+import { getClanIdentity } from "../lib/clanGrowth";
 
 const router: IRouter = Router();
 
@@ -108,6 +109,17 @@ router.post("/clans", requireAuth, async (req, res): Promise<void> => {
     req.log.error({ err }, "createClan failed");
     res.status(500).json({ error: "internal", message: "가문 생성에 실패했어요." });
   }
+});
+
+/** GET /clans/:id/identity — the clan's computed collective identity. */
+router.get("/clans/:id/identity", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const identity = await getClanIdentity(id);
+  if (!identity) {
+    res.status(404).json({ error: "not_found", message: "존재하지 않는 가문이에요." });
+    return;
+  }
+  res.json(identity);
 });
 
 /** POST /clans/:id/join — join a clan. */

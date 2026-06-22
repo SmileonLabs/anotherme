@@ -30,6 +30,7 @@ export * from './clanCreate';
 export * from './clanCreatePreferredArchetype';
 export * from './clanDetail';
 export * from './clanError';
+export * from './clanIdentity';
 export * from './clanLeaveResult';
 export * from './clanMember';
 export * from './clanMemberRole';

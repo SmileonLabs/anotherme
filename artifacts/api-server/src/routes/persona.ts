@@ -11,6 +11,7 @@ import {
   type ArchetypeKey,
   type RankingType,
 } from "../lib/ranking";
+import { awardClanRankTop10Bonus, CLAN_RANK_TOP10_THRESHOLD } from "../lib/clanGrowth";
 import type { Persona } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -153,6 +154,18 @@ router.get("/users/persona/rankings", requireAuth, async (req, res): Promise<voi
 
   const result = await getRankings({ type, archetype, limit, meUserId: user.id });
   res.json(result);
+
+  // Side effect only: entering the overall Top 10 grants the member's clan a small
+  // EXP bonus (idempotent per UTC day). This reads ranking output but never mutates
+  // it — the response above is already sent, and the helper swallows its own
+  // errors, so ranking behavior is completely unaffected.
+  if (
+    type === "overall" &&
+    result.myRank &&
+    result.myRank.rank <= CLAN_RANK_TOP10_THRESHOLD
+  ) {
+    void awardClanRankTop10Bonus(user.id, req.log);
+  }
 });
 
 export default router;

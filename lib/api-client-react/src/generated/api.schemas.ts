@@ -590,6 +590,20 @@ export interface MyClan {
   recentMembers: ClanMember[];
 }
 
+export interface ClanIdentity {
+  clanId: string;
+  level: number;
+  exp: number;
+  expIntoLevel: number;
+  expForNextLevel: number;
+  memberCount: number;
+  averageLevel: number;
+  clanPower: number;
+  dominantArchetype: string;
+  dominantArchetypeLabel: string;
+  topStrengths: string[];
+}
+
 export type ClanCreatePreferredArchetype = typeof ClanCreatePreferredArchetype[keyof typeof ClanCreatePreferredArchetype];
 
 

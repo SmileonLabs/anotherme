@@ -368,6 +368,28 @@ export const GetClanDetailResponse = zod.object({
 
 
 /**
+ * @summary Get a clan's collective identity (computed, read-only)
+ */
+export const GetClanIdentityParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetClanIdentityResponse = zod.object({
+  "clanId": zod.string(),
+  "level": zod.number(),
+  "exp": zod.number(),
+  "expIntoLevel": zod.number(),
+  "expForNextLevel": zod.number(),
+  "memberCount": zod.number(),
+  "averageLevel": zod.number(),
+  "clanPower": zod.number(),
+  "dominantArchetype": zod.string(),
+  "dominantArchetypeLabel": zod.string(),
+  "topStrengths": zod.array(zod.string())
+})
+
+
+/**
  * @summary Join a clan
  */
 export const JoinClanParams = zod.object({

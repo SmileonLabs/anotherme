@@ -12,7 +12,7 @@ import { computeLevel, ensurePersona } from "./growth";
 type StatKey = keyof PersonaStats;
 
 /** Korean label for each stat as a noun ("능력치"). */
-const STAT_LABEL: Record<StatKey, string> = {
+export const STAT_LABEL: Record<StatKey, string> = {
   logic: "논리력",
   empathy: "공감력",
   wit: "순발력",
