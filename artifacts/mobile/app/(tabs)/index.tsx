@@ -134,6 +134,15 @@ export default function HomeScreen() {
       onPress: () => router.push("/dungeon/create"),
     },
     {
+      key: "persona",
+      label: "어나더 미",
+      sub: "내 또 다른 자아 성장",
+      icon: "user",
+      bg: isDark ? "#2A1E3A" : "#F3EAFE",
+      fg: "#9D5CFC",
+      onPress: () => router.push("/profile/persona"),
+    },
+    {
       key: "invite",
       label: "친구 초대",
       sub: "함께 즐겨요",

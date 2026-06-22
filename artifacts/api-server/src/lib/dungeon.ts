@@ -16,6 +16,7 @@ import {
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
 import { sendPushToUsers } from "./push";
+import { recordActivity } from "./growth";
 
 const DM_EMAIL = "dungeon-master@todotalk.system";
 const DM_CLERK_ID = "system:dungeon-master";
@@ -576,6 +577,21 @@ export async function runDungeonTurn(
           .where(eq(dungeonSessionsTable.roomId, roomId));
       }
     });
+
+    // Grow the acting player's persona (self-isolated). Only player-driven turns
+    // (action != null) count; the AI-generated opening scene does not.
+    if (result && action) {
+      void recordActivity(action.userId, "dungeon_turn", { refId: roomId, log });
+
+      // Award goal growth when goals flip from not-done to done this turn. The
+      // acting player gets credit for advancing the party's mission.
+      const prevDone = (state.goals ?? []).filter((g) => g.done).map((g) => g.text);
+      const prevDoneSet = new Set(prevDone);
+      const newlyDone = nextGoals.filter((g) => g.done && !prevDoneSet.has(g.text));
+      for (const _goal of newlyDone) {
+        void recordActivity(action.userId, "dungeon_goal", { refId: roomId, log });
+      }
+    }
 
     // Notify human players of the DM's move (fire-and-forget).
     try {

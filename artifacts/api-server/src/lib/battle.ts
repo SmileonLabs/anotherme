@@ -14,6 +14,7 @@ import {
   type BattleState,
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
+import { recordActivity } from "./growth";
 
 const JUDGE_EMAIL = "talk-judge@todotalk.system";
 const JUDGE_CLERK_ID = "system:talk-judge";
@@ -567,6 +568,10 @@ export async function recordBattleResultStats(state: BattleState, log: Logger): 
     } catch (err) {
       log.error({ err, userId: p.userId }, "recordBattleResultStats failed");
     }
+
+    // Grow the participant's persona from the battle outcome (self-isolated).
+    const growthSource = isWin ? "battle_win" : isLoss ? "battle_loss" : "battle_draw";
+    void recordActivity(p.userId, growthSource, { log });
   }
 }
 
@@ -859,6 +864,12 @@ export async function submitBattleTurn(
         .set({ state, status: state.phase })
         .where(eq(battleSessionsTable.roomId, roomId));
     });
+
+    // Grow the speaker's persona from this turn (human speakers only; AI turns
+    // never run through here). Self-isolated fire-and-forget.
+    if (speaker && !speaker.isAI) {
+      void recordActivity(userId, "battle_turn", { refId: roomId, log });
+    }
 
     if (state.ended) await recordBattleResultStats(state, log);
 

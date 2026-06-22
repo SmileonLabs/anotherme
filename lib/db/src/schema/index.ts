@@ -7,3 +7,5 @@ export * from "./calls";
 export * from "./dungeon";
 export * from "./battle";
 export * from "./battleStats";
+export * from "./persona";
+export * from "./xpEvents";

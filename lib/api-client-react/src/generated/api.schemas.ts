@@ -43,6 +43,31 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface PersonaStats {
+  logic: number;
+  empathy: number;
+  wit: number;
+  knowledge: number;
+  conviction: number;
+  emotion: number;
+  decisiveness: number;
+}
+
+export interface PersonaProfile {
+  id: string;
+  userId: string;
+  level: number;
+  xp: number;
+  xpIntoLevel: number;
+  xpForNextLevel: number;
+  stats: PersonaStats;
+  /** @nullable */
+  summary?: string | null;
+  /** @nullable */
+  lastAnalyzedAt?: string | null;
+  createdAt: string;
+}
+
 export interface UserProfileUpdate {
   nickname?: string;
   /** @nullable */

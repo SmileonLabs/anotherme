@@ -89,6 +89,31 @@ export const RegisterPushTokenResponse = zod.object({
 
 
 /**
+ * @summary Get my Another Me persona
+ */
+export const GetMyPersonaResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "xpIntoLevel": zod.number(),
+  "xpForNextLevel": zod.number(),
+  "stats": zod.object({
+  "logic": zod.number(),
+  "empathy": zod.number(),
+  "wit": zod.number(),
+  "knowledge": zod.number(),
+  "conviction": zod.number(),
+  "emotion": zod.number(),
+  "decisiveness": zod.number()
+}),
+  "summary": zod.string().nullish(),
+  "lastAnalyzedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary Search users by email
  */
 export const SearchUsersQueryParams = zod.object({

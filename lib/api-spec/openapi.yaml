@@ -116,6 +116,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserProfile"
 
+  /users/me/persona:
+    get:
+      operationId: getMyPersona
+      tags: [users]
+      summary: Get my Another Me persona
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: My persona
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaProfile"
+        "401":
+          description: Unauthorized
+
   /users/search:
     get:
       operationId: searchUsers
@@ -1110,6 +1126,50 @@ components:
           type: ["string", "null"]
         notificationEnabled:
           type: boolean
+        createdAt:
+          type: string
+
+    PersonaStats:
+      type: object
+      required: [logic, empathy, wit, knowledge, conviction, emotion, decisiveness]
+      properties:
+        logic:
+          type: integer
+        empathy:
+          type: integer
+        wit:
+          type: integer
+        knowledge:
+          type: integer
+        conviction:
+          type: integer
+        emotion:
+          type: integer
+        decisiveness:
+          type: integer
+
+    PersonaProfile:
+      type: object
+      required: [id, userId, level, xp, xpIntoLevel, xpForNextLevel, stats, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        level:
+          type: integer
+        xp:
+          type: integer
+        xpIntoLevel:
+          type: integer
+        xpForNextLevel:
+          type: integer
+        stats:
+          $ref: "#/components/schemas/PersonaStats"
+        summary:
+          type: ["string", "null"]
+        lastAnalyzedAt:
+          type: ["string", "null"]
         createdAt:
           type: string
 

@@ -179,6 +179,18 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>화면</Text>
         <ThemeSelector />
 
+        {/* Another Me section */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>어나더 미</Text>
+        <View style={[styles.section, { backgroundColor: colors.background }]}>
+          <SettingsRow
+            icon="user"
+            label="어나더 미"
+            sublabel="내 또 다른 자아의 성장 보기"
+            onPress={() => router.push("/profile/persona")}
+            last
+          />
+        </View>
+
         {/* Account section */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>계정</Text>
         <View style={[styles.section, { backgroundColor: colors.background }]}>

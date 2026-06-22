@@ -48,6 +48,7 @@ import type {
   MessageInput,
   MuteInput,
   MyBattleStats,
+  PersonaProfile,
   PublicUser,
   PushTokenInput,
   ReadInput,
@@ -514,6 +515,83 @@ export const useRegisterPushToken = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRegisterPushTokenMutationOptions(options));
     }
+
+export const getGetMyPersonaUrl = () => {
+
+
+
+
+  return `/api/users/me/persona`
+}
+
+/**
+ * @summary Get my Another Me persona
+ */
+export const getMyPersona = async ( options?: RequestInit): Promise<PersonaProfile> => {
+
+  return customFetch<PersonaProfile>(getGetMyPersonaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyPersonaQueryKey = () => {
+    return [
+    `/api/users/me/persona`
+    ] as const;
+    }
+
+
+export const getGetMyPersonaQueryOptions = <TData = Awaited<ReturnType<typeof getMyPersona>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPersona>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyPersonaQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyPersona>>> = ({ signal }) => getMyPersona({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyPersona>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyPersonaQueryResult = NonNullable<Awaited<ReturnType<typeof getMyPersona>>>
+export type GetMyPersonaQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get my Another Me persona
+ */
+
+export function useGetMyPersona<TData = Awaited<ReturnType<typeof getMyPersona>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyPersona>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyPersonaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getSearchUsersUrl = (params: SearchUsersParams,) => {
   const normalizedParams = new URLSearchParams();

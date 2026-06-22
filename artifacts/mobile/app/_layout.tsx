@@ -93,6 +93,10 @@ function RootLayoutNav() {
         options={{ title: "프로필 수정", headerBackTitle: "Back" }}
       />
       <Stack.Screen
+        name="profile/persona"
+        options={{ title: "어나더 미", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}
       />

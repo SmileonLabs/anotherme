@@ -1,4 +1,2 @@
-- [Clerk proxy dev vs prod](clerk-proxy-dev-prod.md) — EXPO_PUBLIC_CLERK_PROXY_URL must only be set in production, never shared/dev
-- [OpenAI key fallback](openai-key-fallback.md) — aiClient.ts falls back from AI_INTEGRATIONS_OPENAI_API_KEY to OPENAI_API_KEY
-- [anotherme port complete](anotherme-port.md) — full port of sollomontalk; all features, keys, storage provisioned
-- [SVG assets in Expo](svg-logos-expo.md) — RN ignores Illustrator <style> blocks on native; SVGO-inline styles before importing as components
+- [Workspace typecheck noise](workspace-typecheck.md) — full `pnpm run typecheck` fails in mockup-sandbox (spinner SVG ref, React 19 types); unrelated to app code.
+- [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.

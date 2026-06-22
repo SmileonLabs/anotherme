@@ -6,6 +6,7 @@ import { requireAuth } from "../lib/auth";
 import { sendPushToUsers } from "../lib/push";
 import { getTypingUserIds, markTyping } from "../lib/typing";
 import { runDungeonTurn } from "../lib/dungeon";
+import { recordActivity } from "../lib/growth";
 
 const router: IRouter = Router();
 
@@ -221,6 +222,10 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
       ? { id: sender.id, email: sender.email, nickname: sender.nickname, profileImageUrl: sender.profileImageUrl ?? null, statusMessage: sender.statusMessage ?? null }
       : null,
   });
+
+  // Grow the sender's Another Me persona from this chat activity. Fire-and-forget
+  // and self-isolated: growth tracking must never affect message delivery.
+  void recordActivity(userId, "chat_message", { refId: message.id, log: req.log });
 
   // In a dungeon room, a player's text message is an in-game action: let the
   // AI Dungeon Master respond (fire-and-forget, serialized per room).
