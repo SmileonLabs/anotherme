@@ -482,6 +482,86 @@ export const LeaveClanResponse = zod.object({
 
 
 /**
+ * Returns a clan's accumulated memories (strategy / lesson / value / achievement / warning). Members only. No AI call, no XP / clan-EXP mutation, and no raw chat / battle / dungeon content — only the user-authored title, summary, tags, and an optional source reference.
+
+ * @summary List a clan's memories (members only)
+ */
+export const ListClanMemoriesParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const listClanMemoriesQueryLimitDefault = 30;
+export const listClanMemoriesQueryLimitMax = 100;
+
+
+
+export const ListClanMemoriesQueryParams = zod.object({
+  "type": zod.enum(['strategy', 'lesson', 'value', 'achievement', 'warning']).optional(),
+  "limit": zod.coerce.number().min(1).max(listClanMemoriesQueryLimitMax).default(listClanMemoriesQueryLimitDefault)
+})
+
+export const ListClanMemoriesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "clanId": zod.string(),
+  "sourceType": zod.enum(['battle', 'dungeon', 'manual', 'system']),
+  "sourceId": zod.string().nullish(),
+  "memoryType": zod.enum(['strategy', 'lesson', 'value', 'achievement', 'warning']),
+  "title": zod.string(),
+  "summary": zod.string(),
+  "importanceScore": zod.number(),
+  "tags": zod.array(zod.string()),
+  "createdByUserId": zod.string().nullish(),
+  "authorName": zod.string().nullish(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * Create a user-authored clan memory. Members only. The body must contain a human-written summary — raw conversation/battle/dungeon content must never be sent here.
+
+ * @summary Create a clan memory (members only)
+ */
+export const CreateClanMemoryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const createClanMemoryBodyTitleMax = 80;
+
+export const createClanMemoryBodySummaryMax = 1000;
+
+export const createClanMemoryBodyTagsItemMax = 20;
+
+export const createClanMemoryBodyTagsMax = 5;
+
+
+
+export const CreateClanMemoryBody = zod.object({
+  "memoryType": zod.enum(['strategy', 'lesson', 'value', 'achievement', 'warning']),
+  "title": zod.string().min(1).max(createClanMemoryBodyTitleMax),
+  "summary": zod.string().min(1).max(createClanMemoryBodySummaryMax),
+  "tags": zod.array(zod.string().max(createClanMemoryBodyTagsItemMax)).max(createClanMemoryBodyTagsMax).optional(),
+  "sourceType": zod.enum(['battle', 'dungeon', 'manual', 'system']).optional(),
+  "sourceId": zod.string().optional(),
+  "sourceKey": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a clan memory (author or elder/owner)
+ */
+export const DeleteClanMemoryParams = zod.object({
+  "id": zod.coerce.string(),
+  "memoryId": zod.coerce.string()
+})
+
+export const DeleteClanMemoryResponse = zod.object({
+  "deleted": zod.boolean()
+})
+
+
+/**
  * @summary Search users by email
  */
 export const SearchUsersQueryParams = zod.object({

@@ -39,6 +39,10 @@ import type {
   ClanError,
   ClanIdentity,
   ClanLeaveResult,
+  ClanMemory,
+  ClanMemoryCreate,
+  ClanMemoryDeleteResult,
+  ClanMemoryList,
   ClanRanking,
   ClanSummary,
   CreateCallInput,
@@ -53,6 +57,7 @@ import type {
   HealthStatus,
   Invite,
   InviteMembersInput,
+  ListClanMemoriesParams,
   ListClansParams,
   Message,
   MessageInput,
@@ -1458,6 +1463,243 @@ export const useLeaveClan = <TError = ErrorType<void | ClanError>,
         TContext
       > => {
       return useMutation(getLeaveClanMutationOptions(options));
+    }
+
+export const getListClanMemoriesUrl = (id: string,
+    params?: ListClanMemoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/clans/${id}/memories?${stringifiedParams}` : `/api/clans/${id}/memories`
+}
+
+/**
+ * Returns a clan's accumulated memories (strategy / lesson / value / achievement / warning). Members only. No AI call, no XP / clan-EXP mutation, and no raw chat / battle / dungeon content — only the user-authored title, summary, tags, and an optional source reference.
+
+ * @summary List a clan's memories (members only)
+ */
+export const listClanMemories = async (id: string,
+    params?: ListClanMemoriesParams, options?: RequestInit): Promise<ClanMemoryList> => {
+
+  return customFetch<ClanMemoryList>(getListClanMemoriesUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListClanMemoriesQueryKey = (id: string,
+    params?: ListClanMemoriesParams,) => {
+    return [
+    `/api/clans/${id}/memories`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListClanMemoriesQueryOptions = <TData = Awaited<ReturnType<typeof listClanMemories>>, TError = ErrorType<void | ClanError>>(id: string,
+    params?: ListClanMemoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClanMemories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListClanMemoriesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listClanMemories>>> = ({ signal }) => listClanMemories(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listClanMemories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListClanMemoriesQueryResult = NonNullable<Awaited<ReturnType<typeof listClanMemories>>>
+export type ListClanMemoriesQueryError = ErrorType<void | ClanError>
+
+
+/**
+ * @summary List a clan's memories (members only)
+ */
+
+export function useListClanMemories<TData = Awaited<ReturnType<typeof listClanMemories>>, TError = ErrorType<void | ClanError>>(
+ id: string,
+    params?: ListClanMemoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClanMemories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListClanMemoriesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateClanMemoryUrl = (id: string,) => {
+
+
+
+
+  return `/api/clans/${id}/memories`
+}
+
+/**
+ * Create a user-authored clan memory. Members only. The body must contain a human-written summary — raw conversation/battle/dungeon content must never be sent here.
+
+ * @summary Create a clan memory (members only)
+ */
+export const createClanMemory = async (id: string,
+    clanMemoryCreate: ClanMemoryCreate, options?: RequestInit): Promise<ClanMemory> => {
+
+  return customFetch<ClanMemory>(getCreateClanMemoryUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clanMemoryCreate,)
+  }
+);}
+
+
+
+
+export const getCreateClanMemoryMutationOptions = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClanMemory>>, TError,{id: string;data: BodyType<ClanMemoryCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createClanMemory>>, TError,{id: string;data: BodyType<ClanMemoryCreate>}, TContext> => {
+
+const mutationKey = ['createClanMemory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createClanMemory>>, {id: string;data: BodyType<ClanMemoryCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createClanMemory(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateClanMemoryMutationResult = NonNullable<Awaited<ReturnType<typeof createClanMemory>>>
+    export type CreateClanMemoryMutationBody = BodyType<ClanMemoryCreate>
+    export type CreateClanMemoryMutationError = ErrorType<ClanError | void>
+
+    /**
+ * @summary Create a clan memory (members only)
+ */
+export const useCreateClanMemory = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClanMemory>>, TError,{id: string;data: BodyType<ClanMemoryCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createClanMemory>>,
+        TError,
+        {id: string;data: BodyType<ClanMemoryCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateClanMemoryMutationOptions(options));
+    }
+
+export const getDeleteClanMemoryUrl = (id: string,
+    memoryId: string,) => {
+
+
+
+
+  return `/api/clans/${id}/memories/${memoryId}`
+}
+
+/**
+ * @summary Delete a clan memory (author or elder/owner)
+ */
+export const deleteClanMemory = async (id: string,
+    memoryId: string, options?: RequestInit): Promise<ClanMemoryDeleteResult> => {
+
+  return customFetch<ClanMemoryDeleteResult>(getDeleteClanMemoryUrl(id,memoryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteClanMemoryMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteClanMemory>>, TError,{id: string;memoryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteClanMemory>>, TError,{id: string;memoryId: string}, TContext> => {
+
+const mutationKey = ['deleteClanMemory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteClanMemory>>, {id: string;memoryId: string}> = (props) => {
+          const {id,memoryId} = props ?? {};
+
+          return  deleteClanMemory(id,memoryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteClanMemoryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteClanMemory>>>
+
+    export type DeleteClanMemoryMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Delete a clan memory (author or elder/owner)
+ */
+export const useDeleteClanMemory = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteClanMemory>>, TError,{id: string;memoryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteClanMemory>>,
+        TError,
+        {id: string;memoryId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteClanMemoryMutationOptions(options));
     }
 
 export const getSearchUsersUrl = (params: SearchUsersParams,) => {

@@ -23,6 +23,19 @@ import {
   CLAN_RANKING_TYPES,
   getClanRankings,
 } from "../lib/clanRanking";
+import {
+  CLAN_MEMORY_LIST_LIMIT_DEFAULT,
+  CLAN_MEMORY_SOURCE_TYPES,
+  CLAN_MEMORY_SUMMARY_MAX,
+  CLAN_MEMORY_TAGS_MAX,
+  CLAN_MEMORY_TAG_MAX,
+  CLAN_MEMORY_TITLE_MAX,
+  CLAN_MEMORY_TYPES,
+  ClanMemoryError,
+  createClanMemory,
+  deleteClanMemory,
+  listClanMemories,
+} from "../lib/clanMemory";
 
 const router: IRouter = Router();
 
@@ -174,6 +187,109 @@ router.post("/clans/:id/leave", requireAuth, async (req, res): Promise<void> => 
     if (handleClanError(res, err)) return;
     req.log.error({ err }, "leaveClan failed");
     res.status(500).json({ error: "internal", message: "가문 탈퇴에 실패했어요." });
+  }
+});
+
+/** Map a ClanMemoryError to an HTTP status + the Korean message it carries. */
+function handleClanMemoryError(res: import("express").Response, err: unknown): boolean {
+  if (err instanceof ClanMemoryError) {
+    const status =
+      err.code === "not_found"
+        ? 404
+        : err.code === "not_member" || err.code === "forbidden"
+          ? 403
+          : err.code === "duplicate"
+            ? 409
+            : 400;
+    res.status(status).json({ error: err.code, message: err.message });
+    return true;
+  }
+  return false;
+}
+
+/** GET /clans/:id/memories — list a clan's memories (members only). */
+const memoryListQuerySchema = z.object({
+  type: z.enum(CLAN_MEMORY_TYPES).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+router.get("/clans/:id/memories", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const parsed = memoryListQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "잘못된 요청이에요." });
+    return;
+  }
+  try {
+    const result = await listClanMemories({
+      clanId: id,
+      meUserId: req.dbUser!.id,
+      type: parsed.data.type ?? null,
+      limit: parsed.data.limit ?? CLAN_MEMORY_LIST_LIMIT_DEFAULT,
+    });
+    res.json(result);
+  } catch (err) {
+    if (handleClanMemoryError(res, err)) return;
+    req.log.error({ err }, "listClanMemories failed");
+    res.status(500).json({ error: "internal", message: "가문 기억을 불러오지 못했어요." });
+  }
+});
+
+/** POST /clans/:id/memories — create a memory (members only). */
+const memoryCreateBodySchema = z.object({
+  memoryType: z.enum(CLAN_MEMORY_TYPES),
+  title: z.string().trim().min(1).max(CLAN_MEMORY_TITLE_MAX),
+  summary: z.string().trim().min(1).max(CLAN_MEMORY_SUMMARY_MAX),
+  tags: z.array(z.string().trim().max(CLAN_MEMORY_TAG_MAX)).max(CLAN_MEMORY_TAGS_MAX).optional(),
+  sourceType: z.enum(CLAN_MEMORY_SOURCE_TYPES).optional(),
+  sourceId: z.string().trim().max(200).optional(),
+  sourceKey: z.string().trim().max(200).optional(),
+});
+
+router.post("/clans/:id/memories", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const parsed = memoryCreateBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "제목과 내용을 확인해 주세요." });
+    return;
+  }
+  try {
+    const memory = await createClanMemory({
+      clanId: id,
+      meUserId: req.dbUser!.id,
+      memoryType: parsed.data.memoryType,
+      title: parsed.data.title,
+      summary: parsed.data.summary,
+      tags: parsed.data.tags,
+      sourceType: parsed.data.sourceType,
+      sourceId: parsed.data.sourceId ?? null,
+      sourceKey: parsed.data.sourceKey ?? null,
+    });
+    res.status(201).json(memory);
+  } catch (err) {
+    if (handleClanMemoryError(res, err)) return;
+    req.log.error({ err }, "createClanMemory failed");
+    res.status(500).json({ error: "internal", message: "가문 기억 저장에 실패했어요." });
+  }
+});
+
+/** DELETE /clans/:id/memories/:memoryId — delete a memory (author or elder/owner). */
+router.delete("/clans/:id/memories/:memoryId", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const memoryId = Array.isArray(req.params.memoryId)
+    ? req.params.memoryId[0]
+    : req.params.memoryId;
+  try {
+    const result = await deleteClanMemory({
+      clanId: id,
+      memoryId,
+      meUserId: req.dbUser!.id,
+    });
+    res.json(result);
+  } catch (err) {
+    if (handleClanMemoryError(res, err)) return;
+    req.log.error({ err }, "deleteClanMemory failed");
+    res.status(500).json({ error: "internal", message: "가문 기억 삭제에 실패했어요." });
   }
 });
 

@@ -681,6 +681,90 @@ export interface ClanError {
   message: string;
 }
 
+export type ClanMemorySourceType = typeof ClanMemorySourceType[keyof typeof ClanMemorySourceType];
+
+
+export const ClanMemorySourceType = {
+  battle: 'battle',
+  dungeon: 'dungeon',
+  manual: 'manual',
+  system: 'system',
+} as const;
+
+export type ClanMemoryMemoryType = typeof ClanMemoryMemoryType[keyof typeof ClanMemoryMemoryType];
+
+
+export const ClanMemoryMemoryType = {
+  strategy: 'strategy',
+  lesson: 'lesson',
+  value: 'value',
+  achievement: 'achievement',
+  warning: 'warning',
+} as const;
+
+export interface ClanMemory {
+  id: string;
+  clanId: string;
+  sourceType: ClanMemorySourceType;
+  sourceId?: string | null;
+  memoryType: ClanMemoryMemoryType;
+  title: string;
+  summary: string;
+  importanceScore: number;
+  tags: string[];
+  createdByUserId?: string | null;
+  authorName?: string | null;
+  createdAt: string;
+}
+
+export interface ClanMemoryList {
+  items: ClanMemory[];
+}
+
+export type ClanMemoryCreateMemoryType = typeof ClanMemoryCreateMemoryType[keyof typeof ClanMemoryCreateMemoryType];
+
+
+export const ClanMemoryCreateMemoryType = {
+  strategy: 'strategy',
+  lesson: 'lesson',
+  value: 'value',
+  achievement: 'achievement',
+  warning: 'warning',
+} as const;
+
+export type ClanMemoryCreateSourceType = typeof ClanMemoryCreateSourceType[keyof typeof ClanMemoryCreateSourceType];
+
+
+export const ClanMemoryCreateSourceType = {
+  battle: 'battle',
+  dungeon: 'dungeon',
+  manual: 'manual',
+  system: 'system',
+} as const;
+
+export interface ClanMemoryCreate {
+  memoryType: ClanMemoryCreateMemoryType;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title: string;
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  summary: string;
+  /** @maxItems 5 */
+  tags?: string[];
+  sourceType?: ClanMemoryCreateSourceType;
+  sourceId?: string;
+  sourceKey?: string;
+}
+
+export interface ClanMemoryDeleteResult {
+  deleted: boolean;
+}
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**
@@ -783,6 +867,26 @@ export const GetClanRankingsArchetype = {
   entertainer: 'entertainer',
   activist: 'activist',
   observer: 'observer',
+} as const;
+
+export type ListClanMemoriesParams = {
+type?: ListClanMemoriesType;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListClanMemoriesType = typeof ListClanMemoriesType[keyof typeof ListClanMemoriesType];
+
+
+export const ListClanMemoriesType = {
+  strategy: 'strategy',
+  lesson: 'lesson',
+  value: 'value',
+  achievement: 'achievement',
+  warning: 'warning',
 } as const;
 
 export type SearchUsersParams = {

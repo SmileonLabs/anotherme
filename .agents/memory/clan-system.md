@@ -5,7 +5,7 @@ description: Scope boundaries and invariants for the clan feature — what it mu
 
 # Clan system (가문)
 
-Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Still NO Clan War or Clan Memory (forbidden).
+Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Phase 8 added Clan Memory (가문 기억). Still NO Clan War (forbidden).
 
 ## Invariants (do not break in later phases)
 - **One active clan per user** is enforced at the DB level by a UNIQUE constraint on `clan_members.user_id`, plus service-level pre-checks inside transactions. Any "leave one / join another" flow must keep this UNIQUE valid (delete old membership before inserting new in the same tx).
@@ -30,3 +30,12 @@ Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Ident
 - `score` is the type's primary metric (overall→clanPower, level→level, contribution→exp, average_level→averageLevel, archetype→clanPower). `pointsToNextRank = score(rank-1) - myScore`, 0 at rank 1. `myClanRank` is null when the user has no clan OR the clan is absent from the ranked set (e.g. archetype filter mismatch).
 - **Candidate pool is capped (perf), so always force-include the caller's clan** before the final sort, or `myClanRank` can be falsely null for a real member. **Why:** caught in review — capping must never hide the caller. Also order the candidate query by the *true* stored metric for level/contribution so the capped pool is exact; other types use a memberCount/level/exp strength proxy (approximate only beyond the cap). A future season/cache/aggregate table can replace this live path.
 - Route `GET /clans/rankings` MUST be registered before `GET /clans/:id` or it gets captured as an id lookup.
+
+## Clan memory (Phase 8, 가문 기억)
+- Memories are user-authored notes only (전략/교훈/가치/업적/경고). Service `clanMemory.ts` writes ONLY to `clan_memories`; never persona/clan-exp/ranking. No AI calls anywhere in this feature. **Why:** hard product constraint — memory is a passive store, not a growth input.
+- **Never store raw transcripts/utterances/AI analysis.** Only the user-written `summary` + a `sourceId` reference (no transcript blob). View shaping is field-whitelisted (`ClanMemoryView`): no email/clerkId; `authorName` is nickname only.
+- Permissions: create = any clan member; delete = author OR elder/owner; plain members cannot delete others'. Enforced in service, not just routes.
+- `sourceKey` is unique+nullable → idempotent saves (same sourceKey returns existing row, no dup). Validation: title+summary required & length-capped, tags max 5.
+- GET limit default 30 (route) / clamped max 100 (service); optional `type` filter.
+- Home preview "top 3 by importance" must fetch a wide window (limit 100) then client-sort by `importanceScore` — server orders by createdAt, so sorting only the latest few would be wrong.
+- Codegen gotcha: this is the first endpoint with BOTH a path param and query params, so orval emits a zod path-param schema `ListClanMemoriesParams` that collides with the react-query query-param type of the same name (TS2308). Fix: explicit disambiguation re-export in the stable barrel `lib/api-zod/src/index.ts` (`export { ListClanMemoriesParams } from "./generated/api"`). Re-apply if codegen is regenerated.

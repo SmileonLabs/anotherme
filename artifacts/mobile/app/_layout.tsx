@@ -113,6 +113,14 @@ function RootLayoutNav() {
         options={{ title: "가문 찾기", headerBackTitle: "Back" }}
       />
       <Stack.Screen
+        name="clan/memories"
+        options={{ title: "가문 기억", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="clan/memory-new"
+        options={{ title: "기억 남기기", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}
       />

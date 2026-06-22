@@ -15,18 +15,25 @@ import {
   getGetClanDetailQueryKey,
   getGetClanIdentityQueryKey,
   getGetMyClanQueryKey,
+  getListClanMemoriesQueryKey,
   useGetClanDetail,
   useGetClanIdentity,
   useGetMyClan,
   useLeaveClan,
+  useListClanMemories,
 } from "@workspace/api-client-react";
-import type { ClanIdentity, ClanMember } from "@workspace/api-client-react";
+import type { ClanIdentity, ClanMember, ClanMemory } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
 import { crossAlert } from "@/lib/crossAlert";
+import {
+  MEMORY_TYPE_LABEL,
+  MEMORY_TYPE_TONE,
+  formatMemoryDate,
+} from "@/lib/clanMemory";
 
 const ARCHETYPE_LABEL: Record<string, string> = {
   strategist: "전략가형",
@@ -61,7 +68,22 @@ export default function ClanHomeScreen() {
   const { data: detail } = useGetClanDetail(clanId ?? "", {
     query: { enabled: !!clanId, queryKey: getGetClanDetailQueryKey(clanId ?? "") },
   });
+  const memoryParams = { limit: 100 } as const;
+  const { data: memories } = useListClanMemories(clanId ?? "", memoryParams, {
+    query: {
+      enabled: !!clanId,
+      queryKey: getListClanMemoriesQueryKey(clanId ?? "", memoryParams),
+    },
+  });
   const leave = useLeaveClan();
+
+  const topMemories = React.useMemo(
+    () =>
+      [...(memories?.items ?? [])]
+        .sort((a, b) => b.importanceScore - a.importanceScore)
+        .slice(0, 3),
+    [memories?.items],
+  );
 
   const topContributors = React.useMemo(
     () =>
@@ -190,6 +212,35 @@ export default function ClanHomeScreen() {
                 </View>
               </>
             ) : null}
+
+            <View style={styles.memHead}>
+              <Text style={[styles.sectionTitle, styles.memHeadTitle, { color: colors.mutedForeground }]}>
+                가문 기억
+              </Text>
+              <Pressable
+                onPress={() => router.push({ pathname: "/clan/memories", params: { clanId: myClan.clan.id } })}
+                hitSlop={8}
+              >
+                <Text style={[styles.memMore, { color: colors.primary }]}>전체 보기</Text>
+              </Pressable>
+            </View>
+            {topMemories.length > 0 ? (
+              <View style={{ gap: 10, marginHorizontal: 16 }}>
+                {topMemories.map((m) => (
+                  <MemoryPreview key={m.id} memory={m} colors={colors} />
+                ))}
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => router.push({ pathname: "/clan/memory-new", params: { clanId: myClan.clan.id } })}
+                style={[styles.memEmpty, { backgroundColor: colors.background, borderColor: colors.border }]}
+              >
+                <Feather name="book-open" size={18} color={colors.mutedForeground} />
+                <Text style={[styles.memEmptyText, { color: colors.mutedForeground }]}>
+                  아직 가문 기억이 없습니다. 첫 기억을 남겨보세요.
+                </Text>
+              </Pressable>
+            )}
 
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>멤버</Text>
             <View style={[styles.listCard, { backgroundColor: colors.background }]}>
@@ -382,6 +433,36 @@ function ContributorRow({
   );
 }
 
+function MemoryPreview({
+  memory,
+  colors,
+}: {
+  memory: ClanMemory;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const tone = MEMORY_TYPE_TONE[memory.memoryType] ?? colors.primary;
+  return (
+    <View style={[styles.memCard, { backgroundColor: colors.background }]}>
+      <View style={styles.memCardHead}>
+        <View style={[styles.memBadge, { backgroundColor: `${tone}1f` }]}>
+          <Text style={[styles.memBadgeText, { color: tone }]}>
+            {MEMORY_TYPE_LABEL[memory.memoryType] ?? memory.memoryType}
+          </Text>
+        </View>
+        <Text style={[styles.memDate, { color: colors.mutedForeground }]}>
+          {formatMemoryDate(memory.createdAt)}
+        </Text>
+      </View>
+      <Text style={[styles.memTitle, { color: colors.foreground }]} numberOfLines={1}>
+        {memory.title}
+      </Text>
+      <Text style={[styles.memSummary, { color: colors.mutedForeground }]} numberOfLines={2}>
+        {memory.summary}
+      </Text>
+    </View>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -523,6 +604,31 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 8,
   },
+  memHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginRight: 16,
+  },
+  memHeadTitle: { marginRight: 0 },
+  memMore: { fontSize: 13, fontFamily: "Inter_600SemiBold", marginTop: 10 },
+  memCard: { borderRadius: 14, padding: 14, gap: 6 },
+  memCardHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  memBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 8 },
+  memBadgeText: { fontSize: 11, fontFamily: "Inter_700Bold" },
+  memDate: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  memTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  memSummary: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  memEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  memEmptyText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
   listCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
   rowBody: { flex: 1, gap: 2 },
