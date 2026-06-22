@@ -1,11 +1,12 @@
 // Native push (FCM on Android via google-services.json / APNs on iOS) using
 // expo-notifications. Metro picks nativePush.web.ts on web.
 //
-// NOTE: the API server currently only sends Web Push (VAPID). Actually waking a
-// backgrounded native device requires the server to send an FCM data message via
-// firebase-admin — see replit.md "Native push (FCM)". Until then this registers
-// the device token (harmless; the server ignores non-web-push tokens) and the
-// foreground listener below handles data messages once that server path exists.
+// The API server sends native FCM messages via firebase-admin (lib/fcm.ts):
+// registerForPushTokenAsync() registers the raw device token through
+// POST /users/me/push-token, where the server routes it to native FCM storage.
+// The foreground listener below handles incoming-call data messages while the
+// app is open. Full-screen-over-lockscreen while the app is killed still needs a
+// native FCM background handler (see replit.md "Remaining native gap").
 
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";

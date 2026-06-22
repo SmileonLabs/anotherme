@@ -182,12 +182,16 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
             ?? (err as { errorInfo?: { code?: string } })?.errorInfo?.code;
           if (
             code === "messaging/registration-token-not-registered" ||
-            code === "messaging/invalid-registration-token" ||
-            code === "messaging/invalid-argument"
+            code === "messaging/invalid-registration-token"
           ) {
+            // Token is definitively dead — safe to drop.
             stale.add(token);
           } else {
-            logger.error({ err, userId }, "Failed to send FCM to a device");
+            // Includes messaging/invalid-argument: do NOT prune on it. It can be
+            // caused by a malformed payload rather than a bad token, in which
+            // case every device would error and we'd wipe the user's whole token
+            // list. Log and keep the token instead.
+            logger.error({ err, userId, code }, "Failed to send FCM to a device");
           }
         }
       }),
