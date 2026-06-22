@@ -121,6 +121,18 @@ function RootLayoutNav() {
         options={{ title: "기억 남기기", headerBackTitle: "Back" }}
       />
       <Stack.Screen
+        name="clan/wars"
+        options={{ title: "가문전", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="clan/war-create"
+        options={{ title: "가문전 만들기", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="clan/war/[id]"
+        options={{ title: "가문전", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}
       />

@@ -7,3 +7,9 @@ export * from "./generated/types";
 // path param AND query params. Prefer the zod schema; the query-param shape is
 // still available via `z.infer<typeof ListClanMemoriesQueryParams>`.
 export { ListClanMemoriesParams } from "./generated/api";
+
+// `CreateClanWarBody` and `SubmitClanWarArgumentBody` are emitted by BOTH
+// generators (a zod body schema in generated/api and a body type in
+// generated/types). Prefer the zod schemas; the type shapes remain available via
+// `z.infer<typeof ...>`.
+export { CreateClanWarBody, SubmitClanWarArgumentBody } from "./generated/api";

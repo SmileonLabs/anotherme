@@ -778,6 +778,72 @@ export interface ClanWisdom {
   generatedAt: string;
 }
 
+export type ClanWarSummaryStatus = typeof ClanWarSummaryStatus[keyof typeof ClanWarSummaryStatus];
+
+
+export const ClanWarSummaryStatus = {
+  open: 'open',
+  matched: 'matched',
+  active: 'active',
+  completing: 'completing',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface ClanWarSummary {
+  id: string;
+  topic: string;
+  status: ClanWarSummaryStatus;
+  challengerClanId: string;
+  challengerClanName?: string | null;
+  opponentClanId?: string | null;
+  opponentClanName?: string | null;
+  winnerClanId?: string | null;
+  challengerScore: number;
+  opponentScore: number;
+  participantCount: number;
+  createdAt: string;
+}
+
+export type ClanWarParticipantSide = typeof ClanWarParticipantSide[keyof typeof ClanWarParticipantSide];
+
+
+export const ClanWarParticipantSide = {
+  challenger: 'challenger',
+  opponent: 'opponent',
+} as const;
+
+export interface ClanWarParticipant {
+  userId: string;
+  displayName?: string | null;
+  side: ClanWarParticipantSide;
+  hasSubmitted: boolean;
+  score: number;
+  contributionSummary?: string | null;
+}
+
+export interface ClanWarResult {
+  judgeSummary: string;
+  challengerFeedback: string;
+  opponentFeedback: string;
+}
+
+export type ClanWarDetailMySide = typeof ClanWarDetailMySide[keyof typeof ClanWarDetailMySide] | null;
+
+
+export const ClanWarDetailMySide = {
+  challenger: 'challenger',
+  opponent: 'opponent',
+} as const;
+
+export type ClanWarDetail = ClanWarSummary & ({
+  participants: ClanWarParticipant[];
+  mySubmission?: string | null;
+  mySide?: ClanWarDetailMySide;
+  myHasJoined: boolean;
+  result?: ClanWarResult | null;
+});
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**
@@ -908,5 +974,30 @@ email: string;
 
 export type CancelBattle200 = {
   ok: boolean;
+};
+
+export type ListClanWarsParams = {
+status?: ListClanWarsStatus;
+};
+
+export type ListClanWarsStatus = typeof ListClanWarsStatus[keyof typeof ListClanWarsStatus];
+
+
+export const ListClanWarsStatus = {
+  open: 'open',
+  matched: 'matched',
+  active: 'active',
+  completing: 'completing',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export type CreateClanWarBody = {
+  topic: string;
+  opponentClanId?: string | null;
+};
+
+export type SubmitClanWarArgumentBody = {
+  content: string;
 };
 

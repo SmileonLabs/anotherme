@@ -1689,6 +1689,346 @@ paths:
                   ok:
                     type: boolean
 
+  /clan-wars:
+    get:
+      operationId: listClanWars
+      tags: [clan-wars]
+      summary: List clan wars relevant to the caller
+      description: >
+        Returns open public challenges plus all wars involving the caller's clan,
+        most recent first. Optionally filtered by status.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, matched, active, completing, completed, cancelled]
+      responses:
+        "200":
+          description: List of clan war summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClanWarSummary"
+        "401":
+          description: Unauthorized
+    post:
+      operationId: createClanWar
+      tags: [clan-wars]
+      summary: Create a clan war (challenger owner/elder only)
+      description: >
+        The creator's clan becomes the challenger. Provide opponentClanId to
+        directly challenge a clan (status=matched), or omit it for a public
+        challenge (status=open) any other clan's owner/elder can accept. Owner or
+        elder only.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic]
+              properties:
+                topic:
+                  type: string
+                opponentClanId:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: The created war
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not an owner/elder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}:
+    get:
+      operationId: getClanWar
+      tags: [clan-wars]
+      summary: Get a clan war's detail
+      description: >
+        Open challenges are visible to everyone; other statuses require membership
+        in one of the two participating clans. Never exposes other members' raw
+        submissions — only the caller's own submission text and AI summaries.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: War detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not allowed to view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}/accept:
+    post:
+      operationId: acceptClanWar
+      tags: [clan-wars]
+      summary: Accept an open public challenge (opponent owner/elder)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The matched war
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not an owner/elder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: Already matched or finished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}/join:
+    post:
+      operationId: joinClanWar
+      tags: [clan-wars]
+      summary: Join a war as a member of a participating clan
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: War detail after joining
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not a member of a participating clan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: War not joinable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}/submit:
+    post:
+      operationId: submitClanWarArgument
+      tags: [clan-wars]
+      summary: Submit a member's argument (once)
+      description: >
+        Auto-joins the caller if not already a participant. Each member may submit
+        exactly once; a second submission is rejected.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+      responses:
+        "200":
+          description: War detail after submitting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not a member of a participating clan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: Already submitted, or war not accepting submissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}/complete:
+    post:
+      operationId: completeClanWar
+      tags: [clan-wars]
+      summary: Judge and finalize a war (owner/elder of either clan)
+      description: >
+        Requires both sides to have at least one submission. Calls the AI judge
+        exactly once to score every submission, derives each clan's score as the
+        top-3 average, records the winner and result, and applies small isolated
+        clan-EXP rewards. Idempotent — repeat calls return the completed war.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The completed war
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not an owner/elder of a participating clan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: Not ready to complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "502":
+          description: AI judge failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
+  /clan-wars/{id}/cancel:
+    post:
+      operationId: cancelClanWar
+      tags: [clan-wars]
+      summary: Cancel a war before completion (challenger owner/elder)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The cancelled war
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanWarDetail"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Not the challenger's owner/elder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "404":
+          description: War not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+        "409":
+          description: Already finished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClanError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3034,3 +3374,102 @@ components:
           nullable: true
         generatedAt:
           type: string
+
+    ClanWarSummary:
+      type: object
+      required:
+        [
+          id,
+          topic,
+          status,
+          challengerClanId,
+          challengerScore,
+          opponentScore,
+          participantCount,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        status:
+          type: string
+          enum: [open, matched, active, completing, completed, cancelled]
+        challengerClanId:
+          type: string
+        challengerClanName:
+          type: string
+          nullable: true
+        opponentClanId:
+          type: string
+          nullable: true
+        opponentClanName:
+          type: string
+          nullable: true
+        winnerClanId:
+          type: string
+          nullable: true
+        challengerScore:
+          type: integer
+        opponentScore:
+          type: integer
+        participantCount:
+          type: integer
+        createdAt:
+          type: string
+
+    ClanWarParticipant:
+      type: object
+      required: [userId, side, hasSubmitted, score]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        side:
+          type: string
+          enum: [challenger, opponent]
+        hasSubmitted:
+          type: boolean
+        score:
+          type: integer
+        contributionSummary:
+          type: string
+          nullable: true
+
+    ClanWarResult:
+      type: object
+      required: [judgeSummary, challengerFeedback, opponentFeedback]
+      properties:
+        judgeSummary:
+          type: string
+        challengerFeedback:
+          type: string
+        opponentFeedback:
+          type: string
+
+    ClanWarDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClanWarSummary"
+        - type: object
+          required: [participants, myHasJoined]
+          properties:
+            participants:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClanWarParticipant"
+            mySubmission:
+              type: string
+              nullable: true
+            mySide:
+              type: string
+              enum: [challenger, opponent]
+              nullable: true
+            myHasJoined:
+              type: boolean
+            result:
+              oneOf:
+                - $ref: "#/components/schemas/ClanWarResult"
+                - type: "null"

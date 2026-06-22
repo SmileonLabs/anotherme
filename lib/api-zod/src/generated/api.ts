@@ -1480,3 +1480,290 @@ export const CancelBattleResponse = zod.object({
 })
 
 
+/**
+ * Returns open public challenges plus all wars involving the caller's clan, most recent first. Optionally filtered by status.
+
+ * @summary List clan wars relevant to the caller
+ */
+export const ListClanWarsQueryParams = zod.object({
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']).optional()
+})
+
+export const ListClanWarsResponseItem = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+})
+export const ListClanWarsResponse = zod.array(ListClanWarsResponseItem)
+
+
+/**
+ * The creator's clan becomes the challenger. Provide opponentClanId to directly challenge a clan (status=matched), or omit it for a public challenge (status=open) any other clan's owner/elder can accept. Owner or elder only.
+
+ * @summary Create a clan war (challenger owner/elder only)
+ */
+export const CreateClanWarBody = zod.object({
+  "topic": zod.string(),
+  "opponentClanId": zod.string().nullish()
+})
+
+
+/**
+ * Open challenges are visible to everyone; other statuses require membership in one of the two participating clans. Never exposes other members' raw submissions — only the caller's own submission text and AI summaries.
+
+ * @summary Get a clan war's detail
+ */
+export const GetClanWarParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetClanWarResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+
+/**
+ * @summary Accept an open public challenge (opponent owner/elder)
+ */
+export const AcceptClanWarParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const AcceptClanWarResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+
+/**
+ * @summary Join a war as a member of a participating clan
+ */
+export const JoinClanWarParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const JoinClanWarResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+
+/**
+ * Auto-joins the caller if not already a participant. Each member may submit exactly once; a second submission is rejected.
+
+ * @summary Submit a member's argument (once)
+ */
+export const SubmitClanWarArgumentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SubmitClanWarArgumentBody = zod.object({
+  "content": zod.string()
+})
+
+export const SubmitClanWarArgumentResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+
+/**
+ * Requires both sides to have at least one submission. Calls the AI judge exactly once to score every submission, derives each clan's score as the top-3 average, records the winner and result, and applies small isolated clan-EXP rewards. Idempotent — repeat calls return the completed war.
+
+ * @summary Judge and finalize a war (owner/elder of either clan)
+ */
+export const CompleteClanWarParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CompleteClanWarResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+
+/**
+ * @summary Cancel a war before completion (challenger owner/elder)
+ */
+export const CancelClanWarParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CancelClanWarResponse = zod.object({
+  "id": zod.string(),
+  "topic": zod.string(),
+  "status": zod.enum(['open', 'matched', 'active', 'completing', 'completed', 'cancelled']),
+  "challengerClanId": zod.string(),
+  "challengerClanName": zod.string().nullish(),
+  "opponentClanId": zod.string().nullish(),
+  "opponentClanName": zod.string().nullish(),
+  "winnerClanId": zod.string().nullish(),
+  "challengerScore": zod.number(),
+  "opponentScore": zod.number(),
+  "participantCount": zod.number(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "participants": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string().nullish(),
+  "side": zod.enum(['challenger', 'opponent']),
+  "hasSubmitted": zod.boolean(),
+  "score": zod.number(),
+  "contributionSummary": zod.string().nullish()
+})),
+  "mySubmission": zod.string().nullish(),
+  "mySide": zod.enum(['challenger', 'opponent']).nullish(),
+  "myHasJoined": zod.boolean(),
+  "result": zod.union([zod.object({
+  "judgeSummary": zod.string(),
+  "challengerFeedback": zod.string(),
+  "opponentFeedback": zod.string()
+}),zod.null()]).optional()
+}))
+
+

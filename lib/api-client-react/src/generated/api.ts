@@ -45,8 +45,11 @@ import type {
   ClanMemoryList,
   ClanRanking,
   ClanSummary,
+  ClanWarDetail,
+  ClanWarSummary,
   ClanWisdom,
   CreateCallInput,
+  CreateClanWarBody,
   DungeonInput,
   DungeonState,
   ErrorEnvelope,
@@ -59,6 +62,7 @@ import type {
   Invite,
   InviteMembersInput,
   ListClanMemoriesParams,
+  ListClanWarsParams,
   ListClansParams,
   Message,
   MessageInput,
@@ -75,6 +79,7 @@ import type {
   RedeemInviteInput,
   RoomInput,
   SearchUsersParams,
+  SubmitClanWarArgumentBody,
   UploadUrlRequest,
   UploadUrlResponse,
   UserProfile,
@@ -5294,5 +5299,599 @@ export const useCancelBattle = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCancelBattleMutationOptions(options));
+    }
+
+export const getListClanWarsUrl = (params?: ListClanWarsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/clan-wars?${stringifiedParams}` : `/api/clan-wars`
+}
+
+/**
+ * Returns open public challenges plus all wars involving the caller's clan, most recent first. Optionally filtered by status.
+
+ * @summary List clan wars relevant to the caller
+ */
+export const listClanWars = async (params?: ListClanWarsParams, options?: RequestInit): Promise<ClanWarSummary[]> => {
+
+  return customFetch<ClanWarSummary[]>(getListClanWarsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListClanWarsQueryKey = (params?: ListClanWarsParams,) => {
+    return [
+    `/api/clan-wars`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListClanWarsQueryOptions = <TData = Awaited<ReturnType<typeof listClanWars>>, TError = ErrorType<void>>(params?: ListClanWarsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClanWars>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListClanWarsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listClanWars>>> = ({ signal }) => listClanWars(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listClanWars>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListClanWarsQueryResult = NonNullable<Awaited<ReturnType<typeof listClanWars>>>
+export type ListClanWarsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List clan wars relevant to the caller
+ */
+
+export function useListClanWars<TData = Awaited<ReturnType<typeof listClanWars>>, TError = ErrorType<void>>(
+ params?: ListClanWarsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listClanWars>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListClanWarsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateClanWarUrl = () => {
+
+
+
+
+  return `/api/clan-wars`
+}
+
+/**
+ * The creator's clan becomes the challenger. Provide opponentClanId to directly challenge a clan (status=matched), or omit it for a public challenge (status=open) any other clan's owner/elder can accept. Owner or elder only.
+
+ * @summary Create a clan war (challenger owner/elder only)
+ */
+export const createClanWar = async (createClanWarBody: CreateClanWarBody, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getCreateClanWarUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createClanWarBody,)
+  }
+);}
+
+
+
+
+export const getCreateClanWarMutationOptions = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClanWar>>, TError,{data: BodyType<CreateClanWarBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createClanWar>>, TError,{data: BodyType<CreateClanWarBody>}, TContext> => {
+
+const mutationKey = ['createClanWar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createClanWar>>, {data: BodyType<CreateClanWarBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createClanWar(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateClanWarMutationResult = NonNullable<Awaited<ReturnType<typeof createClanWar>>>
+    export type CreateClanWarMutationBody = BodyType<CreateClanWarBody>
+    export type CreateClanWarMutationError = ErrorType<ClanError | void>
+
+    /**
+ * @summary Create a clan war (challenger owner/elder only)
+ */
+export const useCreateClanWar = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createClanWar>>, TError,{data: BodyType<CreateClanWarBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createClanWar>>,
+        TError,
+        {data: BodyType<CreateClanWarBody>},
+        TContext
+      > => {
+      return useMutation(getCreateClanWarMutationOptions(options));
+    }
+
+export const getGetClanWarUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}`
+}
+
+/**
+ * Open challenges are visible to everyone; other statuses require membership in one of the two participating clans. Never exposes other members' raw submissions — only the caller's own submission text and AI summaries.
+
+ * @summary Get a clan war's detail
+ */
+export const getClanWar = async (id: string, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getGetClanWarUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClanWarQueryKey = (id: string,) => {
+    return [
+    `/api/clan-wars/${id}`
+    ] as const;
+    }
+
+
+export const getGetClanWarQueryOptions = <TData = Awaited<ReturnType<typeof getClanWar>>, TError = ErrorType<void | ClanError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanWar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClanWarQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClanWar>>> = ({ signal }) => getClanWar(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClanWar>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClanWarQueryResult = NonNullable<Awaited<ReturnType<typeof getClanWar>>>
+export type GetClanWarQueryError = ErrorType<void | ClanError>
+
+
+/**
+ * @summary Get a clan war's detail
+ */
+
+export function useGetClanWar<TData = Awaited<ReturnType<typeof getClanWar>>, TError = ErrorType<void | ClanError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClanWar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClanWarQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAcceptClanWarUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}/accept`
+}
+
+/**
+ * @summary Accept an open public challenge (opponent owner/elder)
+ */
+export const acceptClanWar = async (id: string, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getAcceptClanWarUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAcceptClanWarMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptClanWar>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['acceptClanWar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptClanWar>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acceptClanWar(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptClanWarMutationResult = NonNullable<Awaited<ReturnType<typeof acceptClanWar>>>
+
+    export type AcceptClanWarMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Accept an open public challenge (opponent owner/elder)
+ */
+export const useAcceptClanWar = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptClanWar>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAcceptClanWarMutationOptions(options));
+    }
+
+export const getJoinClanWarUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}/join`
+}
+
+/**
+ * @summary Join a war as a member of a participating clan
+ */
+export const joinClanWar = async (id: string, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getJoinClanWarUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getJoinClanWarMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinClanWar>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['joinClanWar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinClanWar>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  joinClanWar(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinClanWarMutationResult = NonNullable<Awaited<ReturnType<typeof joinClanWar>>>
+
+    export type JoinClanWarMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Join a war as a member of a participating clan
+ */
+export const useJoinClanWar = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinClanWar>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getJoinClanWarMutationOptions(options));
+    }
+
+export const getSubmitClanWarArgumentUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}/submit`
+}
+
+/**
+ * Auto-joins the caller if not already a participant. Each member may submit exactly once; a second submission is rejected.
+
+ * @summary Submit a member's argument (once)
+ */
+export const submitClanWarArgument = async (id: string,
+    submitClanWarArgumentBody: SubmitClanWarArgumentBody, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getSubmitClanWarArgumentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      submitClanWarArgumentBody,)
+  }
+);}
+
+
+
+
+export const getSubmitClanWarArgumentMutationOptions = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitClanWarArgument>>, TError,{id: string;data: BodyType<SubmitClanWarArgumentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitClanWarArgument>>, TError,{id: string;data: BodyType<SubmitClanWarArgumentBody>}, TContext> => {
+
+const mutationKey = ['submitClanWarArgument'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitClanWarArgument>>, {id: string;data: BodyType<SubmitClanWarArgumentBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitClanWarArgument(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitClanWarArgumentMutationResult = NonNullable<Awaited<ReturnType<typeof submitClanWarArgument>>>
+    export type SubmitClanWarArgumentMutationBody = BodyType<SubmitClanWarArgumentBody>
+    export type SubmitClanWarArgumentMutationError = ErrorType<ClanError | void>
+
+    /**
+ * @summary Submit a member's argument (once)
+ */
+export const useSubmitClanWarArgument = <TError = ErrorType<ClanError | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitClanWarArgument>>, TError,{id: string;data: BodyType<SubmitClanWarArgumentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitClanWarArgument>>,
+        TError,
+        {id: string;data: BodyType<SubmitClanWarArgumentBody>},
+        TContext
+      > => {
+      return useMutation(getSubmitClanWarArgumentMutationOptions(options));
+    }
+
+export const getCompleteClanWarUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}/complete`
+}
+
+/**
+ * Requires both sides to have at least one submission. Calls the AI judge exactly once to score every submission, derives each clan's score as the top-3 average, records the winner and result, and applies small isolated clan-EXP rewards. Idempotent — repeat calls return the completed war.
+
+ * @summary Judge and finalize a war (owner/elder of either clan)
+ */
+export const completeClanWar = async (id: string, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getCompleteClanWarUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCompleteClanWarMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeClanWar>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['completeClanWar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeClanWar>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  completeClanWar(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteClanWarMutationResult = NonNullable<Awaited<ReturnType<typeof completeClanWar>>>
+
+    export type CompleteClanWarMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Judge and finalize a war (owner/elder of either clan)
+ */
+export const useCompleteClanWar = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeClanWar>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getCompleteClanWarMutationOptions(options));
+    }
+
+export const getCancelClanWarUrl = (id: string,) => {
+
+
+
+
+  return `/api/clan-wars/${id}/cancel`
+}
+
+/**
+ * @summary Cancel a war before completion (challenger owner/elder)
+ */
+export const cancelClanWar = async (id: string, options?: RequestInit): Promise<ClanWarDetail> => {
+
+  return customFetch<ClanWarDetail>(getCancelClanWarUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelClanWarMutationOptions = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelClanWar>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['cancelClanWar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelClanWar>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelClanWar(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelClanWarMutationResult = NonNullable<Awaited<ReturnType<typeof cancelClanWar>>>
+
+    export type CancelClanWarMutationError = ErrorType<void | ClanError>
+
+    /**
+ * @summary Cancel a war before completion (challenger owner/elder)
+ */
+export const useCancelClanWar = <TError = ErrorType<void | ClanError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelClanWar>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelClanWar>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getCancelClanWarMutationOptions(options));
     }
 

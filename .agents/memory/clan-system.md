@@ -5,7 +5,7 @@ description: Scope boundaries and invariants for the clan feature — what it mu
 
 # Clan system (가문)
 
-Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Phase 8 added Clan Memory (가문 기억). Phase 9 added Clan Wisdom (가문의 지혜). Still NO Clan War (forbidden).
+Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Identity. Phase 7 added read-only Clan Ranking. Phase 8 added Clan Memory (가문 기억). Phase 9 added Clan Wisdom (가문의 지혜). Phase 10 added Clan War (가문전). Clan War is now SHIPPED — it remains a separate, self-isolated subsystem that must NOT modify talk-battle, Persona XP, existing Clan-EXP logic, Ranking, Memory, or Wisdom.
 
 ## Invariants (do not break in later phases)
 - **One active clan per user** is enforced at the DB level by a UNIQUE constraint on `clan_members.user_id`, plus service-level pre-checks inside transactions. Any "leave one / join another" flow must keep this UNIQUE valid (delete old membership before inserting new in the same tx).
@@ -46,3 +46,9 @@ Phase 5 shipped create/join/leave/lookup. Phase 6 added Clan Growth & Clan Ident
 - **AI content rules are prompt-enforced AND there is a deterministic PII safety net**: after the model returns, `containsContactPII` rejects (returns null → `ai_failed`, nothing persisted) if output has an email or phone-like string. **Why:** prompt-only is not enough for a hard "no PII" constraint; political/religious/exaggeration stay prompt-only (not reliably regex-detectable, a 2nd AI pass would be over-engineering).
 - `generatedByName` is nickname only (no email/clerkId). Fields clamped to 600 chars each.
 - AI call: `gpt-5-mini`, chat.completions, `response_format` json_schema strict, `reasoning_effort: "minimal"`, `max_completion_tokens: 2000`; returns null on any failure (caller maps to friendly Korean error). DB column is literally `values` — fine, drizzle quotes identifiers.
+
+## Clan war (Phase 10, 가문전)
+- Async talk-battle-style clan-vs-clan competition, fully SEPARATE from talk-battle. `clanWar.ts` writes only `clan_wars` / `clan_war_participants` / `clan_war_results` plus its OWN isolated rewards (clan EXP + `clan_members.contributionExp`). Never touches Persona XP, existing Clan-EXP/Ranking/Memory/Wisdom. Rewards: winner clan +100, loser/draw +30, each submitting participant +10 contribution.
+- Status lifecycle: `open → matched → active → completing → completed` (+ `cancelled`). `completing` is a TRANSIENT claim status (plain text col, no migration when adding it to the const enum, but it MUST also be added to BOTH OpenAPI status enums + re-run codegen). Permissions: create=owner/elder of challenger; accept=owner/elder of opponent (public challenge); join=member of a participating clan; submit=joined participant; complete=owner/elder of either clan; cancel=owner/elder of challenger.
+- **Safety**: raw `submission` text is stored for judging only and NEVER exposed to other members — `getClanWar` returns the caller's own `mySubmission` but participant rows carry no submission field. AI summary/feedback text is PII-scrubbed (`scrubPII`: email + phone-like regex → `[비공개]`) before persistence.
+- **Concurrency model (the hard part — see `clan-war-completion.md`)**: completion is a 3-phase claim/judge/finalize so the AI judge runs exactly once and rewards apply exactly once even under concurrent `/complete` calls, with no permanently-stuck war.

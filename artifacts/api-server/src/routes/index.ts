@@ -12,6 +12,7 @@ import dungeonsRouter from "./dungeons";
 import battlesRouter from "./battles";
 import personaRouter from "./persona";
 import clansRouter from "./clans";
+import clanWarsRouter from "./clanWars";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(dungeonsRouter);
 router.use(battlesRouter);
 router.use(personaRouter);
 router.use(clansRouter);
+router.use(clanWarsRouter);
 
 export default router;

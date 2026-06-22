@@ -305,6 +305,14 @@ export default function ClanHomeScreen() {
             </View>
 
             <Pressable
+              onPress={() => router.push("/clan/wars")}
+              style={[styles.rankingBtn, { backgroundColor: colors.primary }]}
+            >
+              <Feather name="zap" size={16} color="#fff" />
+              <Text style={[styles.rankingText, { color: "#fff" }]}>가문전</Text>
+            </Pressable>
+
+            <Pressable
               onPress={() => router.push("/clan/rankings")}
               style={[styles.rankingBtn, { backgroundColor: colors.foreground }]}
             >

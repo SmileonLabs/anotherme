@@ -13,3 +13,4 @@ export * from "./xpEvents";
 export * from "./clan";
 export * from "./clanMemory";
 export * from "./clanWisdom";
+export * from "./clanWar";
