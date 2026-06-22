@@ -9,18 +9,30 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bmF0dXJhbC1ob3JzZS02OC5jbGVyay5hY2NvdW50cy5kZXYk",
+        "EXPO_PUBLIC_DOMAIN": "punkvism-am.replit.app"
       }
     }
   },
