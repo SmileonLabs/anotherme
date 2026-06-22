@@ -1,10 +1,10 @@
-# [Project name]
+# anotherme
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+AI가 판정하는 말발 배틀 앱 — 1:1/그룹 채팅, 던전 RPG, 토크배틀, 음성통화를 갖춘 한국어 소셜 앱.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -14,23 +14,50 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
+- API: Express 5 (port 8080)
+- Mobile: Expo (React Native) — `artifacts/mobile`
 - DB: PostgreSQL + Drizzle ORM
+- Auth: Clerk (`@clerk/expo` on mobile, `@clerk/express` on server)
+- AI: OpenAI (`OPENAI_API_KEY`) — dungeon RPG & talk battle judging
+- Voice: LiveKit (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`)
+- Push: Web Push / VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`)
+- Storage: Replit Object Storage (GCS-backed)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/mobile/` — Expo app (screens, components, hooks, lib, constants)
+- `artifacts/mobile/app/` — Expo Router screens
+- `artifacts/mobile/app/(auth)/` — sign-in / sign-up screens
+- `artifacts/mobile/app/(tabs)/` — main tab navigation
+- `artifacts/mobile/app/chat/[id].tsx` — chat room screen
+- `artifacts/mobile/app/battle/` — talk battle screens
+- `artifacts/mobile/app/dungeon/` — dungeon RPG screens
+- `artifacts/api-server/src/routes/` — Express route handlers
+- `artifacts/api-server/src/lib/` — server utilities (auth, AI, push, storage, etc.)
+- `lib/db/src/schema/` — Drizzle ORM schema (source of truth for DB)
+- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contracts)
+- `lib/api-client-react/` — generated React Query hooks
+- `lib/api-zod/` — generated Zod schemas
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Clerk proxy (`/api/__clerk`) is production-only; dev mode loads Clerk from CDN directly. `EXPO_PUBLIC_CLERK_PROXY_URL` must NOT be set in shared/dev env — only production.
+- OpenAI client (`aiClient.ts`) falls back: `AI_INTEGRATIONS_OPENAI_API_KEY` → `OPENAI_API_KEY`. Use `OPENAI_API_KEY` secret directly.
+- Object Storage uses Replit sidecar auth (no GCS credentials needed); bucket ID in `DEFAULT_OBJECT_STORAGE_BUCKET_ID`.
+- Mobile lib helpers (`artifacts/mobile/lib/`) have `.web.ts` platform-specific overrides for browser-incompatible APIs (HEIC conversion, voice calls, web push).
+- All DB tables are defined in `lib/db/src/schema/`; run `pnpm --filter @workspace/db run push` after schema changes.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **1:1 / 그룹 채팅** — 실시간 폴링, 파일/이미지 첨부, 스티커
+- **던전 RPG** — AI 던전마스터가 진행하는 그룹 텍스트 어드벤처
+- **토크배틀** — AI 심판이 점수를 매기는 2인 말발 배틀
+- **음성통화** — LiveKit 기반 1:1 음성통화
+- **친구 관리** — 친구 추가/요청/차단
+- **푸시 알림** — Web Push (VAPID) 기반
 
 ## User preferences
 
@@ -38,7 +65,11 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `EXPO_PUBLIC_CLERK_PROXY_URL` must only be set in **production** env, not shared. Setting it in shared causes Clerk JS to fail loading in dev (attempts to proxy through `/api/__clerk/npm/...` which returns 404).
+- Expo packages (`expo-clipboard`, `expo-image-picker`) have version warnings but are functional; update when upgrading Expo SDK.
+- After any schema change in `lib/db/src/schema/`, run `pnpm --filter @workspace/db run push` AND restart the API server workflow.
+- After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching route/client code.
+- Do NOT use `console.log` in server code — use `req.log` in route handlers, `logger` elsewhere.
 
 ## Pointers
 

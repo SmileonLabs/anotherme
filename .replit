@@ -36,4 +36,3 @@ externalPort = 3000
 [userenv.shared]
 VAPID_PUBLIC_KEY = "BFHcuezJSvvMd5ZNprmHuqMpVNbVvdBUNxereuL7vo_Yc40vwaYJelhjjMt8ZJu0IPzxJYQyeNW-owUeoFbPZu0"
 VAPID_SUBJECT = "mailto:support@anotherme.app"
-EXPO_PUBLIC_CLERK_PROXY_URL = "/api/__clerk"
