@@ -1,5 +1,6 @@
 - [Workspace typecheck noise](workspace-typecheck.md) — full `pnpm run typecheck` fails in mockup-sandbox (spinner SVG ref, React 19 types); unrelated to app code.
 - [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.
+- [Artifact route swapping](artifact-route-swap.md) — vacate the contested previewPath first to avoid DUPLICATE_PREVIEW_PATH; Expo BASE_PATH change is APK-safe (web-only).
 - [Native FCM push (server)](fcm-native-push.md) — dual web-push+FCM call delivery; prune FCM only on token-dead codes; firebase-admin drags in opentelemetry → pin it in @workspace/db to dedupe drizzle.
 - [Expo web push deployment](expo-web-push-deployment.md) — prod is an Expo Go manifest deploy (no browser); service workers / web push only work in dev web preview. Real prod push = native FCM.
 - [Call state machine](call-state-machine.md) — enforce 45s ring timeout at every mutation (accept/incoming, not just reads); guard terminal transitions with status CAS + converge-on-loss.

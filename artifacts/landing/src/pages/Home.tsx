@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { 
   Download, Smartphone, LayoutGrid, BrainCircuit, Activity, 
   MessagesSquare, ShieldCheck, Trophy, Sparkles, Network,
-  Heart, MessageCircle, Zap, Lightbulb, Users, Map, Target
+  Heart, MessageCircle, Zap, Lightbulb, Users, Map, Target, ExternalLink
 } from "lucide-react";
 
 export default function Home() {
@@ -67,6 +67,12 @@ export default function Home() {
           <img src={`${import.meta.env.BASE_URL}logo_black.svg`} alt="Another Me" className="h-7 md:h-9 opacity-90" />
         </div>
         <div className="flex gap-3">
+          <a href="/app/" className="hidden md:block">
+            <Button variant="outline" className="gap-2 glass border-white/10 hover:bg-white/10 text-white">
+              <ExternalLink size={16} />
+              앱 바로가기
+            </Button>
+          </a>
           <a href={`${import.meta.env.BASE_URL}anotherme.pdf`} download className="hidden md:block">
             <Button variant="outline" className="gap-2 glass border-white/10 hover:bg-white/10 text-white">
               <Download size={16} />
