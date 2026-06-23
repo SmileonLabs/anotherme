@@ -2,7 +2,9 @@
 - [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.
 - [EAS pnpm lockfile](eas-pnpm-lockfile.md) — EAS "Install dependencies" fails ("Ignoring not compatible lockfile") unless root `packageManager: pnpm@X` + `corepack: true` on every eas.json profile.
 - [Clerk instance migration](clerk-instance-migration.md) — pk_test→pk_live gives new clerk_id/same email; requireAuth must relink by verified primary email or every authed request 500s (breaks web+native). `@clerk/expo` proxy prop is `proxyUrl` (`n` is just minified).
-- [Avatar null-name crash](avatar-null-name-crash.md) — Avatar default-avatar hashes `name`; null/empty nickname (only seen on full-directory screens like friend-add) hard-crashes the screen. Server logs stay 200; bug is client render. Guard nullable profile fields.
+- [Avatar null-name crash](avatar-null-name-crash.md) — Avatar default-avatar hashes `name`; null/empty nickname (only seen on full-directory screens like friend-add) hard-crashes the screen. Server logs stay 200; bug is client render.
+- [Dev/prod DB separation](dev-prod-db-separation.md) — dev=heliumdb, prod=neondb; already separate (Replit auto-swaps DATABASE_URL). Identical data = past publish "overwrite data". Prod is read-only to agent.
+- [Friend-add native crash](friend-add-native-crash.md) — APK fully closes on friends/add (not JS: root ErrorBoundary wraps everything yet app dies). Needs adb logcat / native log; in-app error screen can NEVER show it. Guard nullable profile fields.
 - [Expo web PWA reality](expo-web-pwa.md) — Expo artifact serves an "Open in Expo Go" launcher at /app/, not a browser app; web export OOMs in dev container (no swap). Don't promise a quick PWA.
 - [Artifact route swapping](artifact-route-swap.md) — vacate the contested previewPath first to avoid DUPLICATE_PREVIEW_PATH; Expo BASE_PATH change is APK-safe (web-only).
 - [Native FCM push (server)](fcm-native-push.md) — dual web-push+FCM call delivery; prune FCM only on token-dead codes; firebase-admin drags in opentelemetry → pin it in @workspace/db to dedupe drizzle.
