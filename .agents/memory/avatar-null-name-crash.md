@@ -3,6 +3,15 @@ name: Avatar default-avatar null-name crash
 description: Why screens listing the full user directory crash on Avatar but friend/me-scoped screens don't.
 ---
 
+> **CAUTION (correction):** The friend-add crash was later reported as **APK-only — the
+> web/PWA never crashed**. A null-`name` throw in `defaultAvatarFor` (`name.length` /
+> `charCodeAt`) would crash on web too, so a null nickname is almost certainly NOT the
+> real cause. Keep the `name || "?"` guard (cheap, correct), but do not treat it as the
+> fix for the APK crash. **Native-only crashes cannot be validated by the web `runTest`
+> skill** — the web app rendering fine proves nothing about the native build. To find the
+> real cause you need the actual native error (EAS *development*-profile build error
+> overlay, or `adb logcat`), not more web reproduction.
+
 # Avatar default-avatar crash on null/empty name
 
 `Avatar` (artifacts/mobile/components/Avatar.tsx) falls back to a deterministic default
