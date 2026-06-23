@@ -45,15 +45,15 @@ function patchExportedHtml(indexHtmlPath) {
   try {
     let html = fs.readFileSync(indexHtmlPath, "utf8");
 
-    // 1) Ensure the viewport carries viewport-fit=cover (idempotent).
-    if (/name="viewport"/.test(html) && !/viewport-fit=cover/.test(html)) {
-      html = html.replace(
-        /(<meta name="viewport" content=")([^"]*)("\s*\/?>)/,
-        (_m, p1, content, p3) => `${p1}${content}, viewport-fit=cover${p3}`,
-      );
-    }
-
-    // 2) Inject the root overflow clamp once, just before </head>.
+    // Inject the root overflow clamp once, just before </head>. This stops the
+    // iOS standalone (home-screen) PWA from getting stuck scrolled to the right
+    // when any element is a few px wider than the viewport.
+    //
+    // NOTE: we intentionally do NOT add `viewport-fit=cover`. With cover, iOS
+    // stops auto-insetting the layout within the safe area, so the bottom tab
+    // bar + message composer slide under the home indicator and get clipped.
+    // The default viewport (no cover) keeps content inside the safe area, which
+    // is what we want here.
     const MARKER = "anotherme-pwa-layout-fix";
     if (!html.includes(MARKER) && html.includes("</head>")) {
       const style = `    <style id="${MARKER}">\n      html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }\n      body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }\n    </style>\n  </head>`;
