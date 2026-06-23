@@ -8,6 +8,7 @@
 - [Expo web PWA reality](expo-web-pwa.md) — Expo artifact serves an "Open in Expo Go" launcher at /app/, not a browser app; web export OOMs in dev container (no swap). Don't promise a quick PWA.
 - [Artifact route swapping](artifact-route-swap.md) — vacate the contested previewPath first to avoid DUPLICATE_PREVIEW_PATH; Expo BASE_PATH change is APK-safe (web-only).
 - [Native FCM push (server)](fcm-native-push.md) — dual web-push+FCM call delivery; prune FCM only on token-dead codes; firebase-admin drags in opentelemetry → pin it in @workspace/db to dedupe drizzle.
+- [Push notifications config](push-notifications.md) — silent breakers: web client needs EXPO_PUBLIC_VAPID_PUBLIC_KEY; SW must register under /app/ base; native notif must not name a non-existent Android channel.
 - [Expo web push deployment](expo-web-push-deployment.md) — prod is an Expo Go manifest deploy (no browser); service workers / web push only work in dev web preview. Real prod push = native FCM.
 - [Call state machine](call-state-machine.md) — enforce 45s ring timeout at every mutation (accept/incoming, not just reads); guard terminal transitions with status CAS + converge-on-loss.
 - [LiveKit RN audio routing](livekit-rn-audio-routing.md) — native call defaults to LOUDSPEAKER not earpiece; configureAudio(earpiece-first) before startAudioSession, keep it best-effort so session still starts.

@@ -28,17 +28,50 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+/**
+ * The app is mounted under a base path in production (e.g. "/app/"), so the
+ * service worker MUST be registered under that same path — a SW can only control
+ * pages within its own URL scope, and registering "/sw.js" with scope "/" both
+ * points at the wrong file (the SW lives at "/app/sw.js") and requests a scope
+ * the SW is not allowed to claim, so registration silently fails and push never
+ * works. Derive the base from the Expo bundle's own URL so it is correct in both
+ * dev (root) and the deployed "/app/" mount, regardless of the current route.
+ */
+function getBasePath(): string {
+  const fromEnv = process.env.EXPO_BASE_URL;
+  if (fromEnv) return fromEnv.endsWith("/") ? fromEnv : `${fromEnv}/`;
+  if (typeof document !== "undefined") {
+    const scripts = Array.from(document.getElementsByTagName("script"));
+    for (const s of scripts) {
+      const src = s.getAttribute("src") || "";
+      const idx = src.indexOf("/_expo/");
+      if (idx >= 0) {
+        try {
+          return new URL(src, window.location.href).pathname.slice(
+            0,
+            new URL(src, window.location.href).pathname.indexOf("/_expo/") + 1,
+          );
+        } catch {
+          // fall through to default
+        }
+      }
+    }
+  }
+  return "/";
+}
+
 // The Expo web app ships no service worker by default, so push (which requires
 // one) is inert until we register ours. It is served as a static file from the
-// `public/` dir. Registration is idempotent — the browser dedupes by scope/URL.
-// Best-effort: a failure (e.g. SW not served under the current base path) leaves
-// push disabled but never throws into the caller.
+// `public/` dir (so it lives at `${base}sw.js`). Registration is idempotent —
+// the browser dedupes by scope/URL. Best-effort: a failure leaves push disabled
+// but never throws into the caller.
 let swRegistered = false;
 export async function registerPushServiceWorker(): Promise<void> {
   if (!webPushSupported) return;
   if (swRegistered) return;
   try {
-    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const base = getBasePath();
+    await navigator.serviceWorker.register(`${base}sw.js`, { scope: base });
     swRegistered = true;
   } catch {
     // best-effort — push simply stays unavailable on this platform/host.

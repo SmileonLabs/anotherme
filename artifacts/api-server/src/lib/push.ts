@@ -2,7 +2,7 @@ import webpush, { type PushSubscription } from "web-push";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "./logger";
-import { addFcmToken, sendFcmCallToUser } from "./fcm";
+import { addFcmToken, sendFcmCallToUser, sendFcmNotificationToUser } from "./fcm";
 
 const publicKey = process.env.VAPID_PUBLIC_KEY;
 const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -143,7 +143,6 @@ export async function sendPushToUser(
   payload: PushPayload,
   opts: { force?: boolean } = {},
 ): Promise<void> {
-  if (!configured) return;
   try {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
     if (!user) return;
@@ -151,6 +150,23 @@ export async function sendPushToUser(
     // notifications — an incoming call is too important to silently drop.
     if (!opts.force && !user.notificationEnabled) return;
 
+    // Native (Android FCM) and web push are independent delivery channels — a
+    // user can have either or both — so fire each on its own. Native is NOT
+    // gated on VAPID being configured (the two have separate credentials).
+    // Skip the call type: incoming calls have their own data-only full-screen
+    // native path in sendCallPush (sendFcmCallToUser), so sending a tray
+    // notification here too would double-notify native devices.
+    if (payload.type !== "call") {
+      await sendFcmNotificationToUser(userId, {
+        title: payload.title,
+        body: payload.body,
+        tag: payload.tag,
+        data: payload.url ? { url: payload.url } : undefined,
+      });
+    }
+
+    // Web push (VAPID). Only runs when VAPID keys are configured.
+    if (!configured) return;
     const subscriptions = parseSubscriptions(user.pushToken ?? null);
     if (subscriptions.length === 0) return;
 
@@ -172,7 +188,7 @@ export async function sendPushToUser(
     );
     await removeEndpoints(userId, stale);
   } catch (err) {
-    logger.error({ err, userId }, "Failed to send web push");
+    logger.error({ err, userId }, "Failed to send push");
   }
 }
 

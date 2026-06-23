@@ -193,3 +193,72 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
     logger.error({ err, userId }, "Failed to send FCM");
   }
 }
+
+export interface FcmNotificationPayload {
+  title: string;
+  body: string;
+  /** Optional structured data for tap-routing (all values stringified). */
+  data?: Record<string, string>;
+  /** Notification collapse/dedup key. */
+  tag?: string;
+}
+
+/**
+ * Send a regular (non-call) notification to all of a user's native devices.
+ * Unlike the call path this includes a `notification` block so Android displays
+ * it automatically in the system tray with no app-side code needed — this is the
+ * native counterpart to web push for messages, friend requests, etc. Best-effort:
+ * never throws. Prunes tokens FCM reports as unregistered/invalid.
+ */
+export async function sendFcmNotificationToUser(
+  userId: string,
+  payload: FcmNotificationPayload,
+): Promise<void> {
+  const msg = await getMessaging();
+  if (!msg) return;
+  try {
+    const [user] = await db
+      .select({ fcmTokens: usersTable.fcmTokens })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+    if (!user) return;
+    const tokens = parseFcmTokens(user.fcmTokens ?? null);
+    if (tokens.length === 0) return;
+
+    const stale = new Set<string>();
+    await Promise.allSettled(
+      tokens.map(async (token) => {
+        try {
+          await msg.send({
+            token,
+            notification: { title: payload.title, body: payload.body },
+            data: payload.data ?? {},
+            android: {
+              priority: "high",
+              // No explicit channelId: the app only registers the "incoming-calls"
+              // channel, so naming a non-existent "default" channel would suppress
+              // display on Android 8+. Omitting it lets FCM fall back to its
+              // auto-created default notification channel.
+              notification: { tag: payload.tag },
+            },
+          });
+        } catch (err: unknown) {
+          const code =
+            (err as { code?: string; errorInfo?: { code?: string } })?.code ??
+            (err as { errorInfo?: { code?: string } })?.errorInfo?.code;
+          if (
+            code === "messaging/registration-token-not-registered" ||
+            code === "messaging/invalid-registration-token"
+          ) {
+            stale.add(token);
+          } else {
+            logger.error({ err, userId, code }, "Failed to send FCM notification to a device");
+          }
+        }
+      }),
+    );
+    await removeFcmTokens(userId, stale);
+  } catch (err) {
+    logger.error({ err, userId }, "Failed to send FCM notification");
+  }
+}
