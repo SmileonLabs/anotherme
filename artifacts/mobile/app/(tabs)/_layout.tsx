@@ -10,6 +10,7 @@ import { useAuth } from "@clerk/expo";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
+import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 
 function NativeTabLayout() {
   return (
@@ -44,6 +45,7 @@ function ClassicTabLayout() {
   const isDark = scheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const pwaBottom = usePwaBottomInset();
 
   const tabIcon = (
     ios: string,
@@ -68,7 +70,7 @@ function ClassicTabLayout() {
           borderTopWidth: isWeb ? 1 : 0,
           borderTopColor: colors.border,
           elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
+          ...(isWeb ? { height: 84 + pwaBottom, paddingBottom: pwaBottom } : {}),
         },
         tabBarBackground: () =>
           isIOS ? (

@@ -13,6 +13,7 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StickerPicker } from "./StickerPicker";
 import { useColors } from "@/hooks/useColors";
+import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 
 interface MessageComposerProps {
   /** Whether a send mutation is currently in flight (disables the composer). */
@@ -51,6 +52,7 @@ function MessageComposerComponent({
 }: MessageComposerProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const pwaBottom = usePwaBottomInset();
   const [text, setText] = useState("");
   const [showStickers, setShowStickers] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -115,7 +117,7 @@ function MessageComposerComponent({
           {
             backgroundColor: colors.background,
             borderTopColor: colors.border,
-            paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
+            paddingBottom: (insets.bottom > 0 ? insets.bottom : 10) + pwaBottom,
           },
         ]}
       >
