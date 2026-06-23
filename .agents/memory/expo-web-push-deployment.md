@@ -23,3 +23,8 @@ custom dev build / EAS APK — Expo Go cannot deliver high-priority data pushes 
 waste effort wiring `sw.js` into the static build. Keep web-push code gated behind
 `webPushSupported` (best-effort, swallow errors) so it degrades gracefully, and route
 real production push through native FCM.
+
+## iOS standalone PWA first-cold-launch layout traps
+- Never freeze viewport size at module scope (`const {width}=Dimensions.get('window')`). On a freshly-installed iOS home-screen PWA the first JS eval can read a wrong/0 size and it stays frozen all session → layout breaks until the app is killed & relaunched. Use `useWindowDimensions()` (reactive) and include that width in any `useCallback` deps that compute offsets.
+- Bottom-anchored UI in a flex column (footer CTA, tab bar) must be pinned: give the scroll/content area `flex:1` so the footer can't be pushed below the viewport.
+- `usePwaBottomInset` starts at 0 and only flips to 34 after first paint via matchMedia/`navigator.standalone`; on first cold launch detection can settle late. Recompute on resize/orientationchange/pageshow/visibilitychange + deferred re-checks, else the tab bar stays clipped under the home indicator until relaunch.

@@ -4,11 +4,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
-  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,8 +17,6 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
 
 export const ONBOARDING_KEY = "anotherme.onboarding.v1";
-
-const { width: SCREEN_W } = Dimensions.get("window");
 
 type Slide = {
   icon: keyof typeof Feather.glyphMap;
@@ -60,6 +58,7 @@ export default function OnboardingScreen() {
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
+  const { width: SCREEN_W } = useWindowDimensions();
   const scrollRef = React.useRef<ScrollView>(null);
   const [page, setPage] = React.useState(0);
 
@@ -82,7 +81,7 @@ export default function OnboardingScreen() {
     const next = page + 1;
     scrollRef.current?.scrollTo({ x: next * SCREEN_W, animated: true });
     setPage(next);
-  }, [isLast, page, finish]);
+  }, [isLast, page, finish, SCREEN_W]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -94,6 +93,7 @@ export default function OnboardingScreen() {
 
       <ScrollView
         ref={scrollRef}
+        style={styles.scroll}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -152,6 +152,7 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scroll: { flex: 1 },
   topBar: { alignItems: "flex-end", paddingHorizontal: 20, paddingBottom: 4 },
   skip: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   slide: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 36, gap: 28 },

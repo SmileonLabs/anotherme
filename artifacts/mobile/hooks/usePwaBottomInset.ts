@@ -41,9 +41,30 @@ export function usePwaBottomInset(): number {
       setInset(isIOS && standalone ? 34 : 0);
     };
 
+    // On the very first cold launch of a freshly-installed iOS home-screen PWA,
+    // standalone detection (matchMedia / navigator.standalone) and the viewport
+    // size can settle a beat AFTER first paint. If we only computed once, the
+    // tab bar would stay stuck with a 0 inset (clipped under the home indicator)
+    // until the app is killed and reopened. Recompute on the events that fire as
+    // the standalone shell settles, plus a couple of deferred re-checks.
     compute();
     mq.addEventListener?.("change", compute);
-    return () => mq.removeEventListener?.("change", compute);
+    window.addEventListener("resize", compute);
+    window.addEventListener("orientationchange", compute);
+    window.addEventListener("pageshow", compute);
+    document.addEventListener("visibilitychange", compute);
+    const t1 = setTimeout(compute, 300);
+    const t2 = setTimeout(compute, 1000);
+
+    return () => {
+      mq.removeEventListener?.("change", compute);
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("orientationchange", compute);
+      window.removeEventListener("pageshow", compute);
+      document.removeEventListener("visibilitychange", compute);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, []);
 
   return inset;
