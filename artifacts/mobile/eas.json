@@ -7,7 +7,6 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "image": "latest",
       "pnpm": "10.26.1",
       "android": {
         "buildType": "apk"
@@ -20,7 +19,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "image": "latest",
       "pnpm": "10.26.1",
       "android": {
         "buildType": "apk"
@@ -33,7 +31,6 @@
     },
     "production": {
       "autoIncrement": true,
-      "image": "latest",
       "pnpm": "10.26.1",
       "android": {
         "buildType": "app-bundle"

@@ -45,11 +45,12 @@ with Expo SDK < 41" even though the app is on a modern SDK (e.g. 54). EAS mis-de
 SDK because the user's local clone has NO `node_modules` (they ran `git reset --hard`
 without `pnpm install`), so EAS CLI can't resolve the `expo` version → assumes <41 → old
 image → old pnpm → lockfile "not compatible".
-**Decisive fix:** set `"image": "latest"` on every eas.json build profile (newest image
-ships pnpm 10.x, reads lockfileVersion 9.0 natively). This bypasses SDK-based image
-selection entirely. Keep the `"pnpm"` pin alongside it as reinforcement. (Also: running
-`pnpm install` locally before `eas build` fixes the SDK detection, but `image: latest` is
-the deterministic fix that doesn't depend on the user's local node_modules.)
+**Fix:** the dependable lever is the `"pnpm": "<version>"` field plus running the build
+from `artifacts/mobile/` (so app.json's real SDK is detected and a modern image is picked).
+NOTE: `"image": "latest"` was REJECTED by the user's eas-cli with `"build.<profile>.image"
+is not allowed` — do NOT add an `image` field to this project's eas.json; rely on correct
+SDK detection (build from the app dir) + the `pnpm` pin instead. (Running `pnpm install`
+locally before `eas build` also fixes SDK detection.)
 
 **Watch for a different but related EAS install failure:** `ERR_PNPM_OUTDATED_LOCKFILE
 ... specifiers in the lockfile don't match package.json`. That one means the *uploaded*
