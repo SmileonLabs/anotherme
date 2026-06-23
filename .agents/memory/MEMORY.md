@@ -1,5 +1,6 @@
 - [Workspace typecheck noise](workspace-typecheck.md) — full `pnpm run typecheck` fails in mockup-sandbox (spinner SVG ref, React 19 types); unrelated to app code.
 - [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.
+- [Clerk instance migration](clerk-instance-migration.md) — pk_test→pk_live gives new clerk_id/same email; requireAuth must relink by verified primary email or every authed request 500s (breaks web+native). `@clerk/expo` proxy prop is `proxyUrl` (`n` is just minified).
 - [Expo web PWA reality](expo-web-pwa.md) — Expo artifact serves an "Open in Expo Go" launcher at /app/, not a browser app; web export OOMs in dev container (no swap). Don't promise a quick PWA.
 - [Artifact route swapping](artifact-route-swap.md) — vacate the contested previewPath first to avoid DUPLICATE_PREVIEW_PATH; Expo BASE_PATH change is APK-safe (web-only).
 - [Native FCM push (server)](fcm-native-push.md) — dual web-push+FCM call delivery; prune FCM only on token-dead codes; firebase-admin drags in opentelemetry → pin it in @workspace/db to dedupe drizzle.
