@@ -39,6 +39,34 @@ function getDeploymentDomain() {
   return stripProtocol(domain);
 }
 
+function patchExportedHtml(indexHtmlPath) {
+  // Best-effort: a patch failure must never block the deploy — the app still
+  // works (just without the standalone layout clamp), like the rest of build.js.
+  try {
+    let html = fs.readFileSync(indexHtmlPath, "utf8");
+
+    // 1) Ensure the viewport carries viewport-fit=cover (idempotent).
+    if (/name="viewport"/.test(html) && !/viewport-fit=cover/.test(html)) {
+      html = html.replace(
+        /(<meta name="viewport" content=")([^"]*)("\s*\/?>)/,
+        (_m, p1, content, p3) => `${p1}${content}, viewport-fit=cover${p3}`,
+      );
+    }
+
+    // 2) Inject the root overflow clamp once, just before </head>.
+    const MARKER = "anotherme-pwa-layout-fix";
+    if (!html.includes(MARKER) && html.includes("</head>")) {
+      const style = `    <style id="${MARKER}">\n      html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }\n      body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }\n    </style>\n  </head>`;
+      html = html.replace("</head>", style);
+    }
+
+    fs.writeFileSync(indexHtmlPath, html);
+    console.log("Patched index.html for iOS standalone-PWA layout.");
+  } catch (err) {
+    console.warn(`WARN: could not patch index.html layout: ${err.message}`);
+  }
+}
+
 function run(cmd, args, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -125,6 +153,17 @@ async function main() {
     );
     process.exit(1);
   }
+
+  // Patch the exported HTML <head> for correct iOS standalone-PWA layout.
+  // Expo's single-page (non-static) export uses a built-in HTML template, so
+  // `app/+html.tsx` is ignored — we inject here instead. Two fixes:
+  //  1) viewport-fit=cover so the layout extends correctly under the notch.
+  //  2) overflow-x:hidden + max-width:100% on html/body/#root. Once installed
+  //     to the iOS home screen (standalone), any element a few px wider than the
+  //     viewport leaves the whole app stuck scrolled to the right on EVERY
+  //     screen (there's no browser chrome to snap it back). Clamping the root
+  //     elements pins the layout to the viewport.
+  patchExportedHtml(indexHtml);
 
   console.log(`Web build complete: ${outPath}`);
   process.exit(0);
