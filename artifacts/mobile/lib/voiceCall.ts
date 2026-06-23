@@ -4,7 +4,11 @@
 // WebRTC native module). The exported surface mirrors voiceCall.web.ts exactly so
 // CallProvider can stay platform-agnostic.
 
-import { AudioSession, registerGlobals } from "@livekit/react-native";
+import {
+  AudioSession,
+  AndroidAudioTypePresets,
+  registerGlobals,
+} from "@livekit/react-native";
 import { Room, RoomEvent } from "livekit-client";
 import {
   createAudioPlayer,
@@ -101,6 +105,23 @@ export async function joinCall(url: string, token: string): Promise<void> {
   // two-way voice and routing). Remote participant audio is then rendered
   // automatically by @livekit/react-native — no <audio> elements or Web Audio
   // gain graph like the web build needs.
+  // Route the call to the EARPIECE (수신부) by default, like a normal phone
+  // call held to the ear — NOT the loudspeaker. LiveKit's default Android
+  // preferredOutputList auto-selects "speaker" before "earpiece", and the iOS
+  // defaultOutput is also "speaker", so without this a 1:1 voice call would
+  // blast out of the loudspeaker. A connected bluetooth/wired headset still
+  // takes priority over the earpiece. Best-effort and isolated: if configuring
+  // the route fails on some device we must STILL start the audio session below
+  // (otherwise the call would have no audio at all), just with default routing.
+  try {
+    await AudioSession.configureAudio({
+      android: {
+        preferredOutputList: ["bluetooth", "headset", "earpiece"],
+        audioTypeOptions: AndroidAudioTypePresets.communication,
+      },
+      ios: { defaultOutput: "earpiece" },
+    });
+  } catch {}
   try {
     await AudioSession.startAudioSession();
     audioSessionActive = true;
