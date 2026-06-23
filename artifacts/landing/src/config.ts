@@ -1,1 +1,1 @@
-export const APK_URL = "https://expo.dev/artifacts/eas/05t9pUQlfykbVhuJajLNB4oJAx1xT1GGQSnu9NkBGXU.apk";
+export const APK_URL = "https://expo.dev/artifacts/eas/uGGzTdA2soHz5hzQM0woaPj-DivKuTqghudF4GMXnLk.apk";
