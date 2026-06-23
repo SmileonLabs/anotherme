@@ -26,6 +26,19 @@ Expo also documents a corepack bug (eas-cli #3148): with `corepack: true` EAS st
 to install pnpm manually and it conflicts. Use EITHER the `pnpm` field OR corepack — never
 both. The `pnpm` field is the dependable one here.
 
+**Real root cause if the `pnpm` field ALSO has no effect (identical error persists):**
+EAS picked an OLD build image whose ancient pnpm ignores both the `pnpm` field and corepack.
+The tell is the CLI prompt "EAS Build does not officially support building managed project
+with Expo SDK < 41" even though the app is on a modern SDK (e.g. 54). EAS mis-detects the
+SDK because the user's local clone has NO `node_modules` (they ran `git reset --hard`
+without `pnpm install`), so EAS CLI can't resolve the `expo` version → assumes <41 → old
+image → old pnpm → lockfile "not compatible".
+**Decisive fix:** set `"image": "latest"` on every eas.json build profile (newest image
+ships pnpm 10.x, reads lockfileVersion 9.0 natively). This bypasses SDK-based image
+selection entirely. Keep the `"pnpm"` pin alongside it as reinforcement. (Also: running
+`pnpm install` locally before `eas build` fixes the SDK detection, but `image: latest` is
+the deterministic fix that doesn't depend on the user's local node_modules.)
+
 **Watch for a different but related EAS install failure:** `ERR_PNPM_OUTDATED_LOCKFILE
 ... specifiers in the lockfile don't match package.json`. That one means the *uploaded*
 working tree is stale (e.g. a half-finished `pnpm add` left package.json and lockfile
