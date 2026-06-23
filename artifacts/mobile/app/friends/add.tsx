@@ -10,7 +10,6 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListFriendsQueryKey,
@@ -119,8 +118,16 @@ export default function AddFriendScreen() {
     try {
       const invite = await createInvite.mutateAsync(undefined as any);
       const link = `todotalk://invite/${invite.inviteCode}`;
-      await Clipboard.setStringAsync(link);
-      crossAlert("초대 링크 복사됨", `${link}\n\n7일간 유효합니다`);
+      let copied = false;
+      try {
+        const Clipboard = await import("expo-clipboard");
+        await Clipboard.setStringAsync(link);
+        copied = true;
+      } catch {}
+      crossAlert(
+        copied ? "초대 링크 복사됨" : "초대 링크 생성됨",
+        `${link}\n\n7일간 유효합니다`,
+      );
     } catch {
       crossAlert("오류", "초대 링크 생성에 실패했습니다");
     }

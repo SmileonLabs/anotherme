@@ -1,28 +1,37 @@
 ---
-name: Friend-add screen native crash (APK)
-description: The friends/add crash is a native fatal crash, not a catchable JS error — how to actually diagnose it.
+name: Expo native module version mismatch crashes APK
+description: "Cannot find native module 'X'" APK-only crash — root cause is an Expo SDK version mismatch, found via bundledNativeModules.json.
 ---
 
-# friends/add crash is NATIVE, not JS
+# Expo native module version mismatch → APK "Cannot find native module 'X'"
 
-Symptom: tapping 친구추가 in the **release/preview APK** fully closes the app (back to
-home launcher), with NO in-app error screen.
+A screen hard-crashes the whole app **only in the built APK** (not Expo Go / web) with
+`JavascriptException: Cannot find native module 'ExpoClipboard'` during expo-router
+`loadRoute → SceneView`. The crash happens at **module-load** (an eager top-level
+`import * as X from "expo-..."` runs `requireNativeModule` before render), so it is
+**outside the React tree** and the root ErrorBoundary cannot catch it.
 
-**Proven native, not JS:** `app/_layout.tsx` wraps the ENTIRE app in `<ErrorBoundary>`
-at the root. A JS render error would be caught and render `ErrorFallback` (we removed the
-`__DEV__` gates so details show in prod) — the app would NOT close. Since it closes
-anyway, the fatal error is below the JS layer (native module / Java/JNI / native UI
-commit). React error boundaries cannot catch that, and neither can a JS global handler.
+**Root cause:** the package's JS bundles fine (Metro always bundles an import), but its
+**native module is absent from the APK** because the package version was pinned to a
+version incompatible with the installed Expo SDK. The native side only links/registers
+when the version matches the SDK.
 
-Also NOT data-volume related: prod DB has ~1 user, so the friend list renders 0–1 rows —
-not an image/OOM flood. The screen's own code (Avatar assets exist, CustomScroll is pure
-JS, mediaUri yields absolute https URLs) has no obvious native crasher.
+**Why:** `expo-clipboard@7.0.1`, `expo-image-picker@16.0.6`, `expo-audio@1.0.16` were
+left from an older SDK while the app is on Expo SDK 54, which wants `~8.0.8`, `~17.0.11`,
+`~1.1.1`. (The `expo start` "packages should be updated" warning is the tell.)
 
-**The only way forward is the real native error:**
-1. `adb logcat` from a PC while reproducing on the already-installed APK (no rebuild). Best
-   because it captures native fatals too.
-2. OR an EAS `development`-profile build + `expo start --dev-client` → redbox shows the JS
-   stack IF (and only if) it's actually JS.
-
-**Do not** keep patching suspected causes blindly or re-running the web test skill — web
-never reproduces this (different platform). Get the logcat first.
+**How to apply / diagnose:**
+- The authoritative correct version per SDK is in
+  `artifacts/mobile/node_modules/expo/bundledNativeModules.json` — this is exactly what
+  `npx expo install <pkg>` uses. Compare every `expo-*` dep's *installed* version (not the
+  package.json range string) against it; only **major.minor** mismatches matter
+  (a `~`/`^` range that already resolved to the right version is fine).
+- Fix: bump the package.json ranges to the bundled versions and `pnpm install` (updates
+  lockfile + node_modules). Verify with the compare script, then `pnpm --filter
+  @workspace/mobile run typecheck`.
+- Defense-in-depth for crash-prone convenience features (e.g. clipboard copy): don't
+  eagerly top-level import the native module — use a guarded dynamic
+  `await import("expo-...")` inside the handler with a graceful fallback, so a future
+  native-module gap degrades instead of killing the screen at load.
+- Cannot be verified on Replit (no EAS/expo build allowed) — requires a fresh EAS APK on
+  the user's machine. Other native modules linking fine does NOT prove a given one linked.

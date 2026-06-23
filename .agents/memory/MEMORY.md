@@ -13,3 +13,4 @@
 - [Clan system](clan-system.md) — 가문 feature scope/invariants per phase (5–10); what it must never touch (Persona XP, talk-battle, ranking, memory, wisdom).
 - [Clan war completion](clan-war-completion.md) — claim/judge/finalize model: AI judge once, rewards once, no stuck war, under concurrency + crashes.
 - [Android resource merge conflict](android-resource-merge.md) — duplicate META-INF entries (okhttp/jspecify) crash mergeReleaseJavaResource; fix via expo-build-properties packagingOptions pickFirst.
+- [Expo native module version mismatch](friend-add-native-crash.md) — APK-only "Cannot find native module X" = expo-* dep pinned off the SDK; check bundledNativeModules.json, bump+reinstall, guard eager imports.
