@@ -25,9 +25,10 @@ const DEFAULT_AVATARS = [
 
 /** Deterministic pick so the same user always gets the same default avatar. */
 function defaultAvatarFor(name: string) {
+  const safe = name || "?";
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < safe.length; i++) {
+    hash = (hash * 31 + safe.charCodeAt(i)) >>> 0;
   }
   return DEFAULT_AVATARS[hash % DEFAULT_AVATARS.length];
 }
