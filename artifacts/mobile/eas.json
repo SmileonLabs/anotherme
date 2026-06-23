@@ -7,7 +7,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "corepack": true,
+      "pnpm": "10.26.1",
       "android": {
         "buildType": "apk"
       },
@@ -19,7 +19,7 @@
     },
     "preview": {
       "distribution": "internal",
-      "corepack": true,
+      "pnpm": "10.26.1",
       "android": {
         "buildType": "apk"
       },
@@ -31,7 +31,7 @@
     },
     "production": {
       "autoIncrement": true,
-      "corepack": true,
+      "pnpm": "10.26.1",
       "android": {
         "buildType": "app-bundle"
       },

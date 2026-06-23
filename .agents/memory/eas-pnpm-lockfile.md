@@ -14,12 +14,17 @@ present and `pnpm install --frozen-lockfile` passes locally.
 **Why:** `lockfileVersion: '9.0'` requires pnpm >= 9. EAS's default pnpm can be older, so
 it cannot parse the lockfile, treats it as missing, and frozen-install aborts.
 
-**How to apply / fix (both are required):**
-1. Pin the package manager in **root** `package.json`: `"packageManager": "pnpm@<version>"`
-   (match the local pnpm that wrote the lockfile, e.g. `pnpm@10.26.1`).
-2. Set `"corepack": true` on every build profile in `artifacts/mobile/eas.json`
-   (development / preview / production). Without corepack enabled, EAS ignores the
-   `packageManager` field and keeps using its bundled pnpm.
+**How to apply / fix — use the direct `pnpm` field (NOT corepack):**
+Add `"pnpm": "<version>"` (e.g. `"10.26.1"`) to EVERY build profile in
+`artifacts/mobile/eas.json` (development / preview / production). This is the simplest,
+reliable pin. Keeping `"packageManager": "pnpm@<version>"` in root package.json is fine
+for local consistency (it's inert on EAS when corepack is off).
+
+**Do NOT use `"corepack": true`.** Tried it (with `packageManager` set) — it had ZERO
+effect, the build failed with the identical "Ignoring not compatible lockfile" error.
+Expo also documents a corepack bug (eas-cli #3148): with `corepack: true` EAS still tries
+to install pnpm manually and it conflicts. Use EITHER the `pnpm` field OR corepack — never
+both. The `pnpm` field is the dependable one here.
 
 **Watch for a different but related EAS install failure:** `ERR_PNPM_OUTDATED_LOCKFILE
 ... specifiers in the lockfile don't match package.json`. That one means the *uploaded*
