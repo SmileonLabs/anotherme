@@ -1,5 +1,6 @@
 - [Workspace typecheck noise](workspace-typecheck.md) — full `pnpm run typecheck` fails in mockup-sandbox (spinner SVG ref, React 19 types); unrelated to app code.
 - [Persona growth engine](persona-growth.md) — deterministic XP/stat growth must stay self-isolated & atomic; never let it block or crash core chat/battle/dungeon flows.
+- [EAS pnpm lockfile](eas-pnpm-lockfile.md) — EAS "Install dependencies" fails ("Ignoring not compatible lockfile") unless root `packageManager: pnpm@X` + `corepack: true` on every eas.json profile.
 - [Clerk instance migration](clerk-instance-migration.md) — pk_test→pk_live gives new clerk_id/same email; requireAuth must relink by verified primary email or every authed request 500s (breaks web+native). `@clerk/expo` proxy prop is `proxyUrl` (`n` is just minified).
 - [Avatar null-name crash](avatar-null-name-crash.md) — Avatar default-avatar hashes `name`; null/empty nickname (only seen on full-directory screens like friend-add) hard-crashes the screen. Server logs stay 200; bug is client render. Guard nullable profile fields.
 - [Expo web PWA reality](expo-web-pwa.md) — Expo artifact serves an "Open in Expo Go" launcher at /app/, not a browser app; web export OOMs in dev container (no swap). Don't promise a quick PWA.
