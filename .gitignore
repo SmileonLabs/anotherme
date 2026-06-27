@@ -1,5 +1,23 @@
 # See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
+
+
+CLERK_SECRET_KEY=sk_test_1dEwMQw44LxckgJeEnCozRsfROxtqZo51Hz17iSdnq
+CLERK_PUBLISHABLE_KEY=pk_test_ZHJpdmVuLWJpc29uLTU5LmNsZXJrLmFjY291bnRzLmRldiQ
+FIREBASE_SERVICE_ACCOUNT={
+  "type": "service_account",
+  "project_id": "anotherme-d2a7c",
+  "private_key_id": "677e45a9c27f5f01f41811b692f26df1300ae110",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDgm8v8cmT4uHSZ\nkuEji6YwiZRCD2hcLroFhvtkbtb1UjwQMGFLAhnA7XjoLZwknW5mn46YOClHxsi9\ngaaMsHv8MESSMmoXgWtj3stFVDypeLvGecM18lcB//eDGkpgLHZrrkSQYP7jTX1n\nbjO0yn9RMNqAXUDk6/cEE7o7pg1J9J6MBt+epVyF4mnTxOlMr3vA6ZDx58JbluIb\nUZbnHiBPoMXLcvYpCZ42rwzmhFfY4RWt1c+r1ZVVQQ9VBYIAi50YpQ40V4Uld3M1\nqXPoQ1PLViuuNnbSQDQcvktj5K42dEr8DgEVeDOWEWvN3temr1C86WUL1EswBr2b\nU3QH5SULAgMBAAECgf9LFaMzZdZsnYh/ueUiZ2uUrJQkEA7CN3u+DLTKX0AxVjVT\n6aqKR32iApTvvE2CGMkleA+2Mwv7oIYGfjPlHKw1S9LvAFBrxU+/srx5NgoGLRyI\nUduBjZzYCrwRnccbkma/qd9xvzpYa3QcHu1qVDcCbkvO9kxNsAlnllBNGs0F4cCV\nvNfowJldkLKvMsDojMvYgRExFjZ4SGCRVqB6z0RtH3D7l9wLddfqMq7cr1uBLMvL\nB9ZWOde2bzQHMXo3NgH0eyJeWuv3FSMBgu4NcSeh+1IM+8iYe4y/y9FIDmTxRv9M\nrWwzsAuQhQ5UbgIUxCFrByuOOG2ZzHXmeAp9FQkCgYEA/rZxbqW1uaOZGcsPNno5\nNgo0vxYAYpjnKpI7LohEI01/GADQwnbbdX71HLkW3/I93vsIRbAwXl9Ml5E1pr85\nrc9llIwmfsmsR050Z8mMpq1ZkjffrUqFLYQpy0Cwgcc899G3E66DSFFmm6D3JLJw\n8pQ5vYM+z3nKchBFPy1XW1kCgYEA4b5nZx+++ZvX6mvUm7jj4bg6Fr3hnIVSwb/d\nwiMZ1nzO6yf4v/Fmlaf79j4n2XoPFPuytBqMwMDRsvcqV/qh32deUEsfFYyHzJ+7\n4vSP600PCgAOpN3eWyHySN5z0Ciq9WkhVfjkxSzkyMiWk6lLaQsB4SaAC1f0bRk2\nmtF8SwMCgYBpaDTe9kKS9UnZa7f68m+UlnqnjUJRizc23dcR9aBE/8AVvdimcSt2\nnzhuT4ZQ3N2P1lDhDf2mQEfg/V23iLEk5YwDAlC37VuXEreHb9f97gUARpERFKKy\naFwnWbjxq/LmF2ptAa4gklclFmLQU+v75y1R6OtoTt1hgKw3bdsV2QKBgAGlf9+S\nrbPoXRTKoIxaNt9IlrPfwqt/lXDwU0+9Lc0Qr/mrGvdbbWIeDYpoPaYqa729cDo8\nD1bAkUb64oYtv8x/VoLDaYCgu8TUTWyEWCBhOYDbK0AslhiYEMpTRQj5ovWTRLj5\nzcFaaHjGbcK582DawbLAsyJiC9hX3LwYVw29AoGBAMCGgqcocY38HKLbFVTJ8pAv\nr+7GlaXAlvyveVo1A3tAU/KNOqe+zsB3aqUsxlTZmlnYDCRk+kLhNQZLYH93NH8j\neGrsxDnncbbNzz3RhGZqIcr1Lo5OAdo1lKn0VnU9w/JsIarz1cniTqIEE/ngnIga\nwUl3cJPs7fu/O6CJAIFb\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@anotherme-d2a7c.iam.gserviceaccount.com",
+  "client_id": "104193400220038176361",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40anotherme-d2a7c.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+
 # compiled output
 dist
 tmp
