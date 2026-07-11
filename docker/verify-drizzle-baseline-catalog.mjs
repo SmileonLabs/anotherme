@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+const psqlConnection = new URL(process.env.DATABASE_URL);
+psqlConnection.searchParams.delete("useLibpqCompat");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const snapshot = JSON.parse(readFileSync(path.join(root, "lib/db/drizzle/meta/0000_snapshot.json"), "utf8"));
@@ -54,7 +56,7 @@ SELECT json_build_object(
 );
 `;
 
-const output = execFileSync("psql", [process.env.DATABASE_URL, "--tuples-only", "--no-align", "--command", query], {
+const output = execFileSync("psql", [psqlConnection.toString(), "--tuples-only", "--no-align", "--command", query], {
   encoding: "utf8",
   stdio: ["ignore", "pipe", "inherit"],
 }).trim();

@@ -9,6 +9,13 @@ fi
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 
+# Node's pg accepts useLibpqCompat, but PostgreSQL client tools reject it.
+psql_database_url="$(node -e '
+  const url = new URL(process.argv[1]);
+  url.searchParams.delete("useLibpqCompat");
+  process.stdout.write(url.toString());
+' "$DATABASE_URL")"
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 migration="$root/lib/db/drizzle/0000_eminent_silvermane.sql"
 journal="$root/lib/db/drizzle/meta/_journal.json"
@@ -23,11 +30,11 @@ if ! command -v psql >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1 |
   exit 1
 fi
 
-node "$root/docker/verify-drizzle-baseline-catalog.mjs"
+DATABASE_URL="$psql_database_url" node "$root/docker/verify-drizzle-baseline-catalog.mjs"
 
-ledger_exists="$(psql "$DATABASE_URL" --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL;")"
+ledger_exists="$(psql "$psql_database_url" --tuples-only --no-align --command "SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL;")"
 if [[ "$ledger_exists" == "t" ]]; then
-  existing="$(psql "$DATABASE_URL" --tuples-only --no-align --command "SELECT count(*) FROM drizzle.__drizzle_migrations;")"
+  existing="$(psql "$psql_database_url" --tuples-only --no-align --command "SELECT count(*) FROM drizzle.__drizzle_migrations;")"
 else
   existing=0
 fi
@@ -45,7 +52,7 @@ created_at="$(node --input-type=module --eval "
   console.log(entry.when);
 " "$journal")"
 
-psql "$DATABASE_URL" \
+psql "$psql_database_url" \
   --set ON_ERROR_STOP=1 \
   --set migration_hash="$hash" \
   --set migration_created_at="$created_at" <<'SQL'
