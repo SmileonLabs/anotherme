@@ -18,6 +18,19 @@ without executing `0000_eminent_silvermane.sql` against production.
 6. Record approver, backup identifier, staging validation timestamp, and deployed
    image digest in the deployment ticket.
 
+If the catalog verifier identifies the three legacy uniqueness gaps for STAR growth,
+STAR feed posts, or wallet challenge nonces, reconcile them in staging first:
+
+```bash
+BASELINE_STAGING_VERIFIED=1 \
+DATABASE_URL="$DATABASE_URL" \
+bash docker/reconcile-drizzle-baseline-constraints.sh --confirm
+```
+
+The script adds only the named unique constraints, uses a five-second lock timeout,
+and rolls back all three additions if any check fails. Re-run the catalog verifier
+before registering the baseline. Do not use it for other catalog differences.
+
 ## Production Registration
 
 Run from a trusted host with PostgreSQL client tools installed. Do not print or log
