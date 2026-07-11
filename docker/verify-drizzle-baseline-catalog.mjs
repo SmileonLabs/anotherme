@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const psqlConnection = new URL(process.env.DATABASE_URL);
 psqlConnection.searchParams.delete("useLibpqCompat");
+psqlConnection.searchParams.delete("uselibpqcompat");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const snapshot = JSON.parse(readFileSync(path.join(root, "lib/db/drizzle/meta/0000_snapshot.json"), "utf8"));

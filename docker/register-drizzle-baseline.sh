@@ -13,6 +13,7 @@ fi
 psql_database_url="$(node -e '
   const url = new URL(process.argv[1]);
   url.searchParams.delete("useLibpqCompat");
+  url.searchParams.delete("uselibpqcompat");
   process.stdout.write(url.toString());
 ' "$DATABASE_URL")"
 
