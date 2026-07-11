@@ -5,47 +5,61 @@ import {
   type LifeQuestRiskLevel,
   type LifeQuestStage,
   type LifeQuestTheme,
-  type PersonaStats,
+  type StarStats,
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
 
 const LIFE_QUEST_MODEL = "gpt-5-mini";
 
-/** The seven persona stats a Life Quest choice may move. */
-const STAT_KEYS: (keyof PersonaStats)[] = [
-  "logic",
-  "empathy",
-  "wit",
-  "knowledge",
-  "conviction",
-  "emotion",
-  "decisiveness",
-];
+/** The STAR stats a mission choice may move. */
+const STAT_KEYS: (keyof StarStats)[] = ["charm", "stagePresence", "bond", "lore"];
 
 const RISK_LEVELS: LifeQuestRiskLevel[] = ["low", "medium", "high"];
 
-/** Korean labels for each theme — used in the prompt and as a UI fallback. */
+/** Korean labels for each theme — keys are kept for compatibility, copy is trainee-focused by default. */
 export const LIFE_QUEST_THEME_LABELS: Record<LifeQuestTheme, string> = {
-  work: "직장·업무",
-  relationship: "인간관계",
-  money: "돈 관리",
-  health: "생활 습관",
-  study: "공부·자기계발",
-  conflict: "갈등 해결",
-  startup: "창업·사이드 프로젝트",
-  daily: "일상 선택",
+  work: "무대 기초 연습",
+  relationship: "첫 팬 반응",
+  money: "연습 자원 관리",
+  health: "연습생 루틴",
+  study: "표현 기초 훈련",
+  conflict: "기대 조율",
+  startup: "데뷔 준비 노트",
+  daily: "콘셉트 씨앗",
 };
 
-/** A theme-specific seed so generated scenarios stay grounded in everyday life. */
+const PROMOTED_THEME_LABELS: Record<LifeQuestTheme, string> = {
+  work: "공식 무대 준비",
+  relationship: "팬클럽 소통",
+  money: "활동 예산 운영",
+  health: "공식 STAR 루틴",
+  study: "표현 고도화",
+  conflict: "팬덤 조율",
+  startup: "컴백 프로젝트",
+  daily: "세계관 확장",
+};
+
+/** A theme-specific seed for pre-Torimia trainee STAR missions. */
 const THEME_HINTS: Record<LifeQuestTheme, string> = {
-  work: "직장에서의 협업, 마감, 상사·동료와의 커뮤니케이션, 업무 우선순위 같은 평범한 직장 생활 상황.",
-  relationship: "친구·연인·가족과의 약속, 오해, 부탁, 거리 조절 같은 일상적인 인간관계 상황.",
-  money: "용돈·월급 관리, 소비와 절약, 구독 정리, 친구와의 더치페이 같은 생활 속 돈 관리 상황. (구체적 투자 종목·재테크 조언은 금지)",
-  health: "수면·운동·식사·휴식 루틴을 만드는 평범한 생활 습관 상황. (의학적 진단·치료 조언은 금지)",
-  study: "시험 준비, 새 기술 배우기, 집중력 관리, 강의 듣기 같은 공부·자기계발 상황.",
-  conflict: "오해나 의견 충돌을 대화로 풀어가는 평범한 갈등 해결 상황. (폭력·법적 분쟁은 금지)",
-  startup: "사이드 프로젝트·작은 가게·팀 운영의 결정 같은 현실적인 창업 상황. (구체적 법률·세무·투자 조언은 금지)",
-  daily: "주말 계획, 미루던 일 처리, 새로운 시도 같은 소소한 일상 선택 상황.",
+  work: "공식 무대가 아니라 연습실, 셀프 리허설, 짧은 테스트 영상, 무대 기초 감각을 다지는 상황.",
+  relationship: "팬클럽이 열리기 전 단계의 소수 팬 반응, 응원 댓글, 첫 관심을 조심스럽게 받아들이는 상황.",
+  money: "연습실 시간, 소품, 간단한 콘텐츠 제작처럼 작은 연습 자원을 계획하는 상황. 구체적 투자 조언은 금지.",
+  health: "수면, 발성 전 휴식, 연습 루틴, 멘탈 회복처럼 연습생 STAR 활동을 지속하기 위한 루틴 상황. 의학적 조언은 금지.",
+  study: "보컬, 표정, 멘트, 짧은 퍼포먼스처럼 공식 데뷔 전 표현 기초를 훈련하는 상황.",
+  conflict: "연습 방향, 첫 팬 기대, 자기 의심, 팀원 의견 차이를 차분히 조율하는 상황. 폭력·혐오 조장 금지.",
+  startup: "데뷔 티저 전의 콘셉트 초안, 첫 콘텐츠 테스트, 토르미아를 향한 준비 노트를 만드는 상황.",
+  daily: "캐릭터의 말투, 색, 상징, 세계관 조각을 발견하며 연습생 STAR 콘셉트의 씨앗을 다듬는 상황.",
+};
+
+const PROMOTED_THEME_HINTS: Record<LifeQuestTheme, string> = {
+  work: "공식 무대, 세트리스트, 리허설, 무대 위 존재감처럼 공식 STAR 활동을 준비하는 상황.",
+  relationship: "팬클럽 공지, 팬미팅, 응원 메시지 답장처럼 공식 팬덤과 관계를 키우는 상황.",
+  money: "굿즈 샘플, 콘텐츠 제작비, 활동 예산처럼 공식 활동 자원을 계획하는 상황. 구체적 투자 조언은 금지.",
+  health: "스케줄 전 컨디션, 발성 관리, 회복 루틴처럼 공식 STAR 활동을 지속하기 위한 루틴 상황. 의학적 조언은 금지.",
+  study: "라이브, 무대 멘트, 표정, 퍼포먼스 디테일처럼 공식 STAR의 표현력을 고도화하는 상황.",
+  conflict: "팬덤 오해, 악성 댓글, 팀 운영 이슈처럼 공식 STAR답게 갈등을 조율하는 상황. 폭력·혐오 조장 금지.",
+  startup: "컴백 티저, 새 콘텐츠, 팬클럽 이벤트처럼 공식 프로젝트를 시작하는 상황.",
+  daily: "공식 STAR의 말투, 색, 상징, 세계관을 팬들이 알아볼 수 있게 확장하는 상황.",
 };
 
 /** The raw shape the model returns (ids/risk normalization happens after). */
@@ -74,6 +88,11 @@ export interface LifeQuestScenario {
   goal: string;
   summary: string;
   stages: LifeQuestStage[];
+}
+
+export interface LifeQuestScenarioContext {
+  starName?: string | null;
+  promoted?: boolean;
 }
 
 function pickRandomTheme(): LifeQuestTheme {
@@ -138,31 +157,46 @@ const scenarioSchema = {
   },
 } as const;
 
-function buildSystemPrompt(theme: LifeQuestTheme): string {
+function buildSystemPrompt(theme: LifeQuestTheme, context: LifeQuestScenarioContext = {}): string {
+  const starName = context.starName?.trim() || "장착한 STAR";
+  const missionName = context.promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const themeLabel = context.promoted ? PROMOTED_THEME_LABELS[theme] : LIFE_QUEST_THEME_LABELS[theme];
+  const themeHint = context.promoted ? PROMOTED_THEME_HINTS[theme] : THEME_HINTS[theme];
+  const phase = context.promoted
+    ? "토르미아의 문이 열린 공식 STAR 활동 단계"
+    : "토르미아의 문을 열기 전, 연습생 STAR로 꿈을 키우는 준비 단계";
   return [
-    "너는 '어나더미(Another Me)'라는 한국어 자기계발 소셜 앱의 '라이프 퀘스트' 시나리오 작가다.",
-    "라이프 퀘스트는 판타지가 아니라 '현실 인생 시뮬레이션'이다. 플레이어는 평범한 일상 속 선택을 하며 자신의 또 다른 자아(페르소나)를 성장시킨다.",
+    `너는 '어나더미(Another Me)'라는 한국어 STAR 성장 앱의 '${missionName}' 시나리오 작가다.`,
+    `이번 미션의 주인공은 '${starName}'이며, 현재 단계는 '${phase}'이다.`,
+    context.promoted
+      ? "공식 STAR 미션은 팬클럽과 무대, 콘텐츠, 세계관을 키우며 공식 STAR 활동을 확장하는 선택형 성장 미션이다."
+      : "연습생 STAR 미션은 공식 STAR가 되기 전, 작은 연습과 첫 반응을 쌓아 토르미아의 문을 준비하는 선택형 성장 미션이다.",
     "",
-    `## 이번 퀘스트 테마: ${LIFE_QUEST_THEME_LABELS[theme]}`,
-    THEME_HINTS[theme],
+    `## 이번 미션 테마: ${themeLabel}`,
+    themeHint,
     "",
     "## 시나리오 작성 규칙",
     "- 전체 시나리오(4~6개 스테이지, 각 스테이지 3~4개 선택지)를 한 번에 완성한다.",
-    "- 각 스테이지는 하나의 현실적인 상황(situation)과 짧은 제목(title)을 가진다.",
+    context.promoted
+      ? "- 각 스테이지는 공식 STAR 활동과 직접 연결된 현실적인 상황(situation)과 짧은 제목(title)을 가진다."
+      : "- 각 스테이지는 연습생 STAR가 공식 활동 전 준비를 쌓는 현실적인 상황(situation)과 짧은 제목(title)을 가진다.",
     "- 각 선택지에는 label(짧은 행동 요약), description(한 줄 부연), resultText(선택 후 벌어지는 결과 묘사)를 쓴다.",
     "- 선택지는 서로 '성향'이 달라야 한다. 정답/오답은 없으며, 각 선택에는 장점과 트레이드오프가 있다.",
     "- 모든 텍스트는 자연스러운 한국어. 모바일 화면에 맞게 간결하게(situation 2~3문장, resultText 1~2문장).",
     "- 마지막 스테이지는 이야기가 자연스럽게 마무리되도록 한다.",
+    context.promoted
+      ? "- 팬클럽, 공식 무대, 팬덤 운영 같은 승급 후 요소를 사용할 수 있다."
+      : "- 팬클럽 생성, 공식 무대 데뷔, 대규모 팬덤 운영처럼 승급 후에만 가능한 사건은 아직 일어나지 않은 것으로 작성한다.",
     "",
     "## statChanges 규칙 (매우 중요)",
-    `- 사용 가능한 스탯은 정확히 7개뿐: ${STAT_KEYS.join(", ")}.`,
-    "- 의미: logic(논리), empathy(공감), wit(재치), knowledge(지식), conviction(소신·설득력), emotion(감정 조절), decisiveness(결단력).",
-    "- statChanges에는 항상 7개 스탯 키를 모두 포함한다. 실제로 올릴 스탯만 +1~+3을 주고, 나머지 스탯은 반드시 0으로 둔다.",
+    `- 사용 가능한 STAR 스탯은 정확히 4개뿐: ${STAT_KEYS.join(", ")}.`,
+    "- 의미: charm(매력), stagePresence(무대감), bond(팬 유대), lore(서사).",
+    "- statChanges에는 항상 4개 스탯 키를 모두 포함한다. 실제로 올릴 스탯만 +1~+3을 주고, 나머지 스탯은 반드시 0으로 둔다.",
     "- 각 선택지는 1~3개 스탯만 실제로 올린다(0보다 큰 값은 1~3개). 음수는 사용하지 않는다(감소 없음).",
-    "- 선택의 성향에 맞는 스탯을 준다. (예: 차분히 대화로 풀면 empathy/emotion, 과감히 결정하면 decisiveness/conviction)",
+    "- 선택의 성향에 맞는 스탯을 준다. (예: 팬에게 진심을 전하면 bond, 콘셉트를 깊게 만들면 lore, 무대를 장악하면 stagePresence)",
     "",
     "## 금지 사항",
-    "- 판타지/전투/마법/몬스터/무기/체력(HP) 등 게임적 요소 금지. 철저히 현실 일상.",
+    "- 판타지/전투/마법/몬스터/무기/체력(HP) 등 게임적 요소 금지. STAR 활동과 팬덤 성장에 집중.",
     "- 의학적 진단·치료, 법률 자문, 구체적 투자·재테크 종목 추천 금지.",
     "- 자해·폭력·혐오·성적 콘텐츠, 실존 인물 비방, 개인정보 요구 금지.",
     "- 도박이나 불법 행위를 권하는 선택지 금지.",
@@ -180,6 +214,7 @@ function buildSystemPrompt(theme: LifeQuestTheme): string {
 export async function generateLifeQuestScenario(
   theme: LifeQuestTheme,
   log: Logger,
+  context: LifeQuestScenarioContext = {},
 ): Promise<LifeQuestScenario> {
   const completion = await getOpenAI().chat.completions.create({
     model: LIFE_QUEST_MODEL,
@@ -188,11 +223,10 @@ export async function generateLifeQuestScenario(
     max_completion_tokens: 8000,
     reasoning_effort: "low",
     messages: [
-      { role: "system", content: buildSystemPrompt(theme) },
+      { role: "system", content: buildSystemPrompt(theme, context) },
       {
         role: "user",
-        content:
-          "위 테마로 새로운 라이프 퀘스트 시나리오를 하나 만들어줘. 4~6개의 스테이지와 각 스테이지마다 3~4개의 선택지를 포함해.",
+        content: `위 테마로 새로운 ${context.promoted ? "공식 STAR 미션" : "연습생 STAR 미션"} 시나리오를 하나 만들어줘. 4~6개의 스테이지와 각 스테이지마다 3~4개의 선택지를 포함해.`,
       },
     ],
     response_format: {
@@ -226,8 +260,8 @@ export async function generateLifeQuestScenario(
 }
 
 /** Clamp a model stat delta to a sane positive integer (defends against bad output). */
-function cleanStatChanges(input: Record<string, number> | undefined): Partial<PersonaStats> {
-  const out: Partial<PersonaStats> = {};
+function cleanStatChanges(input: Record<string, number> | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
   if (!input) return out;
   for (const k of STAT_KEYS) {
     const v = input[k];
@@ -256,7 +290,7 @@ function normalizeScenario(parsed: GeneratedScenario, theme: LifeQuestTheme): Li
   });
 
   return {
-    title: parsed.title?.trim() || "이름 없는 라이프 퀘스트",
+    title: parsed.title?.trim() || "이름 없는 STAR 미션",
     theme,
     goal: parsed.goal?.trim() || "오늘의 선택을 통해 나를 성장시키기",
     summary: parsed.summary?.trim() || "",

@@ -8,11 +8,11 @@ import {
   personasTable,
   xpEventsTable,
   type Persona,
-  type PersonaAnalysisMetadata,
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
 import { ensurePersona } from "./growth";
 import { logger as defaultLogger } from "./logger";
+import { enqueuePersonaAnalysisOntologySync } from "./ontologySync";
 
 const ANALYSIS_MODEL = "gpt-5-mini";
 
@@ -58,7 +58,7 @@ export async function collectActivity(userId: string): Promise<CollectedActivity
     db
       .select({ content: messagesTable.content, createdAt: messagesTable.createdAt })
       .from(messagesTable)
-      .where(and(eq(messagesTable.senderId, userId), eq(messagesTable.type, "text")))
+      .where(and(eq(messagesTable.senderId, userId), eq(messagesTable.type, "text"), eq(messagesTable.authorKind, "user")))
       .orderBy(desc(messagesTable.createdAt))
       .limit(MAX_CHAT * 2),
     db
@@ -273,9 +273,9 @@ export type AnalyzeOutcome =
  * Safety: this is invoked only from the explicit analyze endpoint (never per
  * message). It enforces a per-user cooldown, returns a friendly code when the
  * API key is missing, and on ANY AI failure it leaves the existing persona
- * analysis untouched (no partial writes). It only writes the qualitative AI
- * fields + `lastAnalyzedAt` + `analysisMetadata` — it never touches level, xp,
- * stats, or the xp_events log.
+ * analysis untouched (no partial ontology writes). It only refreshes
+ * `lastAnalyzedAt` for cooldown and sends the model result to the ontology
+ * outbox — it never touches level, xp, stats, or the xp_events log.
  */
 export async function analyzePersona(
   userId: string,
@@ -358,25 +358,11 @@ export async function analyzePersona(
     return { ok: false, code: "ai_failed" };
   }
 
-  const analysisMetadata: PersonaAnalysisMetadata = {
-    confidence: result.confidence,
-    dataCounts: data.counts,
-    model: ANALYSIS_MODEL,
-  };
-
-  // Persist the AI fields. lastAnalyzedAt was already set by the claim above; we
-  // refresh it so the recorded time reflects analysis completion.
+  // Do not persist legacy AI-analysis detail fields anymore. The model output is
+  // used only as ontology evidence through the outbox job below.
   const [updated] = await db
     .update(personasTable)
     .set({
-      summary: result.persona_summary,
-      languageStyle: result.language_style,
-      personalityTraits: result.personality_traits,
-      valuesBeliefs: result.values_beliefs,
-      knowledgeDomains: result.knowledge_domains,
-      emotionalPatterns: result.emotional_patterns,
-      decisionStyle: result.decision_style,
-      analysisMetadata,
       lastAnalyzedAt: new Date(),
     })
     .where(eq(personasTable.userId, userId))
@@ -386,5 +372,23 @@ export async function analyzePersona(
     await releaseSlot();
     return { ok: false, code: "ai_failed" };
   }
+  const analyzedAt = updated.lastAnalyzedAt ?? new Date();
+  await enqueuePersonaAnalysisOntologySync({
+    userId,
+    analysisId: analyzedAt.toISOString(),
+    analyzedAt: analyzedAt.toISOString(),
+    summary: result.persona_summary,
+    languageStyle: result.language_style,
+    personalityTraits: result.personality_traits,
+    valuesBeliefs: result.values_beliefs,
+    knowledgeDomains: result.knowledge_domains,
+    emotionalPatterns: result.emotional_patterns,
+    decisionStyle: result.decision_style,
+    confidence: result.confidence,
+    dataCounts: data.counts,
+    model: ANALYSIS_MODEL,
+    log,
+  });
+
   return { ok: true, persona: updated };
 }

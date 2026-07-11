@@ -5,6 +5,7 @@ import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { User } from "@workspace/db";
 import { logger } from "./logger";
+import { ensureBibiFriendshipForUser } from "./officialAccounts";
 
 declare global {
   namespace Express {
@@ -26,6 +27,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.clerkUserId = clerkUserId;
 
   let [user] = await db.select().from(usersTable).where(eq(usersTable.clerkId, clerkUserId));
+  let provisionedInThisRequest = false;
 
   if (!user) {
     try {
@@ -71,16 +73,26 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
           .set({ clerkId: clerkUserId })
           .where(eq(usersTable.id, existing.id))
           .returning();
+        provisionedInThisRequest = true;
       } else {
         [user] = await db
           .insert(usersTable)
           .values({ clerkId: clerkUserId, email, nickname })
           .returning();
+        provisionedInThisRequest = true;
       }
     } catch (err) {
       logger.error({ err }, "Failed to provision user");
       res.status(500).json({ error: "Failed to provision user" });
       return;
+    }
+  }
+
+  if (provisionedInThisRequest) {
+    try {
+      await ensureBibiFriendshipForUser(user.id);
+    } catch (err) {
+      logger.error({ err, userId: user.id }, "Failed to attach BIBI Official friend");
     }
   }
 

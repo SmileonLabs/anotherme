@@ -56,7 +56,7 @@ router.get("/clan-wars", requireAuth, async (req, res): Promise<void> => {
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "listClanWars failed");
-    res.status(500).json({ error: "internal", message: "가문전 목록을 불러오지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전 목록을 불러오지 못했어요." });
   }
 });
 
@@ -83,7 +83,7 @@ router.post("/clan-wars", requireAuth, async (req, res): Promise<void> => {
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "createClanWar failed");
-    res.status(500).json({ error: "internal", message: "가문전을 만들지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전을 만들지 못했어요." });
   }
 });
 
@@ -99,7 +99,7 @@ router.get("/clan-wars/:id", requireAuth, async (req, res): Promise<void> => {
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "getClanWar failed");
-    res.status(500).json({ error: "internal", message: "가문전을 불러오지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전을 불러오지 못했어요." });
   }
 });
 
@@ -123,7 +123,7 @@ router.post("/clan-wars/:id/join", requireAuth, async (req, res): Promise<void> 
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "joinClanWar failed");
-    res.status(500).json({ error: "internal", message: "가문전에 참여하지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전에 참여하지 못했어요." });
   }
 });
 
@@ -160,7 +160,7 @@ router.post("/clan-wars/:id/complete", requireAuth, async (req, res): Promise<vo
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "completeClanWar failed");
-    res.status(500).json({ error: "internal", message: "가문전을 종료하지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전을 종료하지 못했어요." });
   }
 });
 
@@ -172,7 +172,7 @@ router.post("/clan-wars/:id/cancel", requireAuth, async (req, res): Promise<void
   } catch (err) {
     if (handleClanWarError(res, err)) return;
     req.log.error({ err }, "cancelClanWar failed");
-    res.status(500).json({ error: "internal", message: "가문전을 취소하지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽전을 취소하지 못했어요." });
   }
 });
 

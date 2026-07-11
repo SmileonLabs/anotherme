@@ -1,11 +1,19 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
+  DEFAULT_FAN_STATS,
   DEFAULT_PERSONA_STATS,
+  DEFAULT_STAR_STATS,
+  fanProfilesTable,
   personasTable,
+  starProfilesTable,
+  userBattleStatsTable,
   usersTable,
+  type FanStats,
   type PersonaStats,
+  type StarStats,
 } from "@workspace/db";
+import { battleLevelInfo } from "./battleRules";
 import { computeLevel } from "./growth";
 import { computeIdentity } from "./personaIdentity";
 
@@ -88,6 +96,52 @@ export interface RankingResult {
   type: RankingType;
   archetype: ArchetypeKey | null;
   items: RankingItem[];
+  myRank: MyRank | null;
+}
+
+export const SERVICE_RANKING_SCOPES = ["persona", "fan", "star", "battle"] as const;
+export type ServiceRankingScope = (typeof SERVICE_RANKING_SCOPES)[number];
+
+export const SERVICE_RANKING_TYPES = [
+  "overall",
+  "persuasion",
+  "logic",
+  "empathy",
+  "strategy",
+  "archetype",
+  "fan_power",
+  "support_power",
+  "story",
+  "charm",
+  "stage_presence",
+  "bond",
+  "lore",
+  "wins",
+  "win_rate",
+  "streak",
+] as const;
+export type ServiceRankingType = (typeof SERVICE_RANKING_TYPES)[number];
+
+export interface ServiceRankingItem {
+  id: string;
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  level: number;
+  title: string;
+  subTitle: string;
+  badgeLabel: string;
+  score: number;
+  primaryStatLabel: string;
+  primaryStatValue: number;
+}
+
+export interface ServiceRankingResult {
+  scope: ServiceRankingScope;
+  type: ServiceRankingType;
+  archetype: ArchetypeKey | null;
+  items: ServiceRankingItem[];
   myRank: MyRank | null;
 }
 
@@ -236,4 +290,432 @@ export async function getRankings(opts: {
   }
 
   return { type, archetype, items, myRank };
+}
+
+function sumStats(stats: object): number {
+  return Object.values(stats).reduce(
+    (sum, value) => sum + (typeof value === "number" ? value : 0),
+    0,
+  );
+}
+
+function serviceRank<T extends { id: string; userId: string; score: number }>(
+  rows: T[],
+  limit: number,
+  meUserId: string,
+  toItem: (row: T, rank: number) => ServiceRankingItem,
+): { items: ServiceRankingItem[]; myRank: MyRank | null } {
+  const safeLimit = Math.min(RANKING_LIMIT_MAX, Math.max(1, limit));
+  const items = rows.slice(0, safeLimit).map((row, index) => toItem(row, index + 1));
+  const myIndex = rows.findIndex((row) => row.userId === meUserId);
+  let myRank: MyRank | null = null;
+  if (myIndex >= 0) {
+    const myScore = rows[myIndex].score;
+    const pointsToNextRank = myIndex === 0 ? 0 : Math.max(0, rows[myIndex - 1].score - myScore);
+    myRank = { rank: myIndex + 1, score: myScore, pointsToNextRank };
+  }
+  return { items, myRank };
+}
+
+function genericComparator<T extends { score: number; level: number; tieScore: number; id: string }>(
+  a: T,
+  b: T,
+): number {
+  if (b.score !== a.score) return b.score - a.score;
+  if (b.level !== a.level) return b.level - a.level;
+  if (b.tieScore !== a.tieScore) return b.tieScore - a.tieScore;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function personaTypeForService(type: ServiceRankingType): RankingType {
+  return (RANKING_TYPES as readonly string[]).includes(type) ? (type as RankingType) : "overall";
+}
+
+function normalizeServiceType(scope: ServiceRankingScope, type: string | null | undefined): ServiceRankingType {
+  const raw = (SERVICE_RANKING_TYPES as readonly string[]).includes(String(type))
+    ? (type as ServiceRankingType)
+    : "overall";
+  if (scope === "persona") return personaTypeForService(raw) as ServiceRankingType;
+  if (scope === "fan") {
+    return (["overall", "fan_power", "support_power", "empathy", "story"] as const).includes(
+      raw as never,
+    )
+      ? raw
+      : "overall";
+  }
+  if (scope === "star") {
+    return (["overall", "charm", "stage_presence", "bond", "lore"] as const).includes(raw as never)
+      ? raw
+      : "overall";
+  }
+  return (["overall", "wins", "win_rate", "streak"] as const).includes(raw as never)
+    ? raw
+    : "overall";
+}
+
+function fanScore(stats: FanStats, type: ServiceRankingType, level: number, xp: number): number {
+  switch (type) {
+    case "fan_power":
+      return stats.fanPower;
+    case "support_power":
+      return stats.supportPower;
+    case "empathy":
+      return stats.empathy;
+    case "story":
+      return stats.story;
+    case "overall":
+    default:
+      return level * 1000 + xp + sumStats(stats) * 10;
+  }
+}
+
+function fanPrimary(stats: FanStats, type: ServiceRankingType): { label: string; value: number } {
+  switch (type) {
+    case "fan_power":
+      return { label: "팬 파워", value: stats.fanPower };
+    case "support_power":
+      return { label: "응원력", value: stats.supportPower };
+    case "empathy":
+      return { label: "공감", value: stats.empathy };
+    case "story":
+      return { label: "스토리", value: stats.story };
+    case "overall":
+    default:
+      return { label: "FAN XP", value: 0 };
+  }
+}
+
+function starScore(stats: StarStats, type: ServiceRankingType, level: number, xp: number): number {
+  switch (type) {
+    case "charm":
+      return stats.charm;
+    case "stage_presence":
+      return stats.stagePresence;
+    case "bond":
+      return stats.bond;
+    case "lore":
+      return stats.lore;
+    case "overall":
+    default:
+      return level * 1000 + xp + sumStats(stats) * 10;
+  }
+}
+
+function starPrimary(stats: StarStats, type: ServiceRankingType): { label: string; value: number } {
+  switch (type) {
+    case "charm":
+      return { label: "매력", value: stats.charm };
+    case "stage_presence":
+      return { label: "무대감", value: stats.stagePresence };
+    case "bond":
+      return { label: "유대", value: stats.bond };
+    case "lore":
+      return { label: "세계관", value: stats.lore };
+    case "overall":
+    default:
+      return { label: "STAR XP", value: 0 };
+  }
+}
+
+function battleScore(row: {
+  wins: number;
+  losses: number;
+  draws: number;
+  currentStreak: number;
+  bestStreak: number;
+  mp: number;
+}, type: ServiceRankingType): number {
+  const total = row.wins + row.losses + row.draws;
+  switch (type) {
+    case "wins":
+      return row.wins;
+    case "win_rate":
+      return total > 0 ? Math.round((row.wins / total) * 1000) : 0;
+    case "streak":
+      return row.bestStreak;
+    case "overall":
+    default:
+      return row.mp;
+  }
+}
+
+function battlePrimary(row: {
+  wins: number;
+  losses: number;
+  draws: number;
+  bestStreak: number;
+}, type: ServiceRankingType): { label: string; value: number } {
+  const total = row.wins + row.losses + row.draws;
+  switch (type) {
+    case "wins":
+      return { label: "승리", value: row.wins };
+    case "win_rate":
+      return { label: "승률", value: total > 0 ? Math.round((row.wins / total) * 100) : 0 };
+    case "streak":
+      return { label: "최고 연승", value: row.bestStreak };
+    case "overall":
+    default:
+      return { label: "TP", value: 0 };
+  }
+}
+
+async function getPersonaServiceRankings(opts: {
+  type: ServiceRankingType;
+  archetype?: ArchetypeKey | null;
+  limit: number;
+  meUserId: string;
+}): Promise<ServiceRankingResult> {
+  const personaType = personaTypeForService(opts.type);
+  const result = await getRankings({
+    type: personaType,
+    archetype: opts.archetype,
+    limit: opts.limit,
+    meUserId: opts.meUserId,
+  });
+  return {
+    scope: "persona",
+    type: personaType as ServiceRankingType,
+    archetype: result.archetype,
+    myRank: result.myRank,
+    items: result.items.map((item) => ({
+      id: item.userId,
+      rank: item.rank,
+      userId: item.userId,
+      displayName: item.displayName,
+      avatarUrl: item.avatarUrl,
+      level: item.level,
+      title: item.title,
+      subTitle: `${item.title} · ${item.archetypeLabel}`,
+      badgeLabel: "자아",
+      score: item.score,
+      primaryStatLabel: item.primaryStatLabel,
+      primaryStatValue: item.primaryStatValue,
+    })),
+  };
+}
+
+async function getFanServiceRankings(opts: {
+  type: ServiceRankingType;
+  limit: number;
+  meUserId: string;
+}): Promise<ServiceRankingResult> {
+  type Row = {
+    id: string;
+    userId: string;
+    displayName: string;
+    avatarUrl: string | null;
+    level: number;
+    xp: number;
+    stats: FanStats;
+    score: number;
+    tieScore: number;
+    primary: { label: string; value: number };
+  };
+  const rows = await db
+    .select({
+      userId: fanProfilesTable.userId,
+      level: fanProfilesTable.level,
+      xp: fanProfilesTable.xp,
+      stats: fanProfilesTable.stats,
+      nickname: usersTable.nickname,
+      avatarUrl: usersTable.profileImageUrl,
+    })
+    .from(fanProfilesTable)
+    .innerJoin(usersTable, eq(fanProfilesTable.userId, usersTable.id));
+  const ranked: Row[] = rows.map((row) => {
+    const stats: FanStats = { ...DEFAULT_FAN_STATS, ...row.stats };
+    const score = fanScore(stats, opts.type, row.level, row.xp);
+    return {
+      id: row.userId,
+      userId: row.userId,
+      displayName: `${row.nickname?.trim() || "나"} FAN`,
+      avatarUrl: row.avatarUrl ?? null,
+      level: row.level,
+      xp: row.xp,
+      stats,
+      score,
+      tieScore: row.xp,
+      primary: opts.type === "overall" ? { label: "FAN XP", value: row.xp } : fanPrimary(stats, opts.type),
+    };
+  });
+  ranked.sort(genericComparator);
+  const { items, myRank } = serviceRank(ranked, opts.limit, opts.meUserId, (row, rank) => ({
+    id: row.id,
+    rank,
+    userId: row.userId,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
+    level: row.level,
+    title: "FAN",
+    subTitle: `FAN Lv.${row.level} · XP ${row.xp.toLocaleString()}`,
+    badgeLabel: "FAN",
+    score: row.score,
+    primaryStatLabel: row.primary.label,
+    primaryStatValue: row.primary.value,
+  }));
+  return { scope: "fan", type: opts.type, archetype: null, items, myRank };
+}
+
+async function getStarServiceRankings(opts: {
+  type: ServiceRankingType;
+  limit: number;
+  meUserId: string;
+}): Promise<ServiceRankingResult> {
+  type Row = {
+    id: string;
+    userId: string;
+    displayName: string;
+    avatarUrl: string | null;
+    level: number;
+    xp: number;
+    stage: string;
+    score: number;
+    tieScore: number;
+    primary: { label: string; value: number };
+  };
+  const rows = await db
+    .select({
+      id: starProfilesTable.id,
+      userId: starProfilesTable.userId,
+      displayName: starProfilesTable.displayName,
+      imageUrl: starProfilesTable.imageUrl,
+      stage: starProfilesTable.stage,
+      level: starProfilesTable.level,
+      xp: starProfilesTable.xp,
+      stats: starProfilesTable.stats,
+      nickname: usersTable.nickname,
+      avatarUrl: usersTable.profileImageUrl,
+    })
+    .from(starProfilesTable)
+    .innerJoin(usersTable, eq(starProfilesTable.userId, usersTable.id))
+    .orderBy(desc(starProfilesTable.equippedAt));
+  const ranked: Row[] = rows.map((row) => {
+    const stats: StarStats = { ...DEFAULT_STAR_STATS, ...row.stats };
+    const score = starScore(stats, opts.type, row.level, row.xp);
+    const stageLabel = row.stage === "promoted" ? "공식 STAR" : "연습생 STAR";
+    return {
+      id: row.id,
+      userId: row.userId,
+      displayName: row.displayName || `${row.nickname?.trim() || "나"} STAR`,
+      avatarUrl: row.imageUrl ?? row.avatarUrl ?? null,
+      level: row.level,
+      xp: row.xp,
+      stage: row.stage,
+      score,
+      tieScore: row.xp,
+      primary: opts.type === "overall" ? { label: "STAR XP", value: row.xp } : starPrimary(stats, opts.type),
+      title: stageLabel,
+    };
+  });
+  ranked.sort(genericComparator);
+  const { items, myRank } = serviceRank(ranked, opts.limit, opts.meUserId, (row, rank) => ({
+    id: row.id,
+    rank,
+    userId: row.userId,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
+    level: row.level,
+    title: row.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
+    subTitle: `${row.stage === "promoted" ? "공식 STAR" : "연습생 STAR"} Lv.${row.level}`,
+    badgeLabel: "STAR",
+    score: row.score,
+    primaryStatLabel: row.primary.label,
+    primaryStatValue: row.primary.value,
+  }));
+  return { scope: "star", type: opts.type, archetype: null, items, myRank };
+}
+
+async function getBattleServiceRankings(opts: {
+  type: ServiceRankingType;
+  limit: number;
+  meUserId: string;
+}): Promise<ServiceRankingResult> {
+  type Row = {
+    id: string;
+    userId: string;
+    displayName: string;
+    avatarUrl: string | null;
+    level: number;
+    title: string;
+    mp: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    score: number;
+    tieScore: number;
+    primary: { label: string; value: number };
+  };
+  const rows = await db
+    .select({
+      userId: userBattleStatsTable.userId,
+      wins: userBattleStatsTable.wins,
+      losses: userBattleStatsTable.losses,
+      draws: userBattleStatsTable.draws,
+      currentStreak: userBattleStatsTable.currentStreak,
+      bestStreak: userBattleStatsTable.bestStreak,
+      mp: userBattleStatsTable.mp,
+      nickname: usersTable.nickname,
+      avatarUrl: usersTable.profileImageUrl,
+    })
+    .from(userBattleStatsTable)
+    .innerJoin(usersTable, eq(userBattleStatsTable.userId, usersTable.id));
+  const ranked: Row[] = rows.map((row) => {
+    const level = battleLevelInfo(row.mp);
+    return {
+      id: row.userId,
+      userId: row.userId,
+      displayName: row.nickname?.trim() || "참가자",
+      avatarUrl: row.avatarUrl ?? null,
+      level: level.level,
+      title: level.title,
+      mp: row.mp,
+      wins: row.wins,
+      losses: row.losses,
+      draws: row.draws,
+      score: battleScore(row, opts.type),
+      tieScore: row.mp,
+      primary: opts.type === "overall" ? { label: "TP", value: row.mp } : battlePrimary(row, opts.type),
+    };
+  });
+  ranked.sort(genericComparator);
+  const { items, myRank } = serviceRank(ranked, opts.limit, opts.meUserId, (row, rank) => ({
+    id: row.id,
+    rank,
+    userId: row.userId,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
+    level: row.level,
+    title: row.title,
+    subTitle: `Lv.${row.level} · ${row.wins}승 ${row.draws}무 ${row.losses}패`,
+    badgeLabel: "배틀",
+    score: row.score,
+    primaryStatLabel: row.primary.label,
+    primaryStatValue: row.primary.value,
+  }));
+  return { scope: "battle", type: opts.type, archetype: null, items, myRank };
+}
+
+export async function getServiceRankings(opts: {
+  scope: ServiceRankingScope;
+  type?: string | null;
+  archetype?: ArchetypeKey | null;
+  limit: number;
+  meUserId: string;
+}): Promise<ServiceRankingResult> {
+  const type = normalizeServiceType(opts.scope, opts.type);
+  if (opts.scope === "persona") {
+    return getPersonaServiceRankings({
+      type,
+      archetype: opts.archetype,
+      limit: opts.limit,
+      meUserId: opts.meUserId,
+    });
+  }
+  if (opts.scope === "fan") {
+    return getFanServiceRankings({ type, limit: opts.limit, meUserId: opts.meUserId });
+  }
+  if (opts.scope === "star") {
+    return getStarServiceRankings({ type, limit: opts.limit, meUserId: opts.meUserId });
+  }
+  return getBattleServiceRankings({ type, limit: opts.limit, meUserId: opts.meUserId });
 }

@@ -29,9 +29,25 @@ export interface PushPayload {
   /**
    * Structured payload the service worker forwards to the app on notification
    * tap. For incoming calls: { type:"incoming_call", callId, chatRoomId,
-   * callerUserId } so the client can open the ringing/incoming screen directly.
+   * callerUserId, callerName, media } so the client can open the ringing/
+   * incoming screen directly.
    */
   data?: Record<string, unknown>;
+}
+
+function roomIdFromChatUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  const match = url.match(/^\/chat\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function fcmNotificationData(payload: PushPayload): Record<string, string> | undefined {
+  const data: Record<string, string> = {};
+  if (payload.url) data.url = payload.url;
+  if (payload.tag) data.tag = payload.tag;
+  const roomId = roomIdFromChatUrl(payload.url);
+  if (roomId) data.roomId = roomId;
+  return Object.keys(data).length > 0 ? data : undefined;
 }
 
 function isValidSubscription(obj: unknown): obj is PushSubscription {
@@ -161,7 +177,7 @@ export async function sendPushToUser(
         title: payload.title,
         body: payload.body,
         tag: payload.tag,
-        data: payload.url ? { url: payload.url } : undefined,
+        data: fcmNotificationData(payload),
       });
     }
 
@@ -220,7 +236,8 @@ export async function sendCallPush(
       callId: typeof data.callId === "string" ? data.callId : "",
       chatRoomId: typeof data.chatRoomId === "string" ? data.chatRoomId : "",
       callerUserId: typeof data.callerUserId === "string" ? data.callerUserId : "",
-      callerName: payload.title,
+      media: data.media === "video" ? "video" : "audio",
+      callerName: typeof data.callerName === "string" ? data.callerName : payload.title,
     },
   });
 }
@@ -230,11 +247,15 @@ export function incomingCallData(args: {
   callId: string;
   chatRoomId: string | null;
   callerUserId: string;
+  callerName?: string;
+  media?: "audio" | "video";
 }): Record<string, unknown> {
   return {
     type: "incoming_call",
     callId: args.callId,
     chatRoomId: args.chatRoomId,
     callerUserId: args.callerUserId,
+    callerName: args.callerName,
+    media: args.media ?? "audio",
   };
 }

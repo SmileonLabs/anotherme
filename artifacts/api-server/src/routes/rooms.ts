@@ -1,10 +1,22 @@
 import { Router, type IRouter } from "express";
-import { and, asc, count, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { chatRoomsTable, chatRoomMembersTable, messagesTable, usersTable, friendshipsTable } from "@workspace/db";
+import { chatRoomsTable, chatRoomMembersTable, friendshipsTable, messageDeletionsTable, messagesTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { allocateRoomMessageSeq, getRoomUnreadMeta } from "../lib/readReceipts";
 
 const router: IRouter = Router();
+
+function messagePreview(type: string, content: string, deleted: boolean): string {
+  if (deleted) return "삭제된 메시지";
+  return type === "image"
+    ? "사진"
+    : type === "sticker"
+      ? "스티커"
+      : type === "file"
+        ? "파일"
+        : content;
+}
 
 export async function roomWithMeta(roomId: string, userId: string) {
   const room = (await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)))[0];
@@ -23,64 +35,76 @@ export async function roomWithMeta(roomId: string, userId: string) {
     ? await db.select().from(usersTable).where(inArray(usersTable.id, memberUserIds))
     : [];
   const userById = new Map(userRows.map((u) => [u.id, u]));
+  const aliasByUserId = new Map<string, string | null>();
+  if (memberUserIds.length > 0) {
+    const friendships = await db
+      .select()
+      .from(friendshipsTable)
+      .where(or(eq(friendshipsTable.userAId, userId), eq(friendshipsTable.userBId, userId)));
+    const memberIdSet = new Set(memberUserIds);
+    for (const friendship of friendships) {
+      const otherId = friendship.userAId === userId ? friendship.userBId : friendship.userAId;
+      if (!memberIdSet.has(otherId)) continue;
+      aliasByUserId.set(
+        otherId,
+        friendship.userAId === userId
+          ? friendship.userAFriendAlias ?? null
+          : friendship.userBFriendAlias ?? null,
+      );
+    }
+  }
   const members = memberRows
     .map((m) => userById.get(m.userId))
     .filter((u): u is NonNullable<typeof u> => !!u)
-    .map((u) => ({
-      id: u.id,
-      email: u.email,
-      nickname: u.nickname,
-      profileImageUrl: u.profileImageUrl ?? null,
-      statusMessage: u.statusMessage ?? null,
-    }));
+    .map((u) => {
+      const friendAlias = aliasByUserId.get(u.id) ?? null;
+      return {
+        id: u.id,
+        email: u.email,
+        nickname: u.nickname,
+        friendAlias,
+        displayName: friendAlias || u.nickname,
+        profileImageUrl: u.profileImageUrl ?? null,
+        statusMessage: u.statusMessage ?? null,
+      };
+    });
 
   let unreadCount = 0;
   let firstUnreadMessageId: string | null = null;
   if (myMember) {
-    // Resolve the read marker's timestamp in one tiny query rather than loading
-    // every message in the room just to find it. Messages the user sent are
-    // always "read" — never count them, otherwise your own latest message can
-    // surface as an unread "1" in the room list.
-    let readAt: Date | null = null;
-    if (myMember.lastReadMessageId) {
-      // Scope to THIS room (matches the original in-room resolution): a stale or
-      // cross-room read marker must resolve to "no read" (readAt null), never to
-      // some other room's timestamp — which would under-count unread.
-      const [readMsg] = await db
-        .select({ createdAt: messagesTable.createdAt })
-        .from(messagesTable)
-        .where(
-          and(
-            eq(messagesTable.id, myMember.lastReadMessageId),
-            eq(messagesTable.roomId, roomId),
-          ),
-        );
-      readAt = readMsg?.createdAt ?? null;
-    }
+    const unread = await getRoomUnreadMeta(roomId, userId, myMember.lastReadSeq ?? 0);
+    unreadCount = unread.unreadCount;
+    firstUnreadMessageId = unread.firstUnreadMessageId;
+  }
 
-    const unreadWhere = and(
-      eq(messagesTable.roomId, roomId),
-      ne(messagesTable.senderId, userId),
-      ...(readAt ? [gt(messagesTable.createdAt, readAt)] : []),
-    );
-
-    // COUNT in SQL — no full-message materialization.
-    const [{ value: unread }] = await db
-      .select({ value: count() })
+  let pinnedMessage: {
+    id: string;
+    senderId: string;
+    senderName: string | null;
+    type: string;
+    content: string;
+    createdAt: string;
+    deletedAt: string | null;
+  } | null = null;
+  if (room.pinnedMessageId) {
+    const [pin] = await db
+      .select()
       .from(messagesTable)
-      .where(unreadWhere);
-    unreadCount = unread;
-
-    if (unreadCount > 0) {
-      // The exact id the client anchors the "새 메시지" divider on — the oldest
-      // unread, fetched with a single ordered LIMIT 1.
-      const [first] = await db
-        .select({ id: messagesTable.id })
-        .from(messagesTable)
-        .where(unreadWhere)
-        .orderBy(asc(messagesTable.createdAt))
-        .limit(1);
-      firstUnreadMessageId = first?.id ?? null;
+      .where(and(eq(messagesTable.id, room.pinnedMessageId), eq(messagesTable.roomId, roomId)));
+    const [deletedForMe] = await db
+      .select({ id: messageDeletionsTable.id })
+      .from(messageDeletionsTable)
+      .where(and(eq(messageDeletionsTable.messageId, room.pinnedMessageId), eq(messageDeletionsTable.userId, userId)));
+    if (pin && !deletedForMe) {
+      pinnedMessage = {
+        id: pin.id,
+        senderId: pin.senderId,
+        senderName: aliasByUserId.get(pin.senderId) || userById.get(pin.senderId)?.nickname || null,
+        type: pin.type,
+        content: messagePreview(pin.type, pin.content, !!pin.deletedAt),
+        createdAt: pin.createdAt.toISOString(),
+        deletedAt: pin.deletedAt?.toISOString() ?? null,
+      };
     }
   }
 
@@ -91,6 +115,9 @@ export async function roomWithMeta(roomId: string, userId: string) {
     ownerId: room.ownerId ?? null,
     lastMessage: room.lastMessage ?? null,
     lastMessageAt: room.lastMessageAt?.toISOString() ?? null,
+    lastMessageSeq: room.lastMessageSeq,
+    pinnedMessageId: room.pinnedMessageId ?? null,
+    pinnedMessage,
     unreadCount,
     firstUnreadMessageId,
     muted: myMember?.muted ?? false,
@@ -415,16 +442,20 @@ router.post("/rooms/:id/members", requireAuth, async (req, res): Promise<void> =
       }),
     );
     const names = addedUsers.join(", ");
-    await db.insert(messagesTable).values({
-      roomId: raw,
-      senderId: userId,
-      type: "system",
-      content: `${inviter?.nickname ?? "누군가"}님이 ${names}님을 초대했습니다`,
+    await db.transaction(async (tx) => {
+      const roomSeq = await allocateRoomMessageSeq(tx, raw);
+      await tx.insert(messagesTable).values({
+        roomId: raw,
+        senderId: userId,
+        type: "system",
+        content: `${inviter?.nickname ?? "누군가"}님이 ${names}님을 초대했습니다`,
+        roomSeq,
+      });
+      await tx
+        .update(chatRoomsTable)
+        .set({ lastMessage: `${names}님이 참여했습니다`, lastMessageAt: new Date() })
+        .where(eq(chatRoomsTable.id, raw));
     });
-    await db
-      .update(chatRoomsTable)
-      .set({ lastMessage: `${names}님이 참여했습니다`, lastMessageAt: new Date() })
-      .where(eq(chatRoomsTable.id, raw));
   }
 
   const result = await roomWithMeta(raw, userId);

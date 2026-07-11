@@ -17,6 +17,7 @@ import {
 import { getOpenAI } from "./aiClient";
 import { sendPushToUsers } from "./push";
 import { recordActivity } from "./growth";
+import { allocateRoomMessageSeq } from "./readReceipts";
 
 const DM_EMAIL = "dungeon-master@todotalk.system";
 const DM_CLERK_ID = "system:dungeon-master";
@@ -515,7 +516,9 @@ export async function runDungeonTurn(
 
       // Each state-change event becomes a centered "system" line in the chat
       // flow (rendered differently from bubbles on the client).
+      let lastRoomSeq = 0;
       for (let i = 0; i < nextEvents.length; i++) {
+        const roomSeq = await allocateRoomMessageSeq(tx, roomId);
         const [sysMsg] = await tx
           .insert(messagesTable)
           .values({
@@ -523,12 +526,15 @@ export async function runDungeonTurn(
             senderId: dmUserId,
             type: "system",
             content: nextEvents[i].text,
+            roomSeq,
             createdAt: new Date(base + i),
           })
           .returning();
         lastMsgId = sysMsg.id;
+        lastRoomSeq = roomSeq;
       }
 
+      const roomSeq = await allocateRoomMessageSeq(tx, roomId);
       const [msg] = await tx
         .insert(messagesTable)
         .values({
@@ -536,10 +542,12 @@ export async function runDungeonTurn(
           senderId: dmUserId,
           type: "text",
           content: narrative,
+          roomSeq,
           createdAt: new Date(base + nextEvents.length),
         })
         .returning();
       lastMsgId = msg.id;
+      lastRoomSeq = roomSeq;
 
       await tx
         .update(chatRoomsTable)
@@ -555,7 +563,7 @@ export async function runDungeonTurn(
       // The DM bot has implicitly "read" up to its last message this turn.
       await tx
         .update(chatRoomMembersTable)
-        .set({ lastReadMessageId: lastMsgId })
+        .set({ lastReadMessageId: lastMsgId, lastReadSeq: lastRoomSeq })
         .where(eq(chatRoomMembersTable.roomId, roomId));
 
       if (result) {

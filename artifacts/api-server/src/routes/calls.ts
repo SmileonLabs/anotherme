@@ -14,6 +14,10 @@ import {
 import type { Call } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { sendCallPush, incomingCallData } from "../lib/push";
+import { logger } from "../lib/logger";
+import { publishRealtimeEvent } from "../lib/realtime";
+import { allocateRoomMessageSeq, setMemberReadSeq } from "../lib/readReceipts";
+import { callDurationSec, isTerminalCallStatus } from "../lib/callLifecycle";
 
 const router: IRouter = Router();
 
@@ -22,9 +26,18 @@ const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
 const RING_TIMEOUT_MS = 45_000;
+type CallMedia = "audio" | "video";
 
 function livekitConfigured(): boolean {
   return Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
+}
+
+function normalizeCallMedia(value: unknown): CallMedia {
+  return value === "video" ? "video" : "audio";
+}
+
+function mediaFromCall(call: Pick<Call, "media">): CallMedia {
+  return normalizeCallMedia(call.media);
 }
 
 // Opportunistically transition a long-unanswered ringing call to "missed".
@@ -36,7 +49,11 @@ async function maybeExpire(call: Call): Promise<Call> {
       .set({ status: "missed", missedAt: now, endedAt: now })
       .where(and(eq(callsTable.id, call.id), eq(callsTable.status, "ringing")))
       .returning();
-    if (updated) await endCallMessage(call.id, "missed");
+    if (updated) {
+      const media = mediaFromCall(updated);
+      await endCallMessage(call.id, "missed", undefined, media);
+      publishCallRealtimeEvent(updated, "call.updated", undefined, media);
+    }
     return updated ?? call;
   }
   return call;
@@ -63,12 +80,6 @@ async function isBlockedBetween(a: string, b: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Seconds the two parties were actually connected, or null if never answered. */
-function callDurationSec(c: Call): number | null {
-  if (!c.acceptedAt || !c.endedAt) return null;
-  return Math.max(0, Math.round((c.endedAt.getTime() - c.acceptedAt.getTime()) / 1000));
-}
-
 async function createToken(roomName: string, identity: string, name: string): Promise<string> {
   const at = new AccessToken(LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!, { identity, name });
   at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
@@ -79,46 +90,48 @@ async function createToken(roomName: string, identity: string, name: string): Pr
 // can join the call straight from the conversation. The content carries the
 // callId + status so the card can render a "통화 참여" button and later flip to
 // "ended". Reuses the messages table — no migration (same pattern as image/file).
-async function postCallMessage(roomId: string, callerId: string, callId: string): Promise<void> {
-  const content = JSON.stringify({ callId, status: "ringing" });
-  const [message] = await db
-    .insert(messagesTable)
-    .values({ roomId, senderId: callerId, type: "call", content })
-    .returning();
-  await db
-    .update(chatRoomsTable)
-    .set({ lastMessage: "📞 보이스톡", lastMessageAt: new Date() })
-    .where(eq(chatRoomsTable.id, roomId));
-  // A new call resurfaces the room for anyone who previously hid (left) it.
-  await db
-    .update(chatRoomMembersTable)
-    .set({ hiddenAt: null })
-    .where(eq(chatRoomMembersTable.roomId, roomId));
-  // The caller has implicitly read their own call card so it never counts as
-  // unread for them.
-  await db
-    .update(chatRoomMembersTable)
-    .set({ lastReadMessageId: message.id })
-    .where(
-      and(
-        eq(chatRoomMembersTable.roomId, roomId),
-        eq(chatRoomMembersTable.userId, callerId),
-      ),
-    );
+async function postCallMessage(
+  roomId: string,
+  callerId: string,
+  callId: string,
+  media: CallMedia,
+): Promise<void> {
+  const content = JSON.stringify({ callId, status: "ringing", media });
+  await db.transaction(async (tx) => {
+    const roomSeq = await allocateRoomMessageSeq(tx, roomId);
+    const [message] = await tx
+      .insert(messagesTable)
+      .values({ roomId, senderId: callerId, type: "call", content, roomSeq })
+      .returning();
+    await tx
+      .update(chatRoomsTable)
+      .set({ lastMessage: media === "video" ? "📹 영상통화" : "📞 보이스톡", lastMessageAt: new Date() })
+      .where(eq(chatRoomsTable.id, roomId));
+    // A new call resurfaces the room for anyone who previously hid (left) it.
+    await tx
+      .update(chatRoomMembersTable)
+      .set({ hiddenAt: null })
+      .where(eq(chatRoomMembersTable.roomId, roomId));
+    // The caller has implicitly read their own call card so it never counts as
+    // unread for them.
+    await setMemberReadSeq(tx, roomId, callerId, { id: message.id, roomSeq });
+  });
 }
 
 // Flips the in-chat call card to its FINAL state so the "통화 참여" button
 // disappears and the card can render a distinct result (ended / missed /
-// declined / cancelled) with an optional duration. The card is located by its
+// declined / cancelled / failed) with an optional duration. The card is located by its
 // callId substring in the JSON content (avoids a migration).
 async function endCallMessage(
   callId: string,
-  status: "ended" | "missed" | "declined" | "cancelled",
+  status: "ended" | "missed" | "declined" | "cancelled" | "failed",
   durationSec?: number | null,
+  media?: CallMedia,
 ): Promise<void> {
-  const payload: { callId: string; status: string; durationSec?: number } = {
+  const payload: { callId: string; status: string; media: CallMedia; durationSec?: number } = {
     callId,
     status,
+    media: media ?? "audio",
   };
   if (typeof durationSec === "number") payload.durationSec = durationSec;
   await db
@@ -129,13 +142,14 @@ async function endCallMessage(
     );
 }
 
-function serializeCall(c: Call) {
+function serializeCall(c: Call, media: CallMedia = "audio") {
   return {
     id: c.id,
     roomName: c.roomName,
     callerId: c.callerId,
     calleeId: c.calleeId,
     chatRoomId: c.chatRoomId ?? null,
+    media,
     status: c.status,
     createdAt: c.createdAt.toISOString(),
     acceptedAt: c.acceptedAt?.toISOString() ?? null,
@@ -143,7 +157,7 @@ function serializeCall(c: Call) {
     missedAt: c.missedAt?.toISOString() ?? null,
     cancelledAt: c.cancelledAt?.toISOString() ?? null,
     endedAt: c.endedAt?.toISOString() ?? null,
-    durationSec: callDurationSec(c),
+    durationSec: callDurationSec(c.acceptedAt, c.endedAt),
   };
 }
 
@@ -157,13 +171,38 @@ function toPublicUser(u: typeof usersTable.$inferSelect) {
   };
 }
 
+async function serializeCallWithMedia(c: Call) {
+  return serializeCall(c, mediaFromCall(c));
+}
+
+function publishCallRealtimeEvent(
+  call: Call,
+  type: "call.created" | "call.updated",
+  actorUserId?: string | null,
+  media: CallMedia = "audio",
+): void {
+  void publishRealtimeEvent({
+    type,
+    callId: call.id,
+    roomId: call.chatRoomId ?? null,
+    actorUserId: actorUserId ?? null,
+    userIds: [call.callerId, call.calleeId],
+    data: { call: serializeCall(call, media) },
+  }).catch((err) => logger.error({ err, callId: call.id, type }, "Failed to publish call realtime event"));
+}
+
 router.post("/calls", requireAuth, async (req, res): Promise<void> => {
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
     return;
   }
   const userId = req.dbUser!.id;
-  const { calleeId, roomId } = req.body as { calleeId?: string; roomId?: string };
+  const { calleeId, roomId, media: rawMedia } = req.body as {
+    calleeId?: string;
+    roomId?: string;
+    media?: unknown;
+  };
+  const media = normalizeCallMedia(rawMedia);
   if (!calleeId || calleeId === userId) {
     res.status(400).json({ error: "calleeId is required" });
     return;
@@ -216,6 +255,7 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
       callerId: userId,
       calleeId,
       chatRoomId: validRoomId,
+      media,
       status: "ringing",
     })
     .returning();
@@ -223,7 +263,7 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
   // Post the in-chat call card so both parties can join from the conversation.
   if (validRoomId) {
     try {
-      await postCallMessage(validRoomId, userId, call.id);
+      await postCallMessage(validRoomId, userId, call.id, media);
     } catch (err) {
       req.log.error({ err, roomId: validRoomId, callId: call.id }, "Failed to post call message");
     }
@@ -233,19 +273,25 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
   // notification toggle so an incoming call is never silently missed. The data
   // payload lets the service worker route a tap straight to the incoming screen.
   void sendCallPush(calleeId, {
-    title: "보이스톡",
-    body: `${req.dbUser!.nickname}님이 음성 통화를 걸었습니다`,
+    title: media === "video" ? "영상통화" : "보이스톡",
+    body:
+      media === "video"
+        ? `${req.dbUser!.nickname}님이 영상 통화를 걸었습니다`
+        : `${req.dbUser!.nickname}님이 음성 통화를 걸었습니다`,
     url: validRoomId ? `/chat/${validRoomId}` : "/",
     tag: `call-${call.id}`,
     data: incomingCallData({
       callId: call.id,
       chatRoomId: validRoomId,
       callerUserId: userId,
+      callerName: req.dbUser!.nickname,
+      media,
     }),
   });
 
   const token = await createToken(roomName, userId, req.dbUser!.nickname);
-  res.status(201).json({ call: serializeCall(call), token, url: LIVEKIT_URL });
+  publishCallRealtimeEvent(call, "call.created", userId, media);
+  res.status(201).json({ call: serializeCall(call, media), token, url: LIVEKIT_URL });
 });
 
 router.get("/calls/incoming", requireAuth, async (req, res): Promise<void> => {
@@ -270,7 +316,7 @@ router.get("/calls/incoming", requireAuth, async (req, res): Promise<void> => {
       const fresh = await maybeExpire(c);
       if (fresh.status !== "ringing") return null;
       const [caller] = await db.select().from(usersTable).where(eq(usersTable.id, fresh.callerId));
-      return caller ? { ...serializeCall(fresh), caller: toPublicUser(caller) } : null;
+      return caller ? { ...(await serializeCallWithMedia(fresh)), caller: toPublicUser(caller) } : null;
     }),
   );
   res.json(result.filter((r) => r !== null));
@@ -285,7 +331,7 @@ router.get("/calls/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const fresh = await maybeExpire(call);
-  res.json(serializeCall(fresh));
+  res.json(await serializeCallWithMedia(fresh));
 });
 
 router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> => {
@@ -318,14 +364,16 @@ router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> =>
     // (ended/declined/missed/etc.) is a dead call.
     if (fresh.status === "active") {
       const token = await createToken(fresh.roomName, userId, req.dbUser!.nickname);
-      res.json({ call: serializeCall(fresh), token, url: LIVEKIT_URL });
+      res.json({ call: await serializeCallWithMedia(fresh), token, url: LIVEKIT_URL });
       return;
     }
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
   const token = await createToken(updated.roomName, userId, req.dbUser!.nickname);
-  res.json({ call: serializeCall(updated), token, url: LIVEKIT_URL });
+  const media = mediaFromCall(updated);
+  publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  res.json({ call: serializeCall(updated, media), token, url: LIVEKIT_URL });
 });
 
 router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> => {
@@ -342,9 +390,13 @@ router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> =
     .set({ status: "declined", declinedAt: now, endedAt: now })
     .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
     .returning();
-  if (updated) await endCallMessage(raw, "declined");
+  if (updated) {
+    const media = mediaFromCall(updated);
+    await endCallMessage(raw, "declined", undefined, media);
+    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  }
   // If it was already accepted/ended, leave it as-is and return current state.
-  res.json(serializeCall(updated ?? call));
+  res.json(await serializeCallWithMedia(updated ?? call));
 });
 
 // Cancel an outgoing call before it is answered. Caller-only; only a still-
@@ -363,10 +415,14 @@ router.post("/calls/:id/cancel", requireAuth, async (req, res): Promise<void> =>
     .set({ status: "cancelled", cancelledAt: now, endedAt: now })
     .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
     .returning();
-  if (updated) await endCallMessage(raw, "cancelled");
+  if (updated) {
+    const media = mediaFromCall(updated);
+    await endCallMessage(raw, "cancelled", undefined, media);
+    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  }
   // If the callee answered/declined in the race, return the current state so the
   // caller's UI converges instead of forcing a cancelled card over a live call.
-  res.json(serializeCall(updated ?? call));
+  res.json(await serializeCallWithMedia(updated ?? call));
 });
 
 router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
@@ -378,13 +434,8 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   // Terminal states are immutable.
-  if (
-    call.status === "ended" ||
-    call.status === "declined" ||
-    call.status === "missed" ||
-    call.status === "cancelled"
-  ) {
-    res.json(serializeCall(call));
+  if (isTerminalCallStatus(call.status)) {
+    res.json(await serializeCallWithMedia(call));
     return;
   }
   // A caller hanging up a still-ringing call (callee never answered) is a cancel,
@@ -398,8 +449,10 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
       .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
       .returning();
     if (cancelled) {
-      await endCallMessage(raw, "cancelled");
-      res.json(serializeCall(cancelled));
+      const media = mediaFromCall(cancelled);
+      await endCallMessage(raw, "cancelled", undefined, media);
+      publishCallRealtimeEvent(cancelled, "call.updated", userId, media);
+      res.json(serializeCall(cancelled, media));
       return;
     }
   }
@@ -416,11 +469,65 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
     // Someone else won the race and set a terminal state; converge to it without
     // touching the card (the winning handler already wrote the correct card).
     const [latest] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-    res.json(serializeCall(latest ?? call));
+    res.json(await serializeCallWithMedia(latest ?? call));
     return;
   }
-  await endCallMessage(raw, "ended", callDurationSec(updated));
-  res.json(serializeCall(updated));
+  const media = mediaFromCall(updated);
+  await endCallMessage(raw, "ended", callDurationSec(updated.acceptedAt, updated.endedAt), media);
+  publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  res.json(serializeCall(updated, media));
+});
+
+router.post("/calls/:id/failed", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
+  if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  if (isTerminalCallStatus(call.status)) {
+    res.json(await serializeCallWithMedia(call));
+    return;
+  }
+  const now = new Date();
+  const [updated] = await db
+    .update(callsTable)
+    .set({ status: "failed", endedAt: now })
+    .where(and(eq(callsTable.id, raw), eq(callsTable.status, call.status)))
+    .returning();
+  const current = updated ?? call;
+  if (updated) {
+    const media = mediaFromCall(updated);
+    await endCallMessage(raw, "failed", undefined, media);
+    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  }
+  res.json(await serializeCallWithMedia(current));
+});
+
+router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
+  if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  const body = req.body as Record<string, unknown> | null;
+  req.log.info(
+    {
+      callId: raw,
+      userId,
+      media: mediaFromCall(call),
+      callStatus: call.status,
+      phase: typeof body?.phase === "string" ? body.phase : "unknown",
+      platform: typeof body?.platform === "string" ? body.platform : undefined,
+      role: typeof body?.role === "string" ? body.role : undefined,
+      details: body?.details && typeof body.details === "object" ? body.details : undefined,
+    },
+    "Call diagnostic",
+  );
+  res.status(204).end();
 });
 
 // Join a call from the in-chat call card. Either party (caller or callee) may
@@ -441,7 +548,7 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
   }
   // Lazily expire a long-unanswered ringing call so a stale card can't be joined.
   const call = await maybeExpire(found);
-  if (call.status === "ended" || call.status === "declined" || call.status === "missed") {
+  if (isTerminalCallStatus(call.status)) {
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
@@ -461,9 +568,10 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
       return;
     }
     current = updated;
+    publishCallRealtimeEvent(updated, "call.updated", userId, mediaFromCall(updated));
   }
   const token = await createToken(current.roomName, userId, req.dbUser!.nickname);
-  res.json({ call: serializeCall(current), token, url: LIVEKIT_URL });
+  res.json({ call: await serializeCallWithMedia(current), token, url: LIVEKIT_URL });
 });
 
 export default router;

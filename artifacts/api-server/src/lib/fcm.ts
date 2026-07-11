@@ -141,7 +141,10 @@ export interface FcmCallPayload {
  */
 export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload): Promise<void> {
   const msg = await getMessaging();
-  if (!msg) return;
+  if (!msg) {
+    logger.warn({ userId }, "FCM call send skipped: messaging unavailable");
+    return;
+  }
   try {
     const [user] = await db
       .select({ fcmTokens: usersTable.fcmTokens })
@@ -149,9 +152,14 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
       .where(eq(usersTable.id, userId));
     if (!user) return;
     const tokens = parseFcmTokens(user.fcmTokens ?? null);
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      logger.info({ userId }, "FCM call send skipped: no device tokens");
+      return;
+    }
 
     const stale = new Set<string>();
+    const failureCodes: Record<string, number> = {};
+    let sent = 0;
     await Promise.allSettled(
       tokens.map(async (token) => {
         try {
@@ -169,9 +177,12 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
             data: { ...payload.data, title: payload.title, body: payload.body },
             android: { priority: "high" },
           });
+          sent += 1;
         } catch (err: unknown) {
           const code = (err as { code?: string; errorInfo?: { code?: string } })?.code
             ?? (err as { errorInfo?: { code?: string } })?.errorInfo?.code;
+          const key = code ?? "unknown";
+          failureCodes[key] = (failureCodes[key] ?? 0) + 1;
           if (
             code === "messaging/registration-token-not-registered" ||
             code === "messaging/invalid-registration-token"
@@ -188,6 +199,10 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
         }
       }),
     );
+    logger.info(
+      { userId, tokenCount: tokens.length, sent, failed: tokens.length - sent, stale: stale.size, failureCodes },
+      "FCM call send completed",
+    );
     await removeFcmTokens(userId, stale);
   } catch (err) {
     logger.error({ err, userId }, "Failed to send FCM");
@@ -199,6 +214,8 @@ export interface FcmNotificationPayload {
   body: string;
   /** Optional structured data for tap-routing (all values stringified). */
   data?: Record<string, string>;
+  /** Android notification channel id. The native app creates this at startup. */
+  channelId?: string;
   /** Notification collapse/dedup key. */
   tag?: string;
 }
@@ -215,7 +232,10 @@ export async function sendFcmNotificationToUser(
   payload: FcmNotificationPayload,
 ): Promise<void> {
   const msg = await getMessaging();
-  if (!msg) return;
+  if (!msg) {
+    logger.warn({ userId }, "FCM notification send skipped: messaging unavailable");
+    return;
+  }
   try {
     const [user] = await db
       .select({ fcmTokens: usersTable.fcmTokens })
@@ -223,29 +243,40 @@ export async function sendFcmNotificationToUser(
       .where(eq(usersTable.id, userId));
     if (!user) return;
     const tokens = parseFcmTokens(user.fcmTokens ?? null);
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      logger.info({ userId }, "FCM notification send skipped: no device tokens");
+      return;
+    }
 
     const stale = new Set<string>();
+    const failureCodes: Record<string, number> = {};
+    let sent = 0;
+    logger.info(
+      { userId, tokenCount: tokens.length, hasChannelId: Boolean(payload.channelId) },
+      "FCM notification send started",
+    );
     await Promise.allSettled(
       tokens.map(async (token) => {
         try {
+          const androidNotification: { tag?: string; channelId?: string } = {};
+          if (payload.tag) androidNotification.tag = payload.tag;
+          if (payload.channelId) androidNotification.channelId = payload.channelId;
           await msg.send({
             token,
             notification: { title: payload.title, body: payload.body },
             data: payload.data ?? {},
             android: {
               priority: "high",
-              // No explicit channelId: the app only registers the "incoming-calls"
-              // channel, so naming a non-existent "default" channel would suppress
-              // display on Android 8+. Omitting it lets FCM fall back to its
-              // auto-created default notification channel.
-              notification: { tag: payload.tag },
+              notification: androidNotification,
             },
           });
+          sent += 1;
         } catch (err: unknown) {
           const code =
             (err as { code?: string; errorInfo?: { code?: string } })?.code ??
             (err as { errorInfo?: { code?: string } })?.errorInfo?.code;
+          const key = code ?? "unknown";
+          failureCodes[key] = (failureCodes[key] ?? 0) + 1;
           if (
             code === "messaging/registration-token-not-registered" ||
             code === "messaging/invalid-registration-token"
@@ -256,6 +287,10 @@ export async function sendFcmNotificationToUser(
           }
         }
       }),
+    );
+    logger.info(
+      { userId, tokenCount: tokens.length, sent, failed: tokens.length - sent, stale: stale.size, failureCodes },
+      "FCM notification send completed",
     );
     await removeFcmTokens(userId, stale);
   } catch (err) {
