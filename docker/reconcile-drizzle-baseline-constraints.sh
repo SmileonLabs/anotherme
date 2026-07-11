@@ -33,8 +33,14 @@ BEGIN
     WHERE conrelid = 'public.star_growth_events'::regclass
       AND conname = 'star_growth_events_source_key_unique'
   ) THEN
-    ALTER TABLE public.star_growth_events
-      ADD CONSTRAINT star_growth_events_source_key_unique UNIQUE (source_key);
+    IF to_regclass('public.star_growth_events_source_key_unique') IS NOT NULL THEN
+      ALTER TABLE public.star_growth_events
+        ADD CONSTRAINT star_growth_events_source_key_unique
+        UNIQUE USING INDEX star_growth_events_source_key_unique;
+    ELSE
+      ALTER TABLE public.star_growth_events
+        ADD CONSTRAINT star_growth_events_source_key_unique UNIQUE (source_key);
+    END IF;
   END IF;
 
   IF NOT EXISTS (
@@ -42,8 +48,14 @@ BEGIN
     WHERE conrelid = 'public.star_feed_posts'::regclass
       AND conname = 'star_feed_posts_source_key_unique'
   ) THEN
-    ALTER TABLE public.star_feed_posts
-      ADD CONSTRAINT star_feed_posts_source_key_unique UNIQUE (source_key);
+    IF to_regclass('public.star_feed_posts_source_key_unique') IS NOT NULL THEN
+      ALTER TABLE public.star_feed_posts
+        ADD CONSTRAINT star_feed_posts_source_key_unique
+        UNIQUE USING INDEX star_feed_posts_source_key_unique;
+    ELSE
+      ALTER TABLE public.star_feed_posts
+        ADD CONSTRAINT star_feed_posts_source_key_unique UNIQUE (source_key);
+    END IF;
   END IF;
 
   IF NOT EXISTS (
@@ -51,8 +63,14 @@ BEGIN
     WHERE conrelid = 'public.wallet_verification_challenges'::regclass
       AND conname = 'wallet_verification_challenges_nonce_unique'
   ) THEN
-    ALTER TABLE public.wallet_verification_challenges
-      ADD CONSTRAINT wallet_verification_challenges_nonce_unique UNIQUE (nonce);
+    IF to_regclass('public.wallet_verification_challenges_nonce_unique') IS NOT NULL THEN
+      ALTER TABLE public.wallet_verification_challenges
+        ADD CONSTRAINT wallet_verification_challenges_nonce_unique
+        UNIQUE USING INDEX wallet_verification_challenges_nonce_unique;
+    ELSE
+      ALTER TABLE public.wallet_verification_challenges
+        ADD CONSTRAINT wallet_verification_challenges_nonce_unique UNIQUE (nonce);
+    END IF;
   END IF;
 END $$;
 
