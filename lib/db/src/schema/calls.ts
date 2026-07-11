@@ -17,6 +17,7 @@ export const callsTable = pgTable("calls", {
   chatRoomId: uuid("chat_room_id").references(() => chatRoomsTable.id, {
     onDelete: "set null",
   }),
+  media: text("media").notNull().default("audio"),
   // Full call lifecycle:
   // ringing → accepted/active → ended | declined | missed | cancelled | failed
   status: text("status").notNull().default("ringing"),

@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -6,8 +6,7 @@ import { usersTable } from "./users";
 /**
  * The seven growth attributes of a user's "Another Me" persona. Each is a
  * non-negative cumulative counter raised by deterministic activity (chat,
- * talk-battle, dungeon). AI analysis (a later phase) only touches the
- * qualitative `summary`, never these numbers.
+ * talk-battle, dungeon). Ontology analysis never mutates these numbers.
  */
 export interface PersonaStats {
   /** 논리 — reasoning, structured argument (talk battle). */
@@ -37,30 +36,10 @@ export const DEFAULT_PERSONA_STATS: PersonaStats = {
 };
 
 /**
- * Structured metadata attached to the most recent AI analysis. Kept in a single
- * jsonb column so we can evolve it without migrations. Never stores sensitive
- * conclusions — only bookkeeping about how the analysis was produced.
- */
-export interface PersonaAnalysisMetadata {
-  /** Model's self-reported confidence 0..1 for the latest analysis. */
-  confidence?: number;
-  /** How many items of each source fed the latest analysis. */
-  dataCounts?: {
-    chat?: number;
-    battle?: number;
-    dungeon?: number;
-    growth?: number;
-  };
-  /** Model id used (e.g. "gpt-5-mini"). */
-  model?: string;
-}
-
-/**
  * One "Another Me" persona per user (1:1). Created lazily on first access (like
- * users are auto-provisioned). `level`/`xp`/`stats` are driven by deterministic
- * growth. The qualitative AI-analysis fields (`summary` + the six `*Style`/
- * `*Traits` text columns and `analysisMetadata`) are written only by the
- * on-demand AI analysis phase and stay null until the user runs it.
+ * users are auto-provisioned). `level`/`xp`/`stats` are legacy deterministic
+ * growth counters kept for existing gameplay state. Persona interpretation is
+ * stored in the ontology profile tables, not on this row.
  */
 export const personasTable = pgTable("personas", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -71,23 +50,7 @@ export const personasTable = pgTable("personas", {
   level: integer("level").notNull().default(1),
   xp: integer("xp").notNull().default(0),
   stats: jsonb("stats").$type<PersonaStats>().notNull().default(DEFAULT_PERSONA_STATS),
-  /** AI: short overall persona summary (maps to AI `persona_summary`). */
-  summary: text("summary"),
-  /** AI: observed language / communication style. */
-  languageStyle: text("language_style"),
-  /** AI: estimated personality tendencies. */
-  personalityTraits: text("personality_traits"),
-  /** AI: apparent values / beliefs (non-sensitive, estimative). */
-  valuesBeliefs: text("values_beliefs"),
-  /** AI: knowledge domains the user engages with. */
-  knowledgeDomains: text("knowledge_domains"),
-  /** AI: emotional expression patterns. */
-  emotionalPatterns: text("emotional_patterns"),
-  /** AI: decision-making style. */
-  decisionStyle: text("decision_style"),
-  /** AI: bookkeeping for the latest analysis (confidence, counts, model). */
-  analysisMetadata: jsonb("analysis_metadata").$type<PersonaAnalysisMetadata>(),
-  /** Timestamp of the last successful AI analysis; drives the cooldown. */
+  /** Timestamp of the last successful ontology analysis request; drives cooldown. */
   lastAnalyzedAt: timestamp("last_analyzed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })

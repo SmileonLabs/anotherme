@@ -4,7 +4,7 @@ import { usersTable } from "./users";
 /**
  * Per-user lifetime talk-battle stats. One row per user, created/updated when a
  * battle they participated in ends. AI persona bots never get a row (only human
- * participants are recorded). Level and title are derived from `mp` at read time
+ * participants are recorded). Level and title are derived from Talk Point at read time
  * (see `battleLevelInfo`), so only the durable counters live here.
  */
 export const userBattleStatsTable = pgTable("user_battle_stats", {
@@ -18,7 +18,7 @@ export const userBattleStatsTable = pgTable("user_battle_stats", {
   currentStreak: integer("current_streak").notNull().default(0),
   /** Highest `currentStreak` ever reached. */
   bestStreak: integer("best_streak").notNull().default(0),
-  /** "Mal-bbal points" accumulated across battles; drives level/title. */
+  /** Talk Point accumulated across battles; kept as `mp` for DB compatibility. */
   mp: integer("mp").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

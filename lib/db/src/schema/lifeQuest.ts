@@ -1,6 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
-import type { PersonaStats } from "./persona";
+import { starProfilesTable } from "./fanStar";
 
 /**
  * Life Quest themes — everyday-life simulation settings. A quest is generated
@@ -33,8 +33,9 @@ export type LifeQuestStatus = "active" | "completed" | "failed";
 export type LifeQuestRiskLevel = "low" | "medium" | "high";
 
 /**
- * A single pre-generated choice within a stage. `statChanges` only ever uses the
- * seven {@link PersonaStats} keys; it is applied to the persona when chosen.
+ * A single pre-generated choice within a stage. STAR missions now write STAR stat
+ * keys (`charm`, `stagePresence`, `bond`, `lore`) here. The loose shape keeps old
+ * persona-based mission rows readable while new missions grow the equipped STAR.
  * `resultText` is shown after picking — no AI call is made at choice time.
  */
 export interface LifeQuestChoice {
@@ -42,7 +43,7 @@ export interface LifeQuestChoice {
   label: string;
   description: string;
   resultText: string;
-  statChanges: Partial<PersonaStats>;
+  statChanges: Record<string, number>;
   riskLevel: LifeQuestRiskLevel;
 }
 
@@ -69,6 +70,9 @@ export const lifeQuestsTable = pgTable("life_quests", {
   userId: uuid("user_id")
     .notNull()
     .references(() => usersTable.id, { onDelete: "cascade" }),
+  starProfileId: uuid("star_profile_id").references(() => starProfilesTable.id, {
+    onDelete: "cascade",
+  }),
   title: text("title").notNull(),
   theme: text("theme").$type<LifeQuestTheme>().notNull(),
   goal: text("goal").notNull(),
