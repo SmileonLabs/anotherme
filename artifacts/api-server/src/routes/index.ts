@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
 import usersRouter from "./users";
 import friendsRouter from "./friends";
 import roomsRouter from "./rooms";
@@ -15,10 +14,20 @@ import personaRouter from "./persona";
 import clansRouter from "./clans";
 import clanWarsRouter from "./clanWars";
 import questsRouter from "./quests";
+import playModeRouter from "./playMode";
+import starFeedRouter from "./starFeed";
+import walletsRouter from "./wallets";
+import torimiaRouter from "./torimia";
+import presenceRouter from "./presence";
+import dailyTalkRewardRouter from "./dailyTalkReward";
+import pvtRouter from "./pvt";
+import anotherMeRouter from "./anotherMe";
+import officialAccountsRouter from "./officialAccounts";
+import knowledgeRouter from "./knowledge";
+import realtimeRouter from "./realtime";
 
 const router: IRouter = Router();
 
-router.use(healthRouter);
 router.use(usersRouter);
 router.use(friendsRouter);
 router.use(roomsRouter);
@@ -34,5 +43,16 @@ router.use(personaRouter);
 router.use(clansRouter);
 router.use(clanWarsRouter);
 router.use(questsRouter);
+router.use(playModeRouter);
+router.use(starFeedRouter);
+router.use(walletsRouter);
+router.use(torimiaRouter);
+router.use(presenceRouter);
+router.use(dailyTalkRewardRouter);
+router.use(pvtRouter);
+router.use(anotherMeRouter);
+router.use(officialAccountsRouter);
+router.use(knowledgeRouter);
+router.use(realtimeRouter);
 
 export default router;

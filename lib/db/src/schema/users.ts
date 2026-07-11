@@ -15,6 +15,7 @@ export const usersTable = pgTable("users", {
   // opaque strings, not subscription objects.
   fcmTokens: text("fcm_tokens"),
   notificationEnabled: boolean("notification_enabled").notNull().default(true),
+  talkAnalysisEnabled: boolean("talk_analysis_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

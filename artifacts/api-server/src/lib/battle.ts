@@ -15,6 +15,28 @@ import {
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
 import { recordActivity } from "./growth";
+import { allocateRoomMessageSeq } from "./readReceipts";
+import { enqueueBattleTurnOntologySyncSafe } from "./ontologySync";
+import {
+  MAX_UTTERANCE_CHARS,
+  roundOf,
+} from "./battleRules";
+import {
+  advanceTurn,
+  computeRemaining,
+  currentSpeakerIsAI,
+  isExpired,
+} from "./battleState";
+
+export {
+  battleLevelInfo,
+  MAX_UTTERANCE_CHARS,
+  roundOf,
+  TOTAL_ROUNDS,
+  TURN_SECONDS,
+  type BattleLevelInfo,
+} from "./battleRules";
+export { computeRemaining } from "./battleState";
 
 const JUDGE_EMAIL = "talk-judge@todotalk.system";
 const JUDGE_CLERK_ID = "system:talk-judge";
@@ -91,11 +113,6 @@ const personaById = new Map(BATTLE_PERSONAS.map((p) => [p.id, p]));
 export function getPersona(id: string): BattlePersona | undefined {
   return personaById.get(id);
 }
-
-export const TOTAL_ROUNDS = 3;
-export const TURN_SECONDS = 45;
-/** Hard cap on an utterance so a single turn can't blow up the AI prompt. */
-export const MAX_UTTERANCE_CHARS = 1000;
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(n)));
 
@@ -431,93 +448,18 @@ async function generateAIUtterance(
 }
 
 // ---------------------------------------------------------------------------
-// State helpers
-// ---------------------------------------------------------------------------
-export function computeRemaining(state: BattleState): number {
-  if (state.phase !== "active" || !state.turnStartedAt) return 0;
-  const elapsed = (Date.now() - new Date(state.turnStartedAt).getTime()) / 1000;
-  return Math.max(0, Math.ceil(state.timeLimitSeconds - elapsed));
-}
-
-/** Grace window (seconds) absorbing network/clock skew before a turn is forfeited. */
-const EXPIRY_GRACE = 2;
-
-/** Signed seconds left in the current turn (negative once past the limit). */
-function secondsLeft(state: BattleState): number {
-  if (state.phase !== "active" || !state.turnStartedAt) return 0;
-  return state.timeLimitSeconds - (Date.now() - new Date(state.turnStartedAt).getTime()) / 1000;
-}
-
-function isExpired(state: BattleState): boolean {
-  return secondsLeft(state) <= -EXPIRY_GRACE;
-}
-
-/** Whether the current speaker is an AI persona (its turn is server-generated). */
-function currentSpeakerIsAI(state: BattleState): boolean {
-  const cur = state.participants.find((p) => p.userId === state.currentSpeakerUserId);
-  return !!cur?.isAI;
-}
-
-export function roundOf(turnIndex: number): number {
-  return Math.floor(turnIndex / 2) + 1;
-}
-
-// ---------------------------------------------------------------------------
-// Lifetime stats (말빨 현황) — MP / level / win-loss record
+// Lifetime stats (Talk Point) — stored in the legacy `mp` column for compatibility.
 // ---------------------------------------------------------------------------
 
-/** MP awarded per battle outcome (drives level/title growth). */
+/** TP awarded per battle outcome (drives level/title growth). */
 const MP_WIN = 50;
 const MP_DRAW = 20;
 const MP_LOSS = 10;
 
-/** Flat MP span per level (mirrors the dashboard's "X / 500" progress bar). */
-const LEVEL_SPAN = 500;
-
-/** Level titles (칭호) by 1-based level; the last one applies to all higher levels. */
-const LEVEL_TITLES = [
-  "말문 트임",
-  "입문 토론자",
-  "수습 논객",
-  "논리 초보",
-  "열혈 토론가",
-  "설득가",
-  "날카로운 혀",
-  "말빨 고수",
-  "토론의 달인",
-  "솔로몬의 후예",
-] as const;
-
-export interface BattleLevelInfo {
-  level: number;
-  title: string;
-  /** MP accumulated within the current level (0..LEVEL_SPAN-1). */
-  mpIntoLevel: number;
-  /** MP span of a level (constant). */
-  mpForNextLevel: number;
-  /** MP remaining until the next level. */
-  mpToNext: number;
-}
-
-/** Deterministically derive level/title/progress from total MP. */
-export function battleLevelInfo(mp: number): BattleLevelInfo {
-  const safe = Math.max(0, Math.floor(mp));
-  const level = Math.floor(safe / LEVEL_SPAN) + 1;
-  const mpIntoLevel = safe % LEVEL_SPAN;
-  const title = LEVEL_TITLES[Math.min(level - 1, LEVEL_TITLES.length - 1)];
-  return {
-    level,
-    title,
-    mpIntoLevel,
-    mpForNextLevel: LEVEL_SPAN,
-    mpToNext: LEVEL_SPAN - mpIntoLevel,
-  };
-}
-
 /**
  * Record lifetime stats for each *human* participant of a just-ended battle.
  * Called exactly once per game-over (right after `advanceTurn` flips
- * `state.ended`), so wins/losses/streaks/MP increment by one battle. AI persona
+ * `state.ended`), so wins/losses/streaks/TP increment by one battle. AI persona
  * bots are skipped. A `restart` legitimately starts a fresh game whose result is
  * recorded again. Best-effort: failures are logged, never thrown (the battle is
  * already ended regardless).
@@ -646,46 +588,6 @@ export async function buildParticipants(
   }));
 }
 
-/**
- * Advance to the next turn after a speaker's turn has been scored. Mutates
- * `state` and returns system lines to post (round banners / result line).
- */
-function advanceTurn(state: BattleState): string[] {
-  const lines: string[] = [];
-  const nextIndex = state.turnIndex + 1;
-  if (nextIndex >= state.totalRounds * 2) {
-    // Game over.
-    state.turnIndex = nextIndex;
-    state.phase = "ended";
-    state.ended = true;
-    state.currentSpeakerUserId = null;
-    state.turnStartedAt = null;
-    const [a, b] = state.participants;
-    if (a && b) {
-      if (a.totalScore > b.totalScore) state.winnerUserId = a.userId;
-      else if (b.totalScore > a.totalScore) state.winnerUserId = b.userId;
-      else state.winnerUserId = null;
-    }
-    const result =
-      state.winnerUserId === null
-        ? `🏁 토론 종료! 무승부입니다. (${state.participants
-            .map((p) => `${p.name} ${p.totalScore}점`)
-            .join(" vs ")})`
-        : `🏁 토론 종료! 승자는 ${
-            state.participants.find((p) => p.userId === state.winnerUserId)?.name ?? "?"
-          } 님입니다. (${state.participants.map((p) => `${p.name} ${p.totalScore}점`).join(" vs ")})`;
-    lines.push(result);
-    return lines;
-  }
-  state.turnIndex = nextIndex;
-  state.currentSpeakerUserId = state.order[nextIndex % 2] ?? null;
-  state.turnStartedAt = new Date().toISOString();
-  if (nextIndex % 2 === 0) {
-    lines.push(`🔔 라운드 ${roundOf(nextIndex)} 시작`);
-  }
-  return lines;
-}
-
 /** Insert ordered system messages from the judge bot, returning the last id. */
 async function postSystemLines(
   tx: typeof db,
@@ -693,9 +595,11 @@ async function postSystemLines(
   judgeId: string,
   lines: string[],
   baseTime: number,
-): Promise<string | undefined> {
+): Promise<{ lastId: string; lastSeq: number } | null> {
   let lastId: string | undefined;
+  let lastSeq = 0;
   for (let i = 0; i < lines.length; i++) {
+    const roomSeq = await allocateRoomMessageSeq(tx, roomId);
     const [m] = await tx
       .insert(messagesTable)
       .values({
@@ -703,12 +607,14 @@ async function postSystemLines(
         senderId: judgeId,
         type: "system",
         content: lines[i],
+        roomSeq,
         createdAt: new Date(baseTime + i),
       })
       .returning();
     lastId = m.id;
+    lastSeq = roomSeq;
   }
-  return lastId;
+  return lastId ? { lastId, lastSeq } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -759,15 +665,15 @@ export async function startBattleGame(roomId: string, log: Logger): Promise<void
         question,
         `🔔 라운드 1 시작 — 먼저 찬성 측 ${proName} 님의 발언입니다.`,
       ];
-      const lastId = await postSystemLines(tx as unknown as typeof db, roomId, judgeId, lines, base);
+      const posted = await postSystemLines(tx as unknown as typeof db, roomId, judgeId, lines, base);
       await tx
         .update(chatRoomsTable)
         .set({ lastMessage: "토크배틀이 시작되었습니다", lastMessageAt: new Date() })
         .where(eq(chatRoomsTable.id, roomId));
-      if (lastId) {
+      if (posted) {
         await tx
           .update(chatRoomMembersTable)
-          .set({ lastReadMessageId: lastId })
+          .set({ lastReadMessageId: posted.lastId, lastReadSeq: posted.lastSeq })
           .where(eq(chatRoomMembersTable.roomId, roomId));
       }
       await tx
@@ -837,11 +743,13 @@ export async function submitBattleTurn(
       const base = Date.now();
       // 1) the speaker's own utterance bubble (skip if forfeit/empty).
       if (trimmed.trim()) {
+        const roomSeq = await allocateRoomMessageSeq(tx, roomId);
         await tx.insert(messagesTable).values({
           roomId,
           senderId: userId,
           type: "text",
           content: trimmed.trim(),
+          roomSeq,
           createdAt: new Date(base),
         });
       }
@@ -856,7 +764,7 @@ export async function submitBattleTurn(
         evaluation,
       });
       // 3) judge evaluation + any round/result banners.
-      const lastId = await postSystemLines(
+      const posted = await postSystemLines(
         tx as unknown as typeof db,
         roomId,
         judgeId,
@@ -867,10 +775,10 @@ export async function submitBattleTurn(
         .update(chatRoomsTable)
         .set({ lastMessage: `${speakerName} ${evaluation.total}점`, lastMessageAt: new Date() })
         .where(eq(chatRoomsTable.id, roomId));
-      if (lastId) {
+      if (posted) {
         await tx
           .update(chatRoomMembersTable)
-          .set({ lastReadMessageId: lastId })
+          .set({ lastReadMessageId: posted.lastId, lastReadSeq: posted.lastSeq })
           .where(eq(chatRoomMembersTable.roomId, roomId));
       }
       await tx
@@ -889,6 +797,19 @@ export async function submitBattleTurn(
         sourceKey: `battle_speech:${roomId}:${state.matchSeq ?? 0}:${turnIndex}:${userId}`,
         log,
       });
+      if (trimmed.trim()) {
+        void enqueueBattleTurnOntologySyncSafe({
+          userId,
+          roomId,
+          matchSeq: state.matchSeq ?? 0,
+          turnIndex,
+          round,
+          topic: state.topic,
+          side,
+          evaluation,
+          log,
+        });
+      }
     }
 
     if (state.ended) await recordBattleResultStats(roomId, state, log);
@@ -953,7 +874,7 @@ export async function resolveExpiredTurn(roomId: string, log: Logger): Promise<b
         content: "",
         evaluation,
       });
-      const lastId = await postSystemLines(
+      const posted = await postSystemLines(
         tx as unknown as typeof db,
         roomId,
         judgeId,
@@ -964,10 +885,10 @@ export async function resolveExpiredTurn(roomId: string, log: Logger): Promise<b
         .update(chatRoomsTable)
         .set({ lastMessage: `${speakerName} 시간 초과`, lastMessageAt: new Date() })
         .where(eq(chatRoomsTable.id, roomId));
-      if (lastId) {
+      if (posted) {
         await tx
           .update(chatRoomMembersTable)
-          .set({ lastReadMessageId: lastId })
+          .set({ lastReadMessageId: posted.lastId, lastReadSeq: posted.lastSeq })
           .where(eq(chatRoomMembersTable.roomId, roomId));
       }
       await tx
@@ -1058,11 +979,13 @@ export async function resolveAITurn(roomId: string, log: Logger): Promise<boolea
       await db.transaction(async (tx) => {
         const base = Date.now();
         // The AI's utterance bubble (sent as the persona bot user).
+        const utteranceSeq = await allocateRoomMessageSeq(tx, roomId);
         await tx.insert(messagesTable).values({
           roomId,
           senderId: speaker.userId,
           type: "text",
           content: utterance,
+          roomSeq: utteranceSeq,
           createdAt: new Date(base),
         });
         await tx.insert(battleTurnsTable).values({
@@ -1074,7 +997,7 @@ export async function resolveAITurn(roomId: string, log: Logger): Promise<boolea
           content: utterance,
           evaluation,
         });
-        const lastId = await postSystemLines(
+        const posted = await postSystemLines(
           tx as unknown as typeof db,
           roomId,
           judgeId,
@@ -1085,10 +1008,10 @@ export async function resolveAITurn(roomId: string, log: Logger): Promise<boolea
           .update(chatRoomsTable)
           .set({ lastMessage: `${speaker.name} ${evaluation.total}점`, lastMessageAt: new Date() })
           .where(eq(chatRoomsTable.id, roomId));
-        if (lastId) {
+        if (posted) {
           await tx
             .update(chatRoomMembersTable)
-            .set({ lastReadMessageId: lastId })
+            .set({ lastReadMessageId: posted.lastId, lastReadSeq: posted.lastSeq })
             .where(eq(chatRoomMembersTable.roomId, roomId));
         }
         await tx

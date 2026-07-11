@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { computeLevel } from "./growth";
 import { computeIdentity } from "./personaIdentity";
+import { getTorimiaState } from "./torimia";
 
 export const CLAN_LIST_LIMIT_DEFAULT = 30;
 export const CLAN_LIST_LIMIT_MAX = 100;
@@ -91,6 +92,7 @@ export class ClanError extends Error {
       | "name_taken"
       | "not_member"
       | "owner_must_transfer"
+      | "torimia_required"
       | "invalid",
     message: string,
   ) {
@@ -253,15 +255,23 @@ export async function createClan(params: {
 }): Promise<MyClanView> {
   const name = params.name.trim();
   if (name.length < CLAN_NAME_MIN || name.length > CLAN_NAME_MAX) {
-    throw new ClanError("invalid", "가문 이름은 2~20자로 입력해 주세요.");
+    throw new ClanError("invalid", "팬클럽 이름은 2~20자로 입력해 주세요.");
   }
   const description = params.description?.trim() || null;
   if (description && description.length > CLAN_DESCRIPTION_MAX) {
-    throw new ClanError("invalid", "가문 설명이 너무 길어요.");
+    throw new ClanError("invalid", "팬클럽 설명이 너무 길어요.");
   }
   const clanValues = params.clanValues?.trim() || null;
   if (clanValues && clanValues.length > CLAN_VALUES_MAX) {
     throw new ClanError("invalid", "대표 가치관이 너무 길어요.");
+  }
+
+  const torimia = await getTorimiaState(params.userId);
+  if (!torimia.promoted) {
+    throw new ClanError(
+      "torimia_required",
+      "토르미아의 문을 연 공식 STAR만 팬클럽을 만들 수 있어요.",
+    );
   }
 
   await db.transaction(async (tx) => {
@@ -270,7 +280,7 @@ export async function createClan(params: {
       .from(clanMembersTable)
       .where(eq(clanMembersTable.userId, params.userId));
     if (existing.length > 0) {
-      throw new ClanError("already_in_clan", "이미 가문에 소속되어 있어요.");
+      throw new ClanError("already_in_clan", "이미 팬클럽에 소속되어 있어요.");
     }
 
     const [dup] = await tx
@@ -278,7 +288,7 @@ export async function createClan(params: {
       .from(clansTable)
       .where(eq(clansTable.name, name));
     if (dup) {
-      throw new ClanError("name_taken", "이미 사용 중인 가문 이름이에요.");
+      throw new ClanError("name_taken", "이미 사용 중인 팬클럽 이름이에요.");
     }
 
     const [clan] = await tx
@@ -306,7 +316,7 @@ export async function createClan(params: {
   });
 
   const mine = await getMyClan(params.userId);
-  if (!mine) throw new ClanError("invalid", "가문 생성에 실패했어요.");
+  if (!mine) throw new ClanError("invalid", "팬클럽 생성에 실패했어요.");
   return mine;
 }
 
@@ -324,7 +334,7 @@ export async function joinClan(params: {
       .from(clanMembersTable)
       .where(eq(clanMembersTable.userId, params.userId));
     if (existing.length > 0) {
-      throw new ClanError("already_in_clan", "이미 가문에 소속되어 있어요.");
+      throw new ClanError("already_in_clan", "이미 팬클럽에 소속되어 있어요.");
     }
 
     const [clan] = await tx
@@ -333,7 +343,7 @@ export async function joinClan(params: {
       .where(eq(clansTable.id, params.clanId))
       .for("update");
     if (!clan) {
-      throw new ClanError("not_found", "존재하지 않는 가문이에요.");
+      throw new ClanError("not_found", "존재하지 않는 팬클럽이에요.");
     }
 
     await tx.insert(clanMembersTable).values({
@@ -350,7 +360,7 @@ export async function joinClan(params: {
   });
 
   const mine = await getMyClan(params.userId);
-  if (!mine) throw new ClanError("invalid", "가문 가입에 실패했어요.");
+  if (!mine) throw new ClanError("invalid", "팬클럽 가입에 실패했어요.");
   return mine;
 }
 
@@ -370,7 +380,7 @@ export async function leaveClan(params: {
       .from(clanMembersTable)
       .where(eq(clanMembersTable.userId, params.userId));
     if (!membership || membership.clanId !== params.clanId) {
-      throw new ClanError("not_member", "이 가문의 멤버가 아니에요.");
+      throw new ClanError("not_member", "이 팬클럽의 멤버가 아니에요.");
     }
 
     const [clan] = await tx
@@ -379,14 +389,14 @@ export async function leaveClan(params: {
       .where(eq(clansTable.id, params.clanId))
       .for("update");
     if (!clan) {
-      throw new ClanError("not_found", "존재하지 않는 가문이에요.");
+      throw new ClanError("not_found", "존재하지 않는 팬클럽이에요.");
     }
 
     if (membership.role === "owner") {
       if (clan.memberCount > 1) {
         throw new ClanError(
           "owner_must_transfer",
-          "가문장은 다른 멤버에게 권한을 넘긴 후 탈퇴할 수 있습니다.",
+          "팬클럽장은 다른 멤버에게 권한을 넘긴 후 탈퇴할 수 있습니다.",
         );
       }
       // Last member who is the owner → delete the clan (cascades members).

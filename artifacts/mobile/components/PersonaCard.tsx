@@ -15,9 +15,17 @@ const ARCHETYPE_GRADIENT: Record<string, readonly [string, string, ...string[]]>
   entertainer: ["#F5A623", "#FB923C"],
   activist: ["#FB7185", "#F5A623"],
   observer: ["#64748B", "#94A3B8"],
+  calm_persuader: ["#4F7BF5", "#00B488"],
+  witty_communicator: ["#F5A623", "#7C5CFC"],
+  persuasive_speaker: ["#7C5CFC", "#4F7BF5"],
+  forming: ["#64748B", "#94A3B8"],
 };
 
 const DEFAULT_GRADIENT = ["#6E7CF0", "#5B6EE8"] as const;
+
+interface PersonaCardOntologyProfile {
+  confidence: number;
+}
 
 /**
  * Vertical, share-ready identity card. Pure presentation — it receives the
@@ -34,6 +42,8 @@ export function PersonaCard({
   avatarName: string;
 }) {
   const gradient = ARCHETYPE_GRADIENT[card.archetypeKey] ?? DEFAULT_GRADIENT;
+  const ontologyProfile = (card as PersonaCardData & { ontologyProfile?: PersonaCardOntologyProfile | null }).ontologyProfile ?? null;
+  const statusChip = ontologyProfile ? `신뢰도 ${ontologyProfile.confidence}%` : "동기화 오류";
 
   return (
     <LinearGradient
@@ -56,7 +66,7 @@ export function PersonaCard({
           </Text>
           <View style={styles.levelRow}>
             <View style={styles.levelChip}>
-              <Text style={styles.levelChipText}>Lv.{card.level}</Text>
+              <Text style={styles.levelChipText}>{statusChip}</Text>
             </View>
             <Text style={styles.title} numberOfLines={1}>
               {card.title}
@@ -96,7 +106,7 @@ export function PersonaCard({
 
       <View style={styles.divider} />
       <Text style={styles.motto}>“{card.motto}”</Text>
-      <Text style={styles.brand}>어나더 미</Text>
+      <Text style={styles.brand}>Another Me 동기화</Text>
     </LinearGradient>
   );
 }
@@ -119,11 +129,12 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: "rgba(255,255,255,0.25)",
   },
-  headerText: { flex: 1, gap: 6 },
+  headerText: { flex: 1, gap: 6, minWidth: 0 },
   name: { color: "#fff", fontSize: 18, fontFamily: "Inter_700Bold" },
   levelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   levelChip: {
     backgroundColor: "rgba(255,255,255,0.25)",
+    flexShrink: 0,
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 9,
@@ -137,21 +148,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     backgroundColor: "rgba(255,255,255,0.18)",
+    maxWidth: "100%",
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 12,
     marginTop: 18,
   },
-  archetypeText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+  archetypeText: { color: "#fff", flexShrink: 1, fontSize: 15, fontFamily: "Inter_700Bold" },
 
   traitRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 12 },
   traitChip: {
     backgroundColor: "rgba(255,255,255,0.14)",
+    flexShrink: 1,
+    maxWidth: "100%",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 9,
   },
-  traitText: { color: "rgba(255,255,255,0.95)", fontSize: 12, fontFamily: "Inter_500Medium" },
+  traitText: { color: "rgba(255,255,255,0.95)", flexShrink: 1, fontSize: 12, fontFamily: "Inter_500Medium", lineHeight: 17 },
 
   strengthsBlock: { marginTop: 18, gap: 8 },
   blockLabel: {
@@ -161,8 +175,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   strengthRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  strengthItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  strengthText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  strengthItem: { flexDirection: "row", alignItems: "center", flexShrink: 1, gap: 5, maxWidth: "100%" },
+  strengthText: { color: "#fff", flexShrink: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", lineHeight: 19 },
 
   divider: {
     height: StyleSheet.hairlineWidth,

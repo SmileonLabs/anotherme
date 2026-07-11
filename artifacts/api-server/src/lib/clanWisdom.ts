@@ -120,11 +120,11 @@ export async function getClanWisdom(opts: {
   const { clanId, meUserId } = opts;
 
   if (!(await clanExists(clanId))) {
-    throw new ClanWisdomError("not_found", "존재하지 않는 가문이에요.");
+    throw new ClanWisdomError("not_found", "존재하지 않는 팬클럽이에요.");
   }
   const membership = await getMembershipIn(clanId, meUserId);
   if (!membership) {
-    throw new ClanWisdomError("not_member", "가문 멤버만 가문의 지혜를 볼 수 있어요.");
+    throw new ClanWisdomError("not_member", "팬클럽 멤버만 팬클럽의 지혜를 볼 수 있어요.");
   }
 
   const [row] = await db
@@ -183,14 +183,14 @@ export async function generateClanWisdom(opts: {
   const { clanId, meUserId, log } = opts;
 
   if (!(await clanExists(clanId))) {
-    throw new ClanWisdomError("not_found", "존재하지 않는 가문이에요.");
+    throw new ClanWisdomError("not_found", "존재하지 않는 팬클럽이에요.");
   }
   const membership = await getMembershipIn(clanId, meUserId);
   if (!membership) {
-    throw new ClanWisdomError("not_member", "가문 멤버만 이용할 수 있어요.");
+    throw new ClanWisdomError("not_member", "팬클럽 멤버만 이용할 수 있어요.");
   }
   if (membership.role !== "owner" && membership.role !== "elder") {
-    throw new ClanWisdomError("forbidden", "가문장 또는 원로만 가문의 지혜를 갱신할 수 있어요.");
+    throw new ClanWisdomError("forbidden", "팬클럽장 또는 원로만 팬클럽의 지혜를 갱신할 수 있어요.");
   }
 
   // READ-ONLY inputs: memories (most recent, capped) + collective identity.
@@ -209,7 +209,7 @@ export async function generateClanWisdom(opts: {
   if (memories.length === 0) {
     throw new ClanWisdomError(
       "no_memories",
-      "가문 기억이 있어야 지혜를 생성할 수 있어요. 먼저 기억을 남겨주세요.",
+      "팬클럽 기억이 있어야 지혜를 생성할 수 있어요. 먼저 기억을 남겨주세요.",
     );
   }
 
@@ -217,7 +217,7 @@ export async function generateClanWisdom(opts: {
 
   const fields = await summarizeWisdom({ memories, identity, log });
   if (!fields) {
-    throw new ClanWisdomError("ai_failed", "가문의 지혜를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    throw new ClanWisdomError("ai_failed", "팬클럽의 지혜를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.");
   }
 
   const values = {
@@ -296,12 +296,12 @@ async function summarizeWisdom(opts: {
   const identityLine = identity
     ? `대표 성향: ${identity.dominantArchetypeLabel} / 강점: ${
         identity.topStrengths.join(", ") || "정보 없음"
-      } / 평균 레벨: ${identity.averageLevel} / 가문 레벨: ${identity.level} / 멤버 수: ${identity.memberCount}`
+      } / 평균 레벨: ${identity.averageLevel} / 팬클럽 레벨: ${identity.level} / 멤버 수: ${identity.memberCount}`
     : "집단 정체성 정보 없음";
 
   const system = [
-    "당신은 한국어 소셜 앱의 '가문(클랜)'을 위한 분석가입니다.",
-    "주어진 '가문 기억'과 '집단 정체성'만을 근거로 가문의 집단 지혜를 요약합니다.",
+    "당신은 한국어 소셜 앱의 '팬클럽'을 위한 분석가입니다.",
+    "주어진 '팬클럽 기억'과 '집단 정체성'만을 근거로 팬클럽의 집단 지혜를 요약합니다.",
     "규칙:",
     "1) 반드시 주어진 기억과 정체성에 근거해 추론하고, 없는 사실을 지어내지 마세요.",
     "2) 과장하거나 미화하지 말고 담백하고 구체적으로 작성하세요.",
@@ -312,7 +312,7 @@ async function summarizeWisdom(opts: {
   ].join("\n");
 
   const user = [
-    "## 가문 기억",
+    "## 팬클럽 기억",
     memoryLines || "(기록된 기억 없음)",
     "",
     "## 집단 정체성",

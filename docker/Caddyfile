@@ -1,0 +1,66 @@
+{
+  email support@anothermeai.app
+}
+
+(api_proxy) {
+  request_body {
+    max_size 30MB
+  }
+
+  reverse_proxy app-a:8080 app-b:8080 {
+    lb_policy least_conn
+    health_uri /api/healthz
+  }
+}
+
+anothermeai.app {
+  handle /api/* {
+    import api_proxy
+  }
+
+  handle /app {
+    redir * /app/ 308
+  }
+
+  @appAssetPaths path /app/_expo/static/* /app/assets/* /app/favicon.ico
+  handle @appAssetPaths {
+    root * /srv/app
+    uri strip_prefix /app
+    encode zstd gzip
+    header Cache-Control "public, max-age=31536000, immutable"
+    file_server
+  }
+
+  handle_path /app/* {
+    root * /srv/app
+    encode zstd gzip
+    header Cache-Control "no-cache"
+    try_files {path} /index.html
+    file_server
+  }
+
+  @downloadAssetPaths path /downloads/*
+  handle @downloadAssetPaths {
+    root * /srv/landing
+    header Cache-Control "no-store"
+    file_server
+  }
+
+  @landingAssetPaths path /assets/* /images/* /favicon.svg /apple-touch-icon.png /icon-*.png /manifest.webmanifest /robots.txt /sw.js /anotherme.pdf /opengraph.jpg
+  handle @landingAssetPaths {
+    root * /srv/landing
+    encode zstd gzip
+    file_server
+  }
+
+  handle {
+    root * /srv/landing
+    encode zstd gzip
+    try_files {path} /index.html
+    file_server
+  }
+}
+
+api.anothermeai.app {
+  import api_proxy
+}

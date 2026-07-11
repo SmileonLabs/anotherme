@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import express, { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
@@ -10,6 +10,12 @@ import { requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+function maxUploadBytes(contentType: string): number {
+  return contentType.startsWith("image/") ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+}
 
 /**
  * POST /storage/uploads/request-url
@@ -56,6 +62,59 @@ router.post("/storage/uploads/request-url", requireAuth, async (req: Request, re
     res.status(500).json({ error: "Failed to generate upload URL" });
   }
 });
+
+/**
+ * POST /storage/uploads/object
+ *
+ * Browser/PWA fallback for buckets that do not allow direct browser PUT CORS.
+ * Native clients still use presigned URLs; web uploads raw bytes to the API and
+ * the server writes the object with its S3 credentials.
+ */
+router.post(
+  "/storage/uploads/object",
+  requireAuth,
+  express.raw({ type: "*/*", limit: MAX_FILE_BYTES }),
+  async (req: Request, res: Response) => {
+    const size = Number(req.query.size);
+    const parsed = RequestUploadUrlBody.safeParse({
+      name: typeof req.query.name === "string" ? req.query.name : "upload",
+      size: Number.isFinite(size) ? size : 0,
+      contentType:
+        typeof req.query.contentType === "string"
+          ? req.query.contentType
+          : "application/octet-stream",
+    });
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing or invalid required fields" });
+      return;
+    }
+
+    const { name, contentType } = parsed.data;
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (body.length < 1) {
+      res.status(400).json({ error: "Missing upload body" });
+      return;
+    }
+
+    const max = maxUploadBytes(contentType);
+    if (body.length > max) {
+      res.status(400).json({
+        error: contentType.startsWith("image/")
+          ? "이미지 크기는 10MB를 초과할 수 없습니다."
+          : "파일 크기는 25MB를 초과할 수 없습니다.",
+      });
+      return;
+    }
+
+    try {
+      const objectPath = await objectStorageService.uploadObjectEntity(body, contentType);
+      res.json({ objectPath, metadata: { name, size: body.length, contentType } });
+    } catch (error) {
+      req.log.error({ err: error }, "Error uploading object via API");
+      res.status(500).json({ error: "Failed to upload object" });
+    }
+  },
+);
 
 /**
  * GET /storage/public-objects/*

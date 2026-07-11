@@ -13,9 +13,9 @@ import { usersTable } from "./users";
 /**
  * Quest & Achievement retention layer (Phase 12). This system NEVER produces new
  * domain activity — it only OBSERVES existing activity (xp_events, clan_memories,
- * clan_wars, persona) to compute progress, and grants Persona EXP rewards through
- * the growth engine using a dedicated, idempotent source_key. It must never modify
- * the existing Persona XP / Clan XP / Ranking / Clan War / Clan Memory logic.
+ * clan_wars, persona) to compute progress, and grants FAN XP rewards through the
+ * growth engine using a dedicated, idempotent source_key. It must never modify the
+ * existing Persona XP / Clan XP / Ranking / Clan War / Clan Memory logic.
  */
 
 /** daily | weekly */

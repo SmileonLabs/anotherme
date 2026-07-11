@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { MessageSummary } from './messageSummary';
 import type { PublicUser } from './publicUser';
 
 export interface ChatRoom {
@@ -18,6 +19,10 @@ export interface ChatRoom {
   lastMessage?: string | null;
   /** @nullable */
   lastMessageAt?: string | null;
+  lastMessageSeq?: number;
+  /** @nullable */
+  pinnedMessageId?: string | null;
+  pinnedMessage?: MessageSummary | null;
   unreadCount?: number;
   /** @nullable */
   firstUnreadMessageId?: string | null;

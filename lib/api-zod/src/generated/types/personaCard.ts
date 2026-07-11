@@ -5,16 +5,20 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
-import type { PersonaIdentityHistoryItem } from './personaIdentityHistoryItem';
+import type { PersonaCardSource } from './personaCardSource';
+import type { PersonaCardSyncState } from './personaCardSyncState';
+import type { PersonaCardSyncTimelineItem } from './personaCardSyncTimelineItem';
 
 export interface PersonaCard {
+  source: PersonaCardSource;
+  syncState: PersonaCardSyncState;
   name: string;
   level: number;
+  /** @nullable */
+  displayLevelLabel: string | null;
   title: string;
   archetype: string;
   archetypeKey: string;
-  /** @nullable */
-  personaSummary?: string | null;
   strengths: string[];
   weaknesses: string[];
   primaryTraits: string[];
@@ -22,5 +26,6 @@ export interface PersonaCard {
   motto: string;
   /** @nullable */
   houseName?: string | null;
-  history: PersonaIdentityHistoryItem[];
+  nextActions: string[];
+  syncTimeline: PersonaCardSyncTimelineItem[];
 }

@@ -48,6 +48,8 @@ function handleClanError(res: import("express").Response, err: unknown): boolean
         ? 404
         : err.code === "already_in_clan" || err.code === "name_taken"
           ? 409
+          : err.code === "torimia_required"
+            ? 403
           : err.code === "owner_must_transfer"
             ? 403
             : err.code === "not_member"
@@ -116,7 +118,7 @@ router.get("/clans/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const detail = await getClanDetail(id);
   if (!detail) {
-    res.status(404).json({ error: "not_found", message: "존재하지 않는 가문이에요." });
+    res.status(404).json({ error: "not_found", message: "존재하지 않는 팬클럽이에요." });
     return;
   }
   res.json(detail);
@@ -134,7 +136,7 @@ const createBodySchema = z.object({
 router.post("/clans", requireAuth, async (req, res): Promise<void> => {
   const parsed = createBodySchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "invalid", message: "가문 이름은 2~20자로 입력해 주세요." });
+    res.status(400).json({ error: "invalid", message: "팬클럽 이름은 2~20자로 입력해 주세요." });
     return;
   }
   try {
@@ -150,7 +152,7 @@ router.post("/clans", requireAuth, async (req, res): Promise<void> => {
   } catch (err) {
     if (handleClanError(res, err)) return;
     req.log.error({ err }, "createClan failed");
-    res.status(500).json({ error: "internal", message: "가문 생성에 실패했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 생성에 실패했어요." });
   }
 });
 
@@ -159,7 +161,7 @@ router.get("/clans/:id/identity", requireAuth, async (req, res): Promise<void> =
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const identity = await getClanIdentity(id);
   if (!identity) {
-    res.status(404).json({ error: "not_found", message: "존재하지 않는 가문이에요." });
+    res.status(404).json({ error: "not_found", message: "존재하지 않는 팬클럽이에요." });
     return;
   }
   res.json(identity);
@@ -174,7 +176,7 @@ router.post("/clans/:id/join", requireAuth, async (req, res): Promise<void> => {
   } catch (err) {
     if (handleClanError(res, err)) return;
     req.log.error({ err }, "joinClan failed");
-    res.status(500).json({ error: "internal", message: "가문 가입에 실패했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 가입에 실패했어요." });
   }
 });
 
@@ -187,7 +189,7 @@ router.post("/clans/:id/leave", requireAuth, async (req, res): Promise<void> => 
   } catch (err) {
     if (handleClanError(res, err)) return;
     req.log.error({ err }, "leaveClan failed");
-    res.status(500).json({ error: "internal", message: "가문 탈퇴에 실패했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 탈퇴에 실패했어요." });
   }
 });
 
@@ -215,7 +217,7 @@ router.get("/clans/:id/wisdom", requireAuth, async (req, res): Promise<void> => 
   } catch (err) {
     if (handleClanWisdomError(res, err)) return;
     req.log.error({ err }, "getClanWisdom failed");
-    res.status(500).json({ error: "internal", message: "가문의 지혜를 불러오지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽의 지혜를 불러오지 못했어요." });
   }
 });
 
@@ -232,7 +234,7 @@ router.post("/clans/:id/wisdom/generate", requireAuth, async (req, res): Promise
   } catch (err) {
     if (handleClanWisdomError(res, err)) return;
     req.log.error({ err }, "generateClanWisdom failed");
-    res.status(500).json({ error: "internal", message: "가문의 지혜를 생성하지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽의 지혜를 생성하지 못했어요." });
   }
 });
 
@@ -277,7 +279,7 @@ router.get("/clans/:id/memories", requireAuth, async (req, res): Promise<void> =
   } catch (err) {
     if (handleClanMemoryError(res, err)) return;
     req.log.error({ err }, "listClanMemories failed");
-    res.status(500).json({ error: "internal", message: "가문 기억을 불러오지 못했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 기억을 불러오지 못했어요." });
   }
 });
 
@@ -315,7 +317,7 @@ router.post("/clans/:id/memories", requireAuth, async (req, res): Promise<void> 
   } catch (err) {
     if (handleClanMemoryError(res, err)) return;
     req.log.error({ err }, "createClanMemory failed");
-    res.status(500).json({ error: "internal", message: "가문 기억 저장에 실패했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 기억 저장에 실패했어요." });
   }
 });
 
@@ -335,7 +337,7 @@ router.delete("/clans/:id/memories/:memoryId", requireAuth, async (req, res): Pr
   } catch (err) {
     if (handleClanMemoryError(res, err)) return;
     req.log.error({ err }, "deleteClanMemory failed");
-    res.status(500).json({ error: "internal", message: "가문 기억 삭제에 실패했어요." });
+    res.status(500).json({ error: "internal", message: "팬클럽 기억 삭제에 실패했어요." });
   }
 });
 

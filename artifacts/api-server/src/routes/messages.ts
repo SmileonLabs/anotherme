@@ -1,52 +1,294 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { chatRoomMembersTable, chatRoomsTable, messagesTable, usersTable } from "@workspace/db";
+import {
+  chatRoomMembersTable,
+  chatRoomsTable,
+  messageDeletionsTable,
+  messageLinkPreviewsTable,
+  messageStickersTable,
+  messagesTable,
+  usersTable,
+} from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { scheduleLinkPreview } from "../lib/linkPreview";
 import { sendPushToUsers } from "../lib/push";
 import { getTypingUserIds, markTyping } from "../lib/typing";
 import { runDungeonTurn } from "../lib/dungeon";
-import { recordActivity } from "../lib/growth";
+import { publishRealtimeEvent } from "../lib/realtime";
+import { handleAnotherMeAfterUserMessage } from "../lib/anotherMe";
+import { enqueueChatKnowledgeCandidateFromMessage } from "../lib/chatKnowledge";
+import {
+  advanceMemberReadSeq,
+  allocateRoomMessageSeq,
+  getMessageReadTarget,
+  getRoomMemberReadSeqs,
+  setMemberReadSeq,
+  type ReadTarget,
+} from "../lib/readReceipts";
 
 const router: IRouter = Router();
 
 // Sticker content is a Noto codepoint: lowercase hex groups joined by "_"
 // (e.g. "1f600", "2764_fe0f"). Anything else is rejected.
 const STICKER_CODE_PATTERN = /^[0-9a-f]+(_[0-9a-f]+)*$/;
+const FORWARDABLE_TYPES = new Set(["text", "image", "file", "sticker"]);
+
+type RoomRealtimeType = "message.created" | "message.updated" | "message.read" | "typing.updated" | "room.updated";
+
+type DbMessage = typeof messagesTable.$inferSelect;
+type DbUser = typeof usersTable.$inferSelect;
+
+interface PublicUserPayload {
+  id: string;
+  email: string;
+  nickname: string;
+  profileImageUrl: string | null;
+  statusMessage: string | null;
+}
+
+interface MessagePayload {
+  id: string;
+  roomId: string;
+  roomSeq: number;
+  senderId: string;
+  authorKind: string;
+  type: string;
+  content: string;
+  replyToMessageId: string | null;
+  anotherMeSessionId: string | null;
+  metadata: Record<string, unknown> | null;
+  deletedAt: string | null;
+  createdAt: string;
+  readCount: number;
+  sender: PublicUserPayload | null;
+  replyTo: {
+    id: string;
+    senderId: string;
+    senderName: string | null;
+    type: string;
+    content: string;
+    deletedAt: string | null;
+  } | null;
+  stickerBadges: Array<{
+    id: string;
+    code: string;
+    userId: string;
+    createdAt: string;
+    user: PublicUserPayload | null;
+  }>;
+  linkPreview: {
+    url: string;
+    domain: string | null;
+    title: string | null;
+    description: string | null;
+    imageUrl: string | null;
+  } | null;
+}
+
+function toPublicUser(user: DbUser | undefined): PublicUserPayload | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    nickname: user.nickname,
+    profileImageUrl: user.profileImageUrl ?? null,
+    statusMessage: user.statusMessage ?? null,
+  };
+}
+
+function previewForMessage(type: string, content: string): string {
+  return type === "image"
+    ? "사진"
+    : type === "sticker"
+      ? "스티커"
+      : type === "file"
+        ? "파일"
+        : content;
+}
+
+function replyPreviewContent(message: DbMessage): string {
+  if (message.deletedAt) return "삭제된 메시지";
+  return previewForMessage(message.type, message.content);
+}
+
+async function serializeMessages(
+  messages: DbMessage[],
+  viewerUserId: string,
+  memberReadSeqs: Array<{ userId: string; lastReadSeq: number; isReadReceiptParticipant: boolean }>,
+): Promise<MessagePayload[]> {
+  if (messages.length === 0) return [];
+
+  const messageIds = messages.map((m) => m.id);
+  const replyIds = Array.from(
+    new Set(messages.map((m) => m.replyToMessageId).filter((id): id is string => !!id)),
+  );
+  const [deletedRows, replyRows, stickerRows, linkRows] = await Promise.all([
+    db
+      .select({ messageId: messageDeletionsTable.messageId })
+      .from(messageDeletionsTable)
+      .where(
+        and(
+          inArray(messageDeletionsTable.messageId, [...messageIds, ...replyIds]),
+          eq(messageDeletionsTable.userId, viewerUserId),
+        ),
+      ),
+    replyIds.length > 0
+      ? db.select().from(messagesTable).where(inArray(messagesTable.id, replyIds))
+      : Promise.resolve([]),
+    db.select().from(messageStickersTable).where(inArray(messageStickersTable.messageId, messageIds)),
+    db.select().from(messageLinkPreviewsTable).where(inArray(messageLinkPreviewsTable.messageId, messageIds)),
+  ]);
+
+  const deletedForViewer = new Set(deletedRows.map((row) => row.messageId));
+  const replyById = new Map(replyRows.map((row) => [row.id, row]));
+  const stickersByMessage = new Map<string, typeof stickerRows>();
+  for (const sticker of stickerRows) {
+    const list = stickersByMessage.get(sticker.messageId) ?? [];
+    list.push(sticker);
+    stickersByMessage.set(sticker.messageId, list);
+  }
+  const linkByMessage = new Map(linkRows.map((row) => [row.messageId, row]));
+
+  const userIds = new Set<string>();
+  for (const message of messages) userIds.add(message.senderId);
+  for (const reply of replyRows) userIds.add(reply.senderId);
+  for (const sticker of stickerRows) userIds.add(sticker.userId);
+  const users = userIds.size > 0
+    ? await db.select().from(usersTable).where(inArray(usersTable.id, Array.from(userIds)))
+    : [];
+  const userById = new Map(users.map((user) => [user.id, user]));
+
+  return messages
+    .filter((message) => !deletedForViewer.has(message.id))
+    .map((message) => {
+      const deleted = !!message.deletedAt;
+      const readCount = memberReadSeqs.filter(
+        (mr) => mr.isReadReceiptParticipant && mr.userId !== message.senderId && mr.lastReadSeq >= message.roomSeq,
+      ).length;
+      const reply = message.replyToMessageId ? replyById.get(message.replyToMessageId) : null;
+      const replyDeletedForViewer = reply ? deletedForViewer.has(reply.id) : false;
+      const link = linkByMessage.get(message.id);
+      return {
+        id: message.id,
+        roomId: message.roomId,
+        roomSeq: message.roomSeq,
+        senderId: message.senderId,
+        authorKind: message.authorKind ?? "user",
+        type: message.type,
+        content: deleted ? "" : message.content,
+        replyToMessageId: message.replyToMessageId ?? null,
+        anotherMeSessionId: message.anotherMeSessionId ?? null,
+        metadata: (message.metadata as Record<string, unknown> | null | undefined) ?? null,
+        deletedAt: message.deletedAt?.toISOString() ?? null,
+        createdAt: message.createdAt.toISOString(),
+        readCount,
+        sender: toPublicUser(userById.get(message.senderId)),
+        replyTo: reply
+          ? {
+              id: reply.id,
+              senderId: reply.senderId,
+              senderName: userById.get(reply.senderId)?.nickname ?? null,
+              type: reply.type,
+              content: replyDeletedForViewer ? "삭제된 메시지" : replyPreviewContent(reply),
+              deletedAt: reply.deletedAt?.toISOString() ?? null,
+            }
+          : null,
+        stickerBadges: (stickersByMessage.get(message.id) ?? []).map((sticker) => ({
+          id: sticker.id,
+          code: sticker.code,
+          userId: sticker.userId,
+          createdAt: sticker.createdAt.toISOString(),
+          user: toPublicUser(userById.get(sticker.userId)),
+        })),
+        linkPreview:
+          !deleted && link?.status === "ready"
+            ? {
+                url: link.url,
+                domain: link.domain ?? null,
+                title: link.title ?? null,
+                description: link.description ?? null,
+                imageUrl: link.imageUrl ?? null,
+              }
+            : null,
+      };
+    });
+}
+
+async function serializeMessage(
+  message: DbMessage,
+  viewerUserId: string,
+  memberReadSeqs: Array<{ userId: string; lastReadSeq: number; isReadReceiptParticipant: boolean }>,
+): Promise<MessagePayload> {
+  const [serialized] = await serializeMessages([message], viewerUserId, memberReadSeqs);
+  return serialized;
+}
+
+async function getRoomUserIds(roomId: string): Promise<string[]> {
+  const members = await db
+    .select({ userId: chatRoomMembersTable.userId })
+    .from(chatRoomMembersTable)
+    .where(eq(chatRoomMembersTable.roomId, roomId));
+  return members.map((m) => m.userId);
+}
+
+async function publishRoomRealtimeEvent(
+  roomId: string,
+  actorUserId: string,
+  type: RoomRealtimeType,
+  data?: Record<string, unknown>,
+): Promise<void> {
+  const userIds = await getRoomUserIds(roomId);
+  if (!userIds.includes(actorUserId)) return;
+  await publishRealtimeEvent({ type, roomId, actorUserId, userIds, data });
+}
+
+function dispatchMessageRealtimeAndPush(args: {
+  roomId: string;
+  actorUserId: string;
+  message: DbMessage;
+  sender: DbUser | undefined;
+  preview: string;
+  log: { error: (obj: unknown, msg?: string) => void };
+}): void {
+  const { roomId, actorUserId, message, sender, preview, log } = args;
+  void (async () => {
+    try {
+      const members = await db
+        .select({ userId: chatRoomMembersTable.userId })
+        .from(chatRoomMembersTable)
+        .where(eq(chatRoomMembersTable.roomId, roomId));
+      const userIds = members.map((m) => m.userId);
+      await publishRealtimeEvent({
+        type: "message.created",
+        roomId,
+        actorUserId,
+        userIds,
+        data: { messageId: message.id, messageType: message.type, roomSeq: message.roomSeq },
+      });
+      const recipients = userIds.filter((id) => id !== actorUserId);
+      if (recipients.length === 0) return;
+      await sendPushToUsers(recipients, {
+        title: sender?.nickname ?? "새 메시지",
+        body: preview.length > 80 ? `${preview.slice(0, 80)}...` : preview,
+        url: `/chat/${roomId}`,
+        tag: `room-${roomId}`,
+      });
+    } catch (err) {
+      log.error({ err }, "Failed to dispatch message push");
+    }
+  })();
+}
 
 // Monotonically advance a member's read pointer toward `target`, NEVER moving it
-// backward. Row-locks the member (FOR UPDATE) so the three writers — sending a
-// message, PATCH /read, and the typing heartbeat — serialize instead of
-// clobbering each other with stale snapshots. A backward write would regress the
-// pointer and desync unreadCount / message readCount (both keyed off its
-// timestamp). No-op when there's nothing newer to advance to.
+// backward. Read state is seq-based (`roomSeq` / `lastReadSeq`) so equal
+// timestamps can never skew unread/read-count computation.
 async function advanceReadPointer(
   roomId: string,
   userId: string,
-  target: { id: string; createdAt: Date },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [m] = await tx
-      .select({ lastReadMessageId: chatRoomMembersTable.lastReadMessageId })
-      .from(chatRoomMembersTable)
-      .where(and(eq(chatRoomMembersTable.roomId, roomId), eq(chatRoomMembersTable.userId, userId)))
-      .for("update");
-    if (!m) return;
-    if (m.lastReadMessageId === target.id) return;
-    let currentReadAt = 0;
-    if (m.lastReadMessageId) {
-      const [cur] = await tx
-        .select({ createdAt: messagesTable.createdAt })
-        .from(messagesTable)
-        .where(eq(messagesTable.id, m.lastReadMessageId));
-      currentReadAt = cur ? cur.createdAt.getTime() : 0;
-    }
-    if (target.createdAt.getTime() <= currentReadAt) return;
-    await tx
-      .update(chatRoomMembersTable)
-      .set({ lastReadMessageId: target.id })
-      .where(and(eq(chatRoomMembersTable.roomId, roomId), eq(chatRoomMembersTable.userId, userId)));
-  });
+  target: ReadTarget,
+): Promise<boolean> {
+  return advanceMemberReadSeq(roomId, userId, target);
 }
 
 router.get("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> => {
@@ -66,52 +308,22 @@ router.get("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> =
   const messages = await db
     .select()
     .from(messagesTable)
-    .where(eq(messagesTable.roomId, raw))
+    .where(
+      and(
+        eq(messagesTable.roomId, raw),
+        sql`NOT EXISTS (
+          SELECT 1
+          FROM message_deletions AS md
+          WHERE md.message_id = ${messagesTable.id}
+            AND md.user_id = ${userId}
+        )`,
+      ),
+    )
     .orderBy(desc(messagesTable.createdAt))
     .limit(50);
 
-  // Resolve each member's read position (the createdAt of their lastReadMessageId)
-  // so we can compute, per message, how many *other* members have read it.
-  const members = await db
-    .select({ userId: chatRoomMembersTable.userId, lastReadMessageId: chatRoomMembersTable.lastReadMessageId })
-    .from(chatRoomMembersTable)
-    .where(eq(chatRoomMembersTable.roomId, raw));
-
-  const readIds = members.map((m) => m.lastReadMessageId).filter((x): x is string => !!x);
-  const readAtById = new Map<string, number>();
-  if (readIds.length > 0) {
-    const readMsgs = await db
-      .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
-      .from(messagesTable)
-      .where(and(eq(messagesTable.roomId, raw), inArray(messagesTable.id, readIds)));
-    for (const rm of readMsgs) readAtById.set(rm.id, rm.createdAt.getTime());
-  }
-  const memberReadAt = members.map((m) => ({
-    userId: m.userId,
-    readAt: m.lastReadMessageId ? (readAtById.get(m.lastReadMessageId) ?? 0) : 0,
-  }));
-
-  const result = await Promise.all(
-    messages.map(async (m) => {
-      const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, m.senderId));
-      const createdMs = m.createdAt.getTime();
-      const readCount = memberReadAt.filter(
-        (mr) => mr.userId !== m.senderId && mr.readAt >= createdMs,
-      ).length;
-      return {
-        id: m.id,
-        roomId: m.roomId,
-        senderId: m.senderId,
-        type: m.type,
-        content: m.content,
-        createdAt: m.createdAt.toISOString(),
-        readCount,
-        sender: sender
-          ? { id: sender.id, email: sender.email, nickname: sender.nickname, profileImageUrl: sender.profileImageUrl ?? null, statusMessage: sender.statusMessage ?? null }
-          : null,
-      };
-    }),
-  );
+  const memberReadSeqs = await getRoomMemberReadSeqs(raw);
+  const result = await serializeMessages(messages, userId, memberReadSeqs);
 
   res.json(result.reverse());
 });
@@ -130,9 +342,13 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
     return;
   }
 
-  const { content, type = "text" } = req.body;
+  const { content, type = "text", replyToMessageId } = req.body;
   if (!content) {
     res.status(400).json({ error: "content required" });
+    return;
+  }
+  if (typeof content !== "string" || typeof type !== "string") {
+    res.status(400).json({ error: "invalid message" });
     return;
   }
 
@@ -172,66 +388,61 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
     }
   }
 
+  let replyTo: string | null = null;
+  if (replyToMessageId !== undefined && replyToMessageId !== null) {
+    if (typeof replyToMessageId !== "string") {
+      res.status(400).json({ error: "invalid replyToMessageId" });
+      return;
+    }
+    const [replyMessage] = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.id, replyToMessageId), eq(messagesTable.roomId, raw)));
+    if (!replyMessage) {
+      res.status(400).json({ error: "reply target not in room" });
+      return;
+    }
+    replyTo = replyToMessageId;
+  }
+
   // For non-text messages the content holds an opaque value (image object path,
   // sticker code, or file metadata), so room previews and push notifications
   // use a label.
-  const preview =
-    type === "image"
-      ? "사진"
-      : type === "sticker"
-        ? "스티커"
-        : type === "file"
-          ? "파일"
-          : content;
+  const preview = previewForMessage(type, content);
 
-  const [message] = await db
-    .insert(messagesTable)
-    .values({ roomId: raw, senderId: userId, content, type })
-    .returning();
+  const message = await db.transaction(async (tx) => {
+    const roomSeq = await allocateRoomMessageSeq(tx, raw);
+    const [created] = await tx
+      .insert(messagesTable)
+      .values({ roomId: raw, senderId: userId, content, type, replyToMessageId: replyTo, roomSeq })
+      .returning();
 
-  await db
-    .update(chatRoomsTable)
-    .set({ lastMessage: preview, lastMessageAt: new Date() })
-    .where(eq(chatRoomsTable.id, raw));
+    await tx
+      .update(chatRoomsTable)
+      .set({ lastMessage: preview, lastMessageAt: new Date() })
+      .where(eq(chatRoomsTable.id, raw));
 
-  // A new message resurfaces the room for anyone who previously hid (left) it.
-  await db
-    .update(chatRoomMembersTable)
-    .set({ hiddenAt: null })
-    .where(eq(chatRoomMembersTable.roomId, raw));
+    // A new message resurfaces the room for anyone who previously hid (left) it.
+    await tx
+      .update(chatRoomMembersTable)
+      .set({ hiddenAt: null })
+      .where(eq(chatRoomMembersTable.roomId, raw));
 
-  // The sender has implicitly read their own message — advance their read marker
-  // so it never counts as unread (prevents self-notifications across devices).
-  await advanceReadPointer(raw, userId, { id: message.id, createdAt: message.createdAt });
+    // The sender has implicitly read their own message — advance their read marker
+    // so it never counts as unread (prevents self-notifications across devices).
+    await setMemberReadSeq(tx, raw, userId, { id: created.id, roomSeq });
+    return created;
+  });
 
   const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   const [room] = await db
     .select({ type: chatRoomsTable.type })
     .from(chatRoomsTable)
     .where(eq(chatRoomsTable.id, raw));
+  const memberReadSeqs = await getRoomMemberReadSeqs(raw);
+  const payload = await serializeMessage(message, userId, memberReadSeqs);
 
-  res.status(201).json({
-    id: message.id,
-    roomId: message.roomId,
-    senderId: message.senderId,
-    type: message.type,
-    content: message.content,
-    createdAt: message.createdAt.toISOString(),
-    readCount: 0,
-    sender: sender
-      ? { id: sender.id, email: sender.email, nickname: sender.nickname, profileImageUrl: sender.profileImageUrl ?? null, statusMessage: sender.statusMessage ?? null }
-      : null,
-  });
-
-  // Grow the sender's Another Me persona from this chat activity. Fire-and-forget
-  // and self-isolated: growth tracking must never affect message delivery.
-  void recordActivity({
-    userId,
-    kind: "chat_message",
-    sourceId: message.id,
-    sourceKey: `chat:${message.id}:${userId}`,
-    log: req.log,
-  });
+  res.status(201).json(payload);
 
   // In a dungeon room, a player's text message is an in-game action: let the
   // AI Dungeon Master respond (fire-and-forget, serialized per room).
@@ -243,25 +454,297 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
     ).catch((err) => req.log.error({ err, roomId: raw }, "Dungeon turn failed"));
   }
 
-  // Fire-and-forget push notification to other room members
-  void (async () => {
-    try {
-      const members = await db
-        .select({ userId: chatRoomMembersTable.userId })
-        .from(chatRoomMembersTable)
-        .where(eq(chatRoomMembersTable.roomId, raw));
-      const recipients = members.map((m) => m.userId).filter((id) => id !== userId);
-      if (recipients.length === 0) return;
-      await sendPushToUsers(recipients, {
-        title: sender?.nickname ?? "새 메시지",
-        body: preview.length > 80 ? `${preview.slice(0, 80)}…` : preview,
-        url: `/chat/${raw}`,
-        tag: `room-${raw}`,
-      });
-    } catch (err) {
-      req.log.error({ err }, "Failed to dispatch message push");
+  if (type === "text") {
+    void scheduleLinkPreview(raw, message.id, content, userId, req.log).catch((err) =>
+      req.log.error({ err, roomId: raw, messageId: message.id }, "Failed to schedule link preview"),
+    );
+
+    void enqueueChatKnowledgeCandidateFromMessage({
+      messageId: message.id,
+      roomId: raw,
+      roomType: room?.type,
+      senderUserId: userId,
+      content,
+      log: req.log,
+    });
+  }
+
+  if (room?.type === "direct" && type === "text") {
+    void handleAnotherMeAfterUserMessage({ roomId: raw, senderUserId: userId, content, log: req.log }).catch((err) =>
+      req.log.error({ err, roomId: raw, messageId: message.id }, "Another Me message hook failed"),
+    );
+  }
+
+  dispatchMessageRealtimeAndPush({
+    roomId: raw,
+    actorUserId: userId,
+    message,
+    sender,
+    preview,
+    log: req.log,
+  });
+});
+
+router.post("/rooms/:id/messages/:messageId/delete", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
+  const scope = req.body?.scope ?? "me";
+
+  if (scope !== "me" && scope !== "everyone") {
+    res.status(400).json({ error: "invalid scope" });
+    return;
+  }
+
+  const [member] = await db
+    .select({ id: chatRoomMembersTable.id })
+    .from(chatRoomMembersTable)
+    .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)));
+  if (!member) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
+  const [message] = await db
+    .select()
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, raw)));
+  if (!message) {
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+
+  if (scope === "everyone") {
+    if (message.senderId !== userId) {
+      res.status(403).json({ error: "Only the sender can delete for everyone" });
+      return;
     }
-  })();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(messagesTable)
+        .set({ deletedAt: new Date() })
+        .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, raw)));
+
+      const [room] = await tx
+        .select({ lastMessageSeq: chatRoomsTable.lastMessageSeq, pinnedMessageId: chatRoomsTable.pinnedMessageId })
+        .from(chatRoomsTable)
+        .where(eq(chatRoomsTable.id, raw));
+      if (room?.pinnedMessageId === messageId) {
+        await tx
+          .update(chatRoomsTable)
+          .set({ pinnedMessageId: null })
+          .where(eq(chatRoomsTable.id, raw));
+      }
+      if (room?.lastMessageSeq === message.roomSeq) {
+        await tx
+          .update(chatRoomsTable)
+          .set({ lastMessage: "삭제된 메시지", lastMessageAt: new Date() })
+          .where(eq(chatRoomsTable.id, raw));
+      }
+    });
+
+    void publishRoomRealtimeEvent(raw, userId, "message.updated", { messageId, scope }).catch((err) =>
+      req.log.error({ err, roomId: raw, messageId }, "Failed to publish delete realtime event"),
+    );
+    void publishRoomRealtimeEvent(raw, userId, "room.updated", { messageId }).catch((err) =>
+      req.log.error({ err, roomId: raw, messageId }, "Failed to publish room realtime event"),
+    );
+    res.sendStatus(204);
+    return;
+  }
+
+  await db
+    .insert(messageDeletionsTable)
+    .values({ messageId, userId })
+    .onConflictDoNothing();
+  void publishRealtimeEvent({
+    type: "message.updated",
+    roomId: raw,
+    actorUserId: userId,
+    userIds: [userId],
+    data: { messageId, scope },
+  }).catch((err) => req.log.error({ err, roomId: raw, messageId }, "Failed to publish personal delete realtime event"));
+  res.sendStatus(204);
+});
+
+router.post("/rooms/:id/pin", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { messageId } = req.body ?? {};
+
+  if (typeof messageId !== "string") {
+    res.status(400).json({ error: "messageId required" });
+    return;
+  }
+
+  const [member] = await db
+    .select({ id: chatRoomMembersTable.id })
+    .from(chatRoomMembersTable)
+    .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)));
+  if (!member) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
+  const [message] = await db
+    .select({ id: messagesTable.id, deletedAt: messagesTable.deletedAt })
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, raw)));
+  if (!message || message.deletedAt) {
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+
+  await db.update(chatRoomsTable).set({ pinnedMessageId: messageId }).where(eq(chatRoomsTable.id, raw));
+  void publishRoomRealtimeEvent(raw, userId, "room.updated", { pinnedMessageId: messageId }).catch((err) =>
+    req.log.error({ err, roomId: raw, messageId }, "Failed to publish pin realtime event"),
+  );
+  res.sendStatus(204);
+});
+
+router.delete("/rooms/:id/pin", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const [member] = await db
+    .select({ id: chatRoomMembersTable.id })
+    .from(chatRoomMembersTable)
+    .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)));
+  if (!member) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
+  await db.update(chatRoomsTable).set({ pinnedMessageId: null }).where(eq(chatRoomsTable.id, raw));
+  void publishRoomRealtimeEvent(raw, userId, "room.updated", { pinnedMessageId: null }).catch((err) =>
+    req.log.error({ err, roomId: raw }, "Failed to publish unpin realtime event"),
+  );
+  res.sendStatus(204);
+});
+
+router.post("/rooms/:id/messages/:messageId/forward", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const sourceRoomId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
+  const { targetRoomId } = req.body ?? {};
+
+  if (typeof targetRoomId !== "string") {
+    res.status(400).json({ error: "targetRoomId required" });
+    return;
+  }
+
+  const [sourceMember, targetMember] = await Promise.all([
+    db
+      .select({ id: chatRoomMembersTable.id })
+      .from(chatRoomMembersTable)
+      .where(and(eq(chatRoomMembersTable.roomId, sourceRoomId), eq(chatRoomMembersTable.userId, userId))),
+    db
+      .select({ id: chatRoomMembersTable.id })
+      .from(chatRoomMembersTable)
+      .where(and(eq(chatRoomMembersTable.roomId, targetRoomId), eq(chatRoomMembersTable.userId, userId))),
+  ]);
+  if (!sourceMember[0] || !targetMember[0]) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
+  const [source] = await db
+    .select()
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, sourceRoomId)));
+  if (!source || source.deletedAt || !FORWARDABLE_TYPES.has(source.type)) {
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+  const [deletedForMe] = await db
+    .select({ id: messageDeletionsTable.id })
+    .from(messageDeletionsTable)
+    .where(and(eq(messageDeletionsTable.messageId, messageId), eq(messageDeletionsTable.userId, userId)));
+  if (deletedForMe) {
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+
+  const preview = previewForMessage(source.type, source.content);
+  const message = await db.transaction(async (tx) => {
+    const roomSeq = await allocateRoomMessageSeq(tx, targetRoomId);
+    const [created] = await tx
+      .insert(messagesTable)
+      .values({ roomId: targetRoomId, senderId: userId, content: source.content, type: source.type, roomSeq })
+      .returning();
+    await tx
+      .update(chatRoomsTable)
+      .set({ lastMessage: preview, lastMessageAt: new Date() })
+      .where(eq(chatRoomsTable.id, targetRoomId));
+    await tx
+      .update(chatRoomMembersTable)
+      .set({ hiddenAt: null })
+      .where(eq(chatRoomMembersTable.roomId, targetRoomId));
+    await setMemberReadSeq(tx, targetRoomId, userId, { id: created.id, roomSeq });
+    return created;
+  });
+
+  const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  const memberReadSeqs = await getRoomMemberReadSeqs(targetRoomId);
+  const payload = await serializeMessage(message, userId, memberReadSeqs);
+  res.status(201).json(payload);
+
+  if (source.type === "text") {
+    void scheduleLinkPreview(targetRoomId, message.id, source.content, userId, req.log).catch((err) =>
+      req.log.error({ err, roomId: targetRoomId, messageId: message.id }, "Failed to schedule forwarded link preview"),
+    );
+  }
+  dispatchMessageRealtimeAndPush({
+    roomId: targetRoomId,
+    actorUserId: userId,
+    message,
+    sender,
+    preview,
+    log: req.log,
+  });
+});
+
+router.post("/rooms/:id/messages/:messageId/sticker", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
+  const { code } = req.body ?? {};
+
+  if (typeof code !== "string" || !STICKER_CODE_PATTERN.test(code)) {
+    res.status(400).json({ error: "invalid sticker" });
+    return;
+  }
+
+  const [member] = await db
+    .select({ id: chatRoomMembersTable.id })
+    .from(chatRoomMembersTable)
+    .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)));
+  if (!member) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
+  const [message] = await db
+    .select({ id: messagesTable.id, deletedAt: messagesTable.deletedAt })
+    .from(messagesTable)
+    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, raw)));
+  if (!message || message.deletedAt) {
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+
+  const now = new Date();
+  await db
+    .insert(messageStickersTable)
+    .values({ messageId, userId, code, createdAt: now })
+    .onConflictDoUpdate({
+      target: [messageStickersTable.messageId, messageStickersTable.userId],
+      set: { code, createdAt: now },
+    });
+  void publishRoomRealtimeEvent(raw, userId, "message.updated", { messageId }).catch((err) =>
+    req.log.error({ err, roomId: raw, messageId }, "Failed to publish sticker realtime event"),
+  );
+  res.sendStatus(204);
 });
 
 router.patch("/rooms/:id/read", requireAuth, async (req, res): Promise<void> => {
@@ -273,19 +756,28 @@ router.patch("/rooms/:id/read", requireAuth, async (req, res): Promise<void> => 
     return;
   }
 
+  const [member] = await db
+    .select({ id: chatRoomMembersTable.id })
+    .from(chatRoomMembersTable)
+    .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)));
+  if (!member) {
+    res.status(403).json({ error: "Not a member" });
+    return;
+  }
+
   // The read marker must point at a message that actually belongs to this room,
   // otherwise a cross-room id would corrupt readCount computation elsewhere.
-  const [msg] = await db
-    .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
-    .from(messagesTable)
-    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, raw)));
-  if (!msg) {
+  const target = await getMessageReadTarget(raw, messageId);
+  if (!target) {
     res.status(400).json({ error: "messageId not in room" });
     return;
   }
 
   // Monotonic advance only — a stale poll cycle must never regress the pointer.
-  await advanceReadPointer(raw, userId, msg);
+  const changed = await advanceReadPointer(raw, userId, target);
+  if (changed) void publishRoomRealtimeEvent(raw, userId, "message.read", { messageId, lastReadSeq: target.roomSeq }).catch((err) =>
+    req.log.error({ err, roomId: raw, messageId }, "Failed to publish read realtime event"),
+  );
   res.sendStatus(204);
 });
 
@@ -303,19 +795,14 @@ router.post("/rooms/:id/typing", requireAuth, async (req, res): Promise<void> =>
     return;
   }
 
-  markTyping(raw, userId);
+  await markTyping(raw, userId);
 
-  // Typing means the user is actively present in the room, so treat everything
-  // as read. Without this, "입력 중" could coexist with an "안읽음" receipt on the
-  // other side (the typer is clearly in the room yet hadn't marked read). Advance
-  // (monotonically) to the latest message; the helper no-ops if already current.
-  const [latest] = await db
-    .select({ id: messagesTable.id, createdAt: messagesTable.createdAt })
-    .from(messagesTable)
-    .where(eq(messagesTable.roomId, raw))
-    .orderBy(desc(messagesTable.createdAt))
-    .limit(1);
-  if (latest) await advanceReadPointer(raw, userId, latest);
+  // Typing is only a presence/UX signal. Do not advance read receipts here:
+  // an AI/persona reply or background composer heartbeat must never make the
+  // other side look like they read messages they did not actually open.
+  void publishRoomRealtimeEvent(raw, userId, "typing.updated").catch((err) =>
+    req.log.error({ err, roomId: raw }, "Failed to publish typing realtime event"),
+  );
   res.sendStatus(204);
 });
 
@@ -333,7 +820,7 @@ router.get("/rooms/:id/typing", requireAuth, async (req, res): Promise<void> => 
     return;
   }
 
-  const ids = getTypingUserIds(raw, userId);
+  const ids = await getTypingUserIds(raw, userId);
   if (ids.length === 0) {
     res.json([]);
     return;

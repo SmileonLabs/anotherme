@@ -3,23 +3,29 @@ import { requireAuth } from "../lib/auth";
 import { ensurePersona, levelProgress, recentGrowthEvents } from "../lib/growth";
 import { analyzePersona } from "../lib/personaAnalysis";
 import { getPersonaCard } from "../lib/personaIdentity";
+import { getPersonaOntologyProfile } from "../lib/personaOntology";
 import {
   getRankings,
+  getServiceRankings,
   ARCHETYPE_KEYS,
   RANKING_TYPES,
+  SERVICE_RANKING_SCOPES,
   RANKING_LIMIT_DEFAULT,
   type ArchetypeKey,
   type RankingType,
+  type ServiceRankingScope,
 } from "../lib/ranking";
-import { awardClanRankTop10Bonus, CLAN_RANK_TOP10_THRESHOLD } from "../lib/clanGrowth";
 import type { Persona } from "@workspace/db";
 
 const router: IRouter = Router();
 
-/** Serialize a persona (+ derived level progress + recent events) for the API. */
+/** Serialize FAN growth plus the ontology profile. Legacy AI analysis fields are intentionally not exposed. */
 async function serializePersona(persona: Persona) {
   const progress = levelProgress(persona.xp);
-  const events = await recentGrowthEvents(persona.userId, 20);
+  const [events, ontologyProfile] = await Promise.all([
+    recentGrowthEvents(persona.userId, 20),
+    getPersonaOntologyProfile(persona.userId),
+  ]);
   return {
     id: persona.id,
     userId: persona.userId,
@@ -42,15 +48,8 @@ async function serializePersona(persona: Persona) {
       afterExp: e.afterExp,
       createdAt: e.createdAt.toISOString(),
     })),
-    summary: persona.summary ?? null,
-    languageStyle: persona.languageStyle ?? null,
-    personalityTraits: persona.personalityTraits ?? null,
-    valuesBeliefs: persona.valuesBeliefs ?? null,
-    knowledgeDomains: persona.knowledgeDomains ?? null,
-    emotionalPatterns: persona.emotionalPatterns ?? null,
-    decisionStyle: persona.decisionStyle ?? null,
-    analysisConfidence: persona.analysisMetadata?.confidence ?? null,
     lastAnalyzedAt: persona.lastAnalyzedAt ? persona.lastAnalyzedAt.toISOString() : null,
+    ontologyProfile,
     createdAt: persona.createdAt.toISOString(),
   };
 }
@@ -66,17 +65,15 @@ router.get("/users/me/persona", requireAuth, async (req, res): Promise<void> => 
 });
 
 /**
- * The Persona Card — a derived "identity" view (archetype, strengths, growth
- * direction, archetype timeline) computed purely from existing stats + AI fields.
- * No AI call, no XP/stat mutation. Fetching it records an archetype-history row
- * only when the archetype has changed since last time.
+ * The Persona Card is ontology-only. If no ontology snapshot exists yet, return
+ * 404 so stale legacy persona values cannot look like a valid Another Me state.
  */
 router.get("/users/me/persona/card", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
   const displayName = user.nickname?.trim() || "나";
   const card = await getPersonaCard(user.id, displayName);
   if (!card) {
-    res.status(500).json({ error: "Failed to load persona card" });
+    res.status(404).json({ error: "persona_ontology_not_found", message: "Another Me ontology profile has not been created yet." });
     return;
   }
   res.json(card);
@@ -154,18 +151,35 @@ router.get("/users/persona/rankings", requireAuth, async (req, res): Promise<voi
 
   const result = await getRankings({ type, archetype, limit, meUserId: user.id });
   res.json(result);
+});
 
-  // Side effect only: entering the overall Top 10 grants the member's clan a small
-  // EXP bonus (idempotent per UTC day). This reads ranking output but never mutates
-  // it — the response above is already sent, and the helper swallows its own
-  // errors, so ranking behavior is completely unaffected.
-  if (
-    type === "overall" &&
-    result.myRank &&
-    result.myRank.rank <= CLAN_RANK_TOP10_THRESHOLD
-  ) {
-    void awardClanRankTop10Bonus(user.id, req.log);
-  }
+/** Unified personal ranking for the current service structure: persona, FAN, STAR, and talk-battle. */
+router.get("/users/rankings", requireAuth, async (req, res): Promise<void> => {
+  const user = req.dbUser!;
+
+  const rawScope = String(req.query.scope ?? "fan");
+  const scope: ServiceRankingScope = (SERVICE_RANKING_SCOPES as readonly string[]).includes(rawScope)
+    ? (rawScope as ServiceRankingScope)
+    : "persona";
+
+  const rawArchetype = req.query.archetype ? String(req.query.archetype) : null;
+  const archetype: ArchetypeKey | null =
+    rawArchetype && (ARCHETYPE_KEYS as readonly string[]).includes(rawArchetype)
+      ? (rawArchetype as ArchetypeKey)
+      : null;
+
+  const parsedLimit = Number.parseInt(String(req.query.limit ?? ""), 10);
+  const limit = Number.isFinite(parsedLimit) ? parsedLimit : RANKING_LIMIT_DEFAULT;
+
+  res.json(
+    await getServiceRankings({
+      scope,
+      type: req.query.type ? String(req.query.type) : null,
+      archetype,
+      limit,
+      meUserId: user.id,
+    }),
+  );
 });
 
 export default router;

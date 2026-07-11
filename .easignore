@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.git
+.env
+.env.*
+*.pem
+*.apk
+artifacts/api-server/dist
+artifacts/landing/dist
+artifacts/mobile/public/_expo
+artifacts/mobile/web-build*
+artifacts/mockup-sandbox/dist

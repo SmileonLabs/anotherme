@@ -16,6 +16,8 @@ export const friendshipsTable = pgTable("friendships", {
   id: uuid("id").primaryKey().defaultRandom(),
   userAId: uuid("user_a_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   userBId: uuid("user_b_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  userAFriendAlias: text("user_a_friend_alias"),
+  userBFriendAlias: text("user_b_friend_alias"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

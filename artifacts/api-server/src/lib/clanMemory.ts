@@ -95,11 +95,11 @@ export async function listClanMemories(opts: {
   const limit = Math.min(CLAN_MEMORY_LIST_LIMIT_MAX, Math.max(1, opts.limit));
 
   if (!(await clanExists(clanId))) {
-    throw new ClanMemoryError("not_found", "존재하지 않는 가문이에요.");
+    throw new ClanMemoryError("not_found", "존재하지 않는 팬클럽이에요.");
   }
   const membership = await getMembershipIn(clanId, meUserId);
   if (!membership) {
-    throw new ClanMemoryError("not_member", "가문 멤버만 기억을 볼 수 있어요.");
+    throw new ClanMemoryError("not_member", "팬클럽 멤버만 기억을 볼 수 있어요.");
   }
 
   const where = type
@@ -195,11 +195,11 @@ export async function createClanMemory(opts: {
   const { clanId, meUserId } = opts;
 
   if (!(await clanExists(clanId))) {
-    throw new ClanMemoryError("not_found", "존재하지 않는 가문이에요.");
+    throw new ClanMemoryError("not_found", "존재하지 않는 팬클럽이에요.");
   }
   const membership = await getMembershipIn(clanId, meUserId);
   if (!membership) {
-    throw new ClanMemoryError("not_member", "가문 멤버만 기억을 기록할 수 있어요.");
+    throw new ClanMemoryError("not_member", "팬클럽 멤버만 기억을 기록할 수 있어요.");
   }
 
   const title = opts.title?.trim() ?? "";
@@ -227,7 +227,7 @@ export async function createClanMemory(opts: {
       .where(eq(clanMemoriesTable.sourceKey, sourceKey));
     if (existing) {
       if (existing.clanId !== clanId) {
-        throw new ClanMemoryError("duplicate", "이미 다른 가문에 저장된 기억이에요.");
+        throw new ClanMemoryError("duplicate", "이미 다른 팬클럽에 저장된 기억이에요.");
       }
       const [author] = existing.createdByUserId
         ? await db
@@ -276,7 +276,7 @@ export async function deleteClanMemory(opts: {
 
   const membership = await getMembershipIn(clanId, meUserId);
   if (!membership) {
-    throw new ClanMemoryError("not_member", "가문 멤버만 기억을 삭제할 수 있어요.");
+    throw new ClanMemoryError("not_member", "팬클럽 멤버만 기억을 삭제할 수 있어요.");
   }
 
   const [memory] = await db
@@ -290,7 +290,7 @@ export async function deleteClanMemory(opts: {
   const isAuthor = memory.createdByUserId === meUserId;
   const isElderOrOwner = membership.role === "owner" || membership.role === "elder";
   if (!isAuthor && !isElderOrOwner) {
-    throw new ClanMemoryError("forbidden", "작성자 또는 원로·가문장만 삭제할 수 있어요.");
+    throw new ClanMemoryError("forbidden", "작성자 또는 원로·팬클럽장만 삭제할 수 있어요.");
   }
 
   await db.delete(clanMemoriesTable).where(eq(clanMemoriesTable.id, memoryId));

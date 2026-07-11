@@ -7,13 +7,28 @@ import { sendPushToUser } from "../lib/push";
 
 const router: IRouter = Router();
 
-const toPublic = (u: typeof usersTable.$inferSelect) => ({
+const toPublic = (u: typeof usersTable.$inferSelect, friendAlias?: string | null) => ({
   id: u.id,
   email: u.email,
   nickname: u.nickname,
+  friendAlias: friendAlias ?? null,
+  displayName: friendAlias || u.nickname,
   profileImageUrl: u.profileImageUrl ?? null,
   statusMessage: u.statusMessage ?? null,
 });
+
+function aliasForViewer(friendship: typeof friendshipsTable.$inferSelect, viewerUserId: string): string | null {
+  return friendship.userAId === viewerUserId
+    ? friendship.userAFriendAlias ?? null
+    : friendship.userBFriendAlias ?? null;
+}
+
+function normalizeAlias(input: unknown): string | null | undefined {
+  if (input === null) return null;
+  if (typeof input !== "string") return undefined;
+  const trimmed = input.trim();
+  return trimmed ? trimmed : null;
+}
 
 router.get("/friends", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
@@ -22,11 +37,15 @@ router.get("/friends", requireAuth, async (req, res): Promise<void> => {
     .from(friendshipsTable)
     .where(or(eq(friendshipsTable.userAId, userId), eq(friendshipsTable.userBId, userId)));
 
-  const friendIds = [
-    ...new Set(
-      friendships.map((f) => (f.userAId === userId ? f.userBId : f.userAId)),
-    ),
-  ];
+  const friendRowById = new Map<string, { userId: string; alias: string | null }>();
+  for (const friendship of friendships) {
+    const friendId = friendship.userAId === userId ? friendship.userBId : friendship.userAId;
+    if (!friendRowById.has(friendId)) {
+      friendRowById.set(friendId, { userId: friendId, alias: aliasForViewer(friendship, userId) });
+    }
+  }
+  const friendRows = Array.from(friendRowById.values());
+  const friendIds = [...new Set(friendRows.map((f) => f.userId))];
 
   if (friendIds.length === 0) {
     res.json([]);
@@ -34,13 +53,61 @@ router.get("/friends", requireAuth, async (req, res): Promise<void> => {
   }
 
   const friends = await Promise.all(
-    friendIds.map(async (fid) => {
+    friendRows.map(async ({ userId: fid, alias }) => {
       const [u] = await db.select().from(usersTable).where(eq(usersTable.id, fid));
-      return u ? toPublic(u) : null;
+      return u ? toPublic(u, alias) : null;
     }),
   );
 
   res.json(friends.filter(Boolean));
+});
+
+router.patch("/friends/:userId/alias", requireAuth, async (req, res): Promise<void> => {
+  const myId = req.dbUser!.id;
+  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const otherId = raw;
+  const alias = normalizeAlias(req.body?.alias);
+
+  if (!otherId || otherId === myId || alias === undefined) {
+    res.status(400).json({ error: "Invalid alias" });
+    return;
+  }
+  if (alias && alias.length > 50) {
+    res.status(400).json({ error: "Alias too long" });
+    return;
+  }
+
+  const [friendship] = await db
+    .select()
+    .from(friendshipsTable)
+    .where(
+      or(
+        and(eq(friendshipsTable.userAId, myId), eq(friendshipsTable.userBId, otherId)),
+        and(eq(friendshipsTable.userAId, otherId), eq(friendshipsTable.userBId, myId)),
+      ),
+    );
+
+  if (!friendship) {
+    res.status(404).json({ error: "Friend not found" });
+    return;
+  }
+
+  await db
+    .update(friendshipsTable)
+    .set(
+      friendship.userAId === myId
+        ? { userAFriendAlias: alias }
+        : { userBFriendAlias: alias },
+    )
+    .where(eq(friendshipsTable.id, friendship.id));
+
+  const [friend] = await db.select().from(usersTable).where(eq(usersTable.id, otherId));
+  if (!friend) {
+    res.status(404).json({ error: "Friend not found" });
+    return;
+  }
+
+  res.json(toPublic(friend, alias));
 });
 
 router.delete("/friends/:userId", requireAuth, async (req, res): Promise<void> => {

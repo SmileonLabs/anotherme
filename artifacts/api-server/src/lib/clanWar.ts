@@ -173,22 +173,22 @@ export async function createClanWar(opts: {
   }
 
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 가문전을 만들 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 팬클럽전을 만들 수 있어요.");
   if (!isOwnerOrElder(me.role)) {
-    throw new ClanWarError("forbidden", "가문장 또는 원로만 가문전을 만들 수 있어요.");
+    throw new ClanWarError("forbidden", "팬클럽장 또는 원로만 팬클럽전을 만들 수 있어요.");
   }
 
   let opponentClanId: string | null = null;
   let status: ClanWarStatus = "open";
   if (opts.opponentClanId) {
     if (opts.opponentClanId === me.clanId) {
-      throw new ClanWarError("invalid", "같은 가문과는 가문전을 할 수 없어요.");
+      throw new ClanWarError("invalid", "같은 팬클럽과는 팬클럽전을 할 수 없어요.");
     }
     const [opp] = await db
       .select({ id: clansTable.id })
       .from(clansTable)
       .where(eq(clansTable.id, opts.opponentClanId));
-    if (!opp) throw new ClanWarError("not_found", "상대 가문을 찾을 수 없어요.");
+    if (!opp) throw new ClanWarError("not_found", "상대 팬클럽을 찾을 수 없어요.");
     opponentClanId = opp.id;
     status = "matched";
   }
@@ -254,7 +254,7 @@ export async function listClanWars(opts: {
 
 async function loadWarOrThrow(warId: string): Promise<typeof clanWarsTable.$inferSelect> {
   const [war] = await db.select().from(clanWarsTable).where(eq(clanWarsTable.id, warId));
-  if (!war) throw new ClanWarError("not_found", "가문전을 찾을 수 없어요.");
+  if (!war) throw new ClanWarError("not_found", "팬클럽전을 찾을 수 없어요.");
   return war;
 }
 
@@ -279,7 +279,7 @@ export async function getClanWar(opts: {
   // Open challenges are visible to everyone (so other clans can accept); any
   // other status is restricted to members of the two participating clans.
   if (war.status !== "open" && !mySide) {
-    throw new ClanWarError("forbidden", "이 가문전을 볼 권한이 없어요.");
+    throw new ClanWarError("forbidden", "이 팬클럽전을 볼 권한이 없어요.");
   }
 
   const participants = await db
@@ -339,9 +339,9 @@ export async function acceptClanWar(opts: {
   log: Logger;
 }): Promise<ClanWarDetail> {
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 도전을 수락할 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 도전을 수락할 수 있어요.");
   if (!isOwnerOrElder(me.role)) {
-    throw new ClanWarError("forbidden", "가문장 또는 원로만 도전을 수락할 수 있어요.");
+    throw new ClanWarError("forbidden", "팬클럽장 또는 원로만 도전을 수락할 수 있어요.");
   }
 
   await db.transaction(async (tx) => {
@@ -350,12 +350,12 @@ export async function acceptClanWar(opts: {
       .from(clanWarsTable)
       .where(eq(clanWarsTable.id, opts.warId))
       .for("update");
-    if (!war) throw new ClanWarError("not_found", "가문전을 찾을 수 없어요.");
+    if (!war) throw new ClanWarError("not_found", "팬클럽전을 찾을 수 없어요.");
     if (war.status !== "open") {
-      throw new ClanWarError("conflict", "이미 매칭되었거나 종료된 가문전이에요.");
+      throw new ClanWarError("conflict", "이미 매칭되었거나 종료된 팬클럽전이에요.");
     }
     if (war.challengerClanId === me.clanId) {
-      throw new ClanWarError("invalid", "자신의 가문이 만든 도전은 수락할 수 없어요.");
+      throw new ClanWarError("invalid", "자신의 팬클럽이 만든 도전은 수락할 수 없어요.");
     }
     await tx
       .update(clanWarsTable)
@@ -373,14 +373,14 @@ export async function joinClanWar(opts: {
   meUserId: string;
 }): Promise<ClanWarDetail> {
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 참여할 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 참여할 수 있어요.");
 
   const war = await loadWarOrThrow(opts.warId);
   if (war.status !== "matched" && war.status !== "active") {
-    throw new ClanWarError("conflict", "지금은 참여할 수 없는 가문전이에요.");
+    throw new ClanWarError("conflict", "지금은 참여할 수 없는 팬클럽전이에요.");
   }
   const side = sideForClan(war, me.clanId);
-  if (!side) throw new ClanWarError("not_member", "참여 중인 가문의 멤버만 참여할 수 있어요.");
+  if (!side) throw new ClanWarError("not_member", "참여 중인 팬클럽의 멤버만 참여할 수 있어요.");
 
   await db
     .insert(clanWarParticipantsTable)
@@ -407,7 +407,7 @@ export async function submitClanWarArgument(opts: {
   }
 
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 제출할 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 제출할 수 있어요.");
 
   await db.transaction(async (tx) => {
     const [war] = await tx
@@ -415,12 +415,12 @@ export async function submitClanWarArgument(opts: {
       .from(clanWarsTable)
       .where(eq(clanWarsTable.id, opts.warId))
       .for("update");
-    if (!war) throw new ClanWarError("not_found", "가문전을 찾을 수 없어요.");
+    if (!war) throw new ClanWarError("not_found", "팬클럽전을 찾을 수 없어요.");
     if (war.status !== "matched" && war.status !== "active") {
-      throw new ClanWarError("conflict", "지금은 제출할 수 없는 가문전이에요.");
+      throw new ClanWarError("conflict", "지금은 제출할 수 없는 팬클럽전이에요.");
     }
     const side = sideForClan(war, me.clanId);
-    if (!side) throw new ClanWarError("not_member", "참여 중인 가문의 멤버만 제출할 수 있어요.");
+    if (!side) throw new ClanWarError("not_member", "참여 중인 팬클럽의 멤버만 제출할 수 있어요.");
 
     const [existing] = await tx
       .select({ id: clanWarParticipantsTable.id, submission: clanWarParticipantsTable.submission })
@@ -488,7 +488,7 @@ export async function cancelClanWar(opts: {
   meUserId: string;
 }): Promise<ClanWarDetail> {
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 취소할 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 취소할 수 있어요.");
 
   await db.transaction(async (tx) => {
     const [war] = await tx
@@ -496,15 +496,15 @@ export async function cancelClanWar(opts: {
       .from(clanWarsTable)
       .where(eq(clanWarsTable.id, opts.warId))
       .for("update");
-    if (!war) throw new ClanWarError("not_found", "가문전을 찾을 수 없어요.");
+    if (!war) throw new ClanWarError("not_found", "팬클럽전을 찾을 수 없어요.");
     if (war.challengerClanId !== me.clanId || !isOwnerOrElder(me.role)) {
-      throw new ClanWarError("forbidden", "도전을 만든 가문의 가문장·원로만 취소할 수 있어요.");
+      throw new ClanWarError("forbidden", "도전을 만든 팬클럽의 팬클럽장·원로만 취소할 수 있어요.");
     }
     if (war.status === "completing") {
       throw new ClanWarError("conflict", "결과를 집계하는 중에는 취소할 수 없어요.");
     }
     if (war.status === "completed" || war.status === "cancelled") {
-      throw new ClanWarError("conflict", "이미 종료된 가문전이에요.");
+      throw new ClanWarError("conflict", "이미 종료된 팬클럽전이에요.");
     }
     await tx
       .update(clanWarsTable)
@@ -557,13 +557,13 @@ export async function completeClanWar(opts: {
   log: Logger;
 }): Promise<ClanWarDetail> {
   const me = await getMembership(opts.meUserId);
-  if (!me) throw new ClanWarError("no_clan", "가문에 속해 있어야 종료할 수 있어요.");
+  if (!me) throw new ClanWarError("no_clan", "팬클럽에 속해 있어야 종료할 수 있어요.");
 
   // --- Phase A: authorize (no AI, no lock held). ---
   const war = await loadWarOrThrow(opts.warId);
   const mySide = sideForClan(war, me.clanId);
   if (!mySide || !isOwnerOrElder(me.role)) {
-    throw new ClanWarError("forbidden", "참여 가문의 가문장·원로만 결과를 확정할 수 있어요.");
+    throw new ClanWarError("forbidden", "참여 팬클럽의 팬클럽장·원로만 결과를 확정할 수 있어요.");
   }
   if (war.status === "completed") {
     return getClanWar({ warId: opts.warId, meUserId: opts.meUserId });
@@ -583,7 +583,7 @@ export async function completeClanWar(opts: {
       .from(clanWarsTable)
       .where(eq(clanWarsTable.id, war.id))
       .for("update");
-    if (!locked) throw new ClanWarError("not_found", "가문전을 찾을 수 없어요.");
+    if (!locked) throw new ClanWarError("not_found", "팬클럽전을 찾을 수 없어요.");
     if (locked.status === "completed") return { alreadyDone: true as const };
     if (locked.status === "completing") {
       // Another /complete holds the claim. Only allow a takeover if it has been
@@ -602,10 +602,10 @@ export async function completeClanWar(opts: {
       return { alreadyDone: false as const, prevStatus: "active" as ClanWarStatus };
     }
     if (locked.status !== "matched" && locked.status !== "active") {
-      throw new ClanWarError("conflict", "지금은 결과를 확정할 수 없는 가문전이에요.");
+      throw new ClanWarError("conflict", "지금은 결과를 확정할 수 없는 팬클럽전이에요.");
     }
     if (!locked.opponentClanId) {
-      throw new ClanWarError("conflict", "상대 가문이 정해진 뒤에 확정할 수 있어요.");
+      throw new ClanWarError("conflict", "상대 팬클럽이 정해진 뒤에 확정할 수 있어요.");
     }
     await tx
       .update(clanWarsTable)
@@ -857,8 +857,8 @@ async function judgeWar(opts: {
     subs.map((s, i) => `${i + 1}) ${s.replace(/\s+/g, " ").trim()}`).join("\n") || "(제출 없음)";
 
   const system = [
-    "당신은 한국어 '가문전(클랜 토론 배틀)'의 공정한 AI 심판입니다.",
-    "두 가문(도전 가문 challenger, 상대 가문 opponent)의 주장들을 평가합니다.",
+    "당신은 한국어 '팬클럽전(팬클럽 토론 배틀)'의 공정한 AI 심판입니다.",
+    "두 팬클럽(도전 팬클럽 challenger, 상대 팬클럽 opponent)의 주장들을 평가합니다.",
     "각 주장을 다음 다섯 항목으로 0~10점 평가하세요: logic(논리성), persuasiveness(설득력), evidence(근거), empathy(공감), expressiveness(표현력).",
     "규칙:",
     "1) 주어진 주장 내용만 근거로 평가하고, 없는 사실을 지어내지 마세요.",
@@ -866,16 +866,16 @@ async function judgeWar(opts: {
     "3) 개인정보(실명·연락처 등)나 특정 개인을 지목하는 표현을 쓰지 마세요.",
     "4) 정치적·종교적 단정이나 논쟁적 주장을 하지 마세요.",
     "5) note와 summary, feedback은 모두 자연스러운 한국어로 1~2문장 이내로 작성하세요.",
-    "6) challengerScores는 도전 가문 주장 순서대로, opponentScores는 상대 가문 주장 순서대로 같은 개수로 반환하세요.",
+    "6) challengerScores는 도전 팬클럽 주장 순서대로, opponentScores는 상대 팬클럽 주장 순서대로 같은 개수로 반환하세요.",
   ].join("\n");
 
   const user = [
     `## 주제\n${topic}`,
     "",
-    `## 도전 가문(challenger) 주장 (${challengers.length}개)`,
+    `## 도전 팬클럽(challenger) 주장 (${challengers.length}개)`,
     fmt(challengers),
     "",
-    `## 상대 가문(opponent) 주장 (${opponents.length}개)`,
+    `## 상대 팬클럽(opponent) 주장 (${opponents.length}개)`,
     fmt(opponents),
   ].join("\n");
 

@@ -5,8 +5,10 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CallMedia } from './callMedia';
 
 export interface CreateCallInput {
   calleeId: string;
   roomId?: string;
+  media?: CallMedia;
 }

@@ -9,6 +9,7 @@ import {
   clanWarsTable,
   personasTable,
   questProgressTable,
+  starGrowthEventsTable,
   xpEventsTable,
   type Achievement,
   type QuestProgress,
@@ -93,15 +94,6 @@ type QuestMetric =
 
 export const DAILY_QUESTS: QuestDef[] = [
   {
-    key: "daily_chat",
-    type: "daily",
-    title: "오늘 첫 대화",
-    description: "채팅 메시지를 1개 남겨보세요.",
-    target: 1,
-    rewardExp: 10,
-    metric: "chat",
-  },
-  {
     key: "daily_battle",
     type: "daily",
     title: "토크배틀 참여",
@@ -113,8 +105,8 @@ export const DAILY_QUESTS: QuestDef[] = [
   {
     key: "daily_dungeon",
     type: "daily",
-    title: "라이프 퀘스트",
-    description: "라이프 퀘스트에서 3번 선택하세요.",
+    title: "STAR 미션",
+    description: "STAR 미션에서 3번 선택하세요.",
     target: 3,
     rewardExp: 15,
     metric: "dungeonAction",
@@ -122,8 +114,8 @@ export const DAILY_QUESTS: QuestDef[] = [
   {
     key: "daily_clan",
     type: "daily",
-    title: "가문 기여",
-    description: "가문 기억을 작성하거나 가문전에 참여하세요.",
+    title: "팬클럽 기여",
+    description: "팬클럽 기억을 작성하거나 팬클럽전에 참여하세요.",
     target: 1,
     rewardExp: 20,
     metric: "clanContribution",
@@ -152,8 +144,8 @@ export const WEEKLY_QUESTS: QuestDef[] = [
   {
     key: "weekly_dungeon",
     type: "weekly",
-    title: "라이프 퀘스트 마스터",
-    description: "라이프 퀘스트에서 20번 선택하세요.",
+    title: "STAR 미션 마스터",
+    description: "STAR 미션에서 20번 선택하세요.",
     target: 20,
     rewardExp: 100,
     metric: "dungeonAction",
@@ -161,8 +153,8 @@ export const WEEKLY_QUESTS: QuestDef[] = [
   {
     key: "weekly_clan",
     type: "weekly",
-    title: "가문의 기둥",
-    description: "가문 활동을 5번 하세요.",
+    title: "팬클럽의 기둥",
+    description: "팬클럽 활동을 5번 하세요.",
     target: 5,
     rewardExp: 120,
     metric: "clanContribution",
@@ -170,7 +162,7 @@ export const WEEKLY_QUESTS: QuestDef[] = [
   {
     key: "weekly_growth",
     type: "weekly",
-    title: "성장하는 자아",
+    title: "꾸준한 팬 활동",
     description: "일일 퀘스트를 5개 완료하세요.",
     target: 5,
     rewardExp: 150,
@@ -191,19 +183,18 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { key: "first_chat", title: "첫 대화", description: "처음으로 대화를 나눴어요.", rewardExp: 20, category: "chat", icon: "message-circle" },
   { key: "first_battle", title: "첫 토크배틀 참여", description: "처음으로 토크배틀에 참여했어요.", rewardExp: 20, category: "battle", icon: "zap" },
   { key: "first_battle_win", title: "첫 토크배틀 승리", description: "처음으로 토크배틀에서 승리했어요.", rewardExp: 50, category: "battle", icon: "award" },
-  { key: "first_dungeon", title: "첫 라이프 퀘스트", description: "처음으로 라이프 퀘스트에서 선택했어요.", rewardExp: 20, category: "dungeon", icon: "compass" },
-  { key: "first_dungeon_goal", title: "첫 라이프 퀘스트 완료", description: "처음으로 라이프 퀘스트를 완료했어요.", rewardExp: 50, category: "dungeon", icon: "flag" },
-  { key: "first_clan_join", title: "첫 가문 가입", description: "처음으로 가문에 들어갔어요.", rewardExp: 30, category: "clan", icon: "users" },
-  { key: "first_clan_memory", title: "첫 가문 기억 작성", description: "처음으로 가문 기억을 남겼어요.", rewardExp: 30, category: "clan", icon: "book-open" },
-  { key: "first_clan_war", title: "첫 가문전 참여", description: "처음으로 가문전에 참여했어요.", rewardExp: 40, category: "clan", icon: "shield" },
-  { key: "first_clan_war_win", title: "첫 가문전 승리", description: "처음으로 가문전에서 승리했어요.", rewardExp: 80, category: "clan", icon: "shield" },
+  { key: "first_dungeon", title: "첫 STAR 미션", description: "처음으로 STAR 미션에서 선택했어요.", rewardExp: 20, category: "dungeon", icon: "compass" },
+  { key: "first_dungeon_goal", title: "첫 STAR 미션 완료", description: "처음으로 STAR 미션을 완료했어요.", rewardExp: 50, category: "dungeon", icon: "flag" },
+  { key: "first_clan_join", title: "첫 팬클럽 가입", description: "처음으로 팬클럽에 들어갔어요.", rewardExp: 30, category: "clan", icon: "users" },
+  { key: "first_clan_memory", title: "첫 팬클럽 기억 작성", description: "처음으로 팬클럽 기억을 남겼어요.", rewardExp: 30, category: "clan", icon: "book-open" },
+  { key: "first_clan_war", title: "첫 팬클럽전 참여", description: "처음으로 팬클럽전에 참여했어요.", rewardExp: 40, category: "clan", icon: "shield" },
+  { key: "first_clan_war_win", title: "첫 팬클럽전 승리", description: "처음으로 팬클럽전에서 승리했어요.", rewardExp: 80, category: "clan", icon: "shield" },
   { key: "persona_lv10", title: "Persona Lv.10 달성", description: "Another Me가 10레벨에 도달했어요.", rewardExp: 100, category: "persona", icon: "trending-up" },
   { key: "persona_lv30", title: "Persona Lv.30 달성", description: "Another Me가 30레벨에 도달했어요.", rewardExp: 300, category: "persona", icon: "trending-up" },
-  { key: "clan_create", title: "가문 생성", description: "직접 가문을 만들었어요.", rewardExp: 50, category: "clan", icon: "flag" },
-  { key: "clan_lv5", title: "가문 Lv.5 달성", description: "소속 가문이 5레벨에 도달했어요.", rewardExp: 100, category: "clan", icon: "star" },
+  { key: "clan_create", title: "팬클럽 생성", description: "직접 팬클럽을 만들었어요.", rewardExp: 50, category: "clan", icon: "flag" },
+  { key: "clan_lv5", title: "팬클럽 Lv.5 달성", description: "소속 팬클럽이 5레벨에 도달했어요.", rewardExp: 100, category: "clan", icon: "star" },
 ];
 
 /* ------------------------------------------------------------------------- */
@@ -228,6 +219,17 @@ async function activityCountsSince(userId: string, since: Date): Promise<Activit
     })
     .from(xpEventsTable)
     .where(and(eq(xpEventsTable.userId, userId), gte(xpEventsTable.createdAt, since)));
+
+  const [starMissionRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(starGrowthEventsTable)
+    .where(
+      and(
+        eq(starGrowthEventsTable.userId, userId),
+        gte(starGrowthEventsTable.createdAt, since),
+        sql`${starGrowthEventsTable.eventType} in ('star_mission_action','star_mission_complete')`,
+      ),
+    );
 
   const [memRow] = await db
     .select({ count: sql<number>`count(*)` })
@@ -261,7 +263,7 @@ async function activityCountsSince(userId: string, since: Date): Promise<Activit
   return {
     chat: Number(xpRows?.chat ?? 0),
     battle: Number(xpRows?.battle ?? 0),
-    dungeonAction: Number(xpRows?.dungeonAction ?? 0),
+    dungeonAction: Number(xpRows?.dungeonAction ?? 0) + Number(starMissionRow?.count ?? 0),
     clanContribution,
     analysis,
   };
@@ -407,7 +409,7 @@ export type ClaimResult =
 
 /**
  * Claim a quest reward. Re-validates completion from the freshly recomputed
- * state, grants Persona EXP idempotently via {@link recordReward} (keyed off the
+ * state, grants FAN XP idempotently via {@link recordReward} (keyed off the
  * period), then stamps `rewardClaimedAt`. The xp_event unique source_key is the
  * real double-claim guard; `rewardClaimedAt` is the UI flag.
  */
@@ -489,11 +491,22 @@ async function evaluateUnlocked(userId: string): Promise<Set<string>> {
     .from(xpEventsTable)
     .where(eq(xpEventsTable.userId, userId));
 
-  if (Number(xp?.chat ?? 0) > 0) unlocked.add("first_chat");
   if (Number(xp?.battle ?? 0) > 0) unlocked.add("first_battle");
   if (Number(xp?.battleWin ?? 0) > 0) unlocked.add("first_battle_win");
-  if (Number(xp?.dungeonAction ?? 0) > 0) unlocked.add("first_dungeon");
-  if (Number(xp?.dungeonGoal ?? 0) > 0) unlocked.add("first_dungeon_goal");
+
+  const [starMission] = await db
+    .select({
+      action: sql<number>`count(*) filter (where ${starGrowthEventsTable.eventType} = 'star_mission_action')`,
+      complete: sql<number>`count(*) filter (where ${starGrowthEventsTable.eventType} = 'star_mission_complete')`,
+    })
+    .from(starGrowthEventsTable)
+    .where(eq(starGrowthEventsTable.userId, userId));
+  if (Number(xp?.dungeonAction ?? 0) + Number(starMission?.action ?? 0) > 0) {
+    unlocked.add("first_dungeon");
+  }
+  if (Number(xp?.dungeonGoal ?? 0) + Number(starMission?.complete ?? 0) > 0) {
+    unlocked.add("first_dungeon_goal");
+  }
 
   const [membership] = await db
     .select({ role: clanMembersTable.role, clanId: clanMembersTable.clanId })

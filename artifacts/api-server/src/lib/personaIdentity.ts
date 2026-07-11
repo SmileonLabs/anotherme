@@ -1,13 +1,9 @@
-import { desc, eq } from "drizzle-orm";
-import { db } from "@workspace/db";
 import {
   DEFAULT_PERSONA_STATS,
-  personaIdentityHistoryTable,
-  personasTable,
-  type PersonaIdentityHistory,
   type PersonaStats,
 } from "@workspace/db";
 import { computeLevel, ensurePersona } from "./growth";
+import { getPersonaOntologyProfile, type PersonaProfileView } from "./personaOntology";
 
 type StatKey = keyof PersonaStats;
 
@@ -212,35 +208,59 @@ export function computeIdentity(stats: PersonaStats): PersonaIdentity {
 }
 
 export interface PersonaCard {
+  source: "ontology";
+  syncState: "not_started" | "forming" | "synced";
   name: string;
   level: number;
+  displayLevelLabel: string | null;
   title: string;
   archetype: string;
   archetypeKey: string;
-  personaSummary: string | null;
   strengths: string[];
   weaknesses: string[];
   primaryTraits: string[];
   growthDirection: string;
   motto: string;
   houseName: string | null;
-  history: { archetype: string; level: number; createdAt: string }[];
+  nextActions: string[];
+  syncTimeline: { label: string; createdAt: string | null }[];
+  ontologyProfile: PersonaProfileView | null;
 }
 
-/** Map a history row to its API shape. */
-function serializeHistory(row: PersonaIdentityHistory) {
-  return {
-    archetype: row.archetype,
-    level: row.level,
-    createdAt: row.createdAt.toISOString(),
-  };
+function ontologySyncState(profile: PersonaProfileView | null): PersonaCard["syncState"] {
+  if (!profile) return "not_started";
+  const sourceTotal = Object.values(profile.sourceCounts ?? {}).reduce((sum, count) => sum + (count ?? 0), 0);
+  return profile.confidence >= 60 && sourceTotal >= 2 ? "synced" : "forming";
+}
+
+function ontologyNextActions(profile: PersonaProfileView | null): string[] {
+  if (!profile) {
+    return [
+      "Talk to Earn 보상을 수령하면 대화 요약과 키워드가 반영돼요.",
+      "AI 기억을 추가하면 선호와 말투 기준이 더 또렷해져요.",
+      "토크배틀에 참여하면 표현 방식과 설득 스타일이 반영돼요.",
+    ];
+  }
+
+  const counts = profile.sourceCounts ?? {};
+  const actions: string[] = [];
+  if (!counts.chat) actions.push("Talk to Earn 보상을 수령해 대화 스타일 근거를 추가해 보세요.");
+  if (!counts.memory) actions.push("AI 기억을 추가해 Another Me가 선호와 말투를 더 정확히 참고하게 해보세요.");
+  if (!counts.battle) actions.push("토크배틀 발언 평가를 반영하면 표현 역량이 더 입체적으로 정리돼요.");
+  if (profile.confidence < 70) actions.push("서로 다른 출처가 2개 이상 쌓이면 신뢰도가 더 안정적으로 올라가요.");
+
+  return (actions.length > 0 ? actions : ["최근 반영 근거를 유지하려면 톡 리워드와 AI 기억을 꾸준히 동기화해 주세요."]).slice(0, 3);
+}
+
+function ontologySyncTimeline(profile: PersonaProfileView | null): PersonaCard["syncTimeline"] {
+  if (!profile) return [];
+  return profile.evidenceSummary.slice(0, 3).map((label) => ({ label, createdAt: profile.updatedAt }));
 }
 
 /**
- * Build the persona card for a user. Computes the (derived) identity and records
- * a new history row only when the archetype changed since the latest stored one,
- * so archetype transitions form an auditable timeline. This never touches XP,
- * stats, or AI-analysis fields.
+ * Build the persona card for a user from ontology data only. Returning null when
+ * the ontology snapshot is missing is intentional: stale legacy stats must not
+ * masquerade as a valid Another Me profile.
  */
 export async function getPersonaCard(
   userId: string,
@@ -250,55 +270,44 @@ export async function getPersonaCard(
   if (!persona) return null;
 
   const level = computeLevel(persona.xp);
-  const identity = computeIdentity(persona.stats);
+  const ontologyProfile = await getPersonaOntologyProfile(userId);
+  if (!ontologyProfile) return null;
 
-  // Record the archetype only when it actually changes (or on first computation).
-  // The latest-check + insert run in one transaction behind a row lock on the
-  // persona (same pattern as growth) so concurrent card fetches for the same user
-  // serialize and can never insert duplicate consecutive archetype rows. This
-  // only writes to the history table — it never mutates xp/stats/level/xp_events.
-  await db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ id: personasTable.id })
-      .from(personasTable)
-      .where(eq(personasTable.userId, userId))
-      .for("update");
-    if (!locked) return;
-
-    const [latest] = await tx
-      .select()
-      .from(personaIdentityHistoryTable)
-      .where(eq(personaIdentityHistoryTable.userId, userId))
-      .orderBy(desc(personaIdentityHistoryTable.createdAt))
-      .limit(1);
-
-    if (!latest || latest.archetype !== identity.archetype) {
-      await tx
-        .insert(personaIdentityHistoryTable)
-        .values({ userId, archetype: identity.archetype, level });
-    }
-  });
-
-  const history = await db
-    .select()
-    .from(personaIdentityHistoryTable)
-    .where(eq(personaIdentityHistoryTable.userId, userId))
-    .orderBy(desc(personaIdentityHistoryTable.createdAt))
-    .limit(10);
+  const identity: PersonaIdentity = {
+    archetypeKey: ontologyProfile.archetypeKey,
+    archetype: ontologyProfile.archetypeLabel,
+    title: ontologyProfile.archetypeLabel,
+    primaryTraits: ontologyProfile.traitTags.length > 0
+      ? ontologyProfile.traitTags.slice(0, 3)
+      : ontologyProfile.communicationStyles.slice(0, 3),
+    strengths: [
+      ...ontologyProfile.capabilities,
+      ...ontologyProfile.conflictStyles,
+    ].slice(0, 3),
+    weaknesses: [],
+    growthDirection: ontologyProfile.capabilities.length > 0 || ontologyProfile.communicationStyles.length > 0
+      ? "대화와 토크배틀 evidence가 쌓일수록 Another Me가 말투와 표현 방식을 더 안전하게 동기화합니다."
+      : "직접 AI 기억을 추가하거나 토크배틀에서 발언하면 자아 프로필이 더 또렷해집니다.",
+    motto: "나는 점수보다 맥락으로 성장하는 또 다른 자아입니다.",
+  };
 
   return {
+    source: "ontology",
+    syncState: ontologySyncState(ontologyProfile),
     name: `${displayName}의 어나더 미`,
     level,
+    displayLevelLabel: null,
     title: identity.title,
     archetype: identity.archetype,
     archetypeKey: identity.archetypeKey,
-    personaSummary: persona.summary ?? null,
     strengths: identity.strengths,
     weaknesses: identity.weaknesses,
     primaryTraits: identity.primaryTraits,
     growthDirection: identity.growthDirection,
     motto: identity.motto,
     houseName: null,
-    history: history.map(serializeHistory),
+    nextActions: ontologyNextActions(ontologyProfile),
+    syncTimeline: ontologySyncTimeline(ontologyProfile),
+    ontologyProfile,
   };
 }

@@ -2,9 +2,12 @@ import { desc, eq } from "drizzle-orm";
 import type { Logger } from "pino";
 import { db } from "@workspace/db";
 import {
+  DEFAULT_FAN_STATS,
   DEFAULT_PERSONA_STATS,
+  fanProfilesTable,
   personasTable,
   xpEventsTable,
+  type FanStats,
   type GrowthEventType,
   type GrowthSourceType,
   type Persona,
@@ -39,60 +42,80 @@ interface GrowthRule {
 }
 
 /**
- * Deterministic growth rules. Each activity grants a fixed amount of XP and a
- * small set of stat increases — no AI, no cost. Tuned so that frequent-but-cheap
- * actions (chat) grant little, and rare-but-meaningful ones (battle win, dungeon
- * goal) grant a lot.
+ * Deterministic growth rules. Each activity grants a fixed amount of legacy
+ * Persona XP. Numeric persona stats are deprecated in favor of the ontology-based
+ * persona profile, so new core activity grants XP only. FAN/STAR growth and
+ * ontology evidence are handled by their dedicated services.
  */
 const GROWTH_RULES: Record<GrowthKind, GrowthRule> = {
   chat_message: {
     sourceType: "chat",
     eventType: "chat_message",
     xp: 2,
-    stats: { empathy: 1 },
+    stats: {},
     reason: "채팅 참여",
   },
   battle_speech: {
     sourceType: "battle",
     eventType: "battle_speech",
     xp: 5,
-    stats: { logic: 1, wit: 1 },
+    stats: {},
     reason: "토크배틀 발언",
   },
   battle_win: {
     sourceType: "battle",
     eventType: "battle_result",
     xp: 30,
-    stats: { conviction: 2, logic: 1 },
+    stats: {},
     reason: "토크배틀 승리",
   },
   battle_loss: {
     sourceType: "battle",
     eventType: "battle_result",
     xp: 10,
-    stats: { emotion: 1 },
+    stats: {},
     reason: "토크배틀 패배",
   },
   battle_draw: {
     sourceType: "battle",
     eventType: "battle_result",
     xp: 15,
-    stats: { conviction: 1, emotion: 1 },
+    stats: {},
     reason: "토크배틀 무승부",
   },
   dungeon_action: {
     sourceType: "dungeon",
     eventType: "dungeon_action",
     xp: 4,
-    stats: { decisiveness: 1 },
+    stats: {},
     reason: "던전 모험",
   },
   dungeon_goal: {
     sourceType: "dungeon",
     eventType: "dungeon_result",
     xp: 20,
-    stats: { knowledge: 2, decisiveness: 1 },
+    stats: {},
     reason: "던전 목표 달성",
+  },
+};
+
+interface FanGrowthRule {
+  xp: number;
+  stats: Partial<FanStats>;
+}
+
+const FAN_BATTLE_RESULT_RULES: Partial<Record<GrowthKind, FanGrowthRule>> = {
+  battle_win: {
+    xp: 30,
+    stats: { fanPower: 2, supportPower: 1 },
+  },
+  battle_loss: {
+    xp: 10,
+    stats: { empathy: 1, story: 2 },
+  },
+  battle_draw: {
+    xp: 15,
+    stats: { supportPower: 1, empathy: 2 },
   },
 };
 
@@ -252,6 +275,30 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
         .update(personasTable)
         .set({ xp: afterExp, stats: newStats, level: afterLevel })
         .where(eq(personasTable.userId, userId));
+
+      const fanRule = FAN_BATTLE_RESULT_RULES[kind];
+      if (fanRule) {
+        await tx.insert(fanProfilesTable).values({ userId }).onConflictDoNothing();
+        const [fanProfile] = await tx
+          .select()
+          .from(fanProfilesTable)
+          .where(eq(fanProfilesTable.userId, userId))
+          .for("update");
+
+        if (fanProfile) {
+          const fanXp = fanProfile.xp + fanRule.xp;
+          const fanStats: FanStats = { ...DEFAULT_FAN_STATS, ...fanProfile.stats };
+          for (const [key, delta] of Object.entries(fanRule.stats)) {
+            const k = key as keyof FanStats;
+            fanStats[k] = (fanStats[k] ?? 0) + (delta ?? 0);
+          }
+
+          await tx
+            .update(fanProfilesTable)
+            .set({ xp: fanXp, stats: fanStats, level: computeLevel(fanXp) })
+            .where(eq(fanProfilesTable.userId, userId));
+        }
+      }
       granted = true;
     });
 
@@ -290,7 +337,7 @@ export interface RecordLifeQuestActivityParams {
   sourceKey: string;
   /** Opaque source pointer (quest id). */
   sourceId?: string | null;
-  /** Flat Persona EXP to grant (must be > 0). */
+  /** Flat legacy activity XP to grant (must be > 0). */
   xp: number;
   /** Caller-supplied per-stat deltas (only the seven persona stats are applied). */
   stats?: Partial<PersonaStats>;
@@ -416,7 +463,7 @@ export interface RecordRewardParams {
   eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward">;
   /** Deterministic idempotency key, e.g. `quest:{periodKey}:{questKey}:{userId}`. */
   sourceKey: string;
-  /** Flat Persona EXP reward. Must be > 0 to grant. */
+  /** Flat FAN XP reward. Must be > 0 to grant. */
   expDelta: number;
   reason: string;
   metadata?: Record<string, unknown>;
@@ -424,14 +471,14 @@ export interface RecordRewardParams {
 }
 
 /**
- * Grant a flat Persona EXP reward for a claimed quest / achievement. This is a
- * sibling of {@link recordActivity} that grants ONLY XP (no stat changes) and,
- * crucially, never touches Clan EXP — rewards are a self-contained retention
+ * Grant a flat FAN XP reward for a claimed quest / achievement. This is a sibling
+ * of {@link recordActivity} that grants ONLY FAN XP (no stat changes) and, crucially,
+ * never touches Persona XP or Clan EXP — rewards are a self-contained retention
  * layer on top of growth, not new clan activity.
  *
- * Idempotency + atomicity match recordActivity exactly: the persona row is locked
+ * Idempotency + atomicity match recordActivity exactly: the fan profile row is locked
  * `FOR UPDATE`, the xp_event is inserted with `ON CONFLICT (source_key) DO NOTHING`,
- * and the persona is bumped only when the insert produced a row. Returns `true`
+ * and the fan profile is bumped only when the insert produced a row. Returns `true`
  * iff this call actually granted (a replay of the same sourceKey returns `false`),
  * so callers can decide whether to mark the reward claimed.
  *
@@ -443,15 +490,14 @@ export async function recordReward(params: RecordRewardParams): Promise<boolean>
   const { userId, sourceType, eventType, sourceKey, expDelta, reason, metadata } = params;
   if (expDelta <= 0) return false;
 
-  const ensured = await ensurePersona(userId);
-  if (!ensured) throw new Error("persona unavailable for reward");
-
   let granted = false;
   await db.transaction(async (tx) => {
+    await tx.insert(fanProfilesTable).values({ userId }).onConflictDoNothing();
+
     const [locked] = await tx
       .select()
-      .from(personasTable)
-      .where(eq(personasTable.userId, userId))
+      .from(fanProfilesTable)
+      .where(eq(fanProfilesTable.userId, userId))
       .for("update");
     if (!locked) return;
 
@@ -483,9 +529,9 @@ export async function recordReward(params: RecordRewardParams): Promise<boolean>
     if (inserted.length === 0) return;
 
     await tx
-      .update(personasTable)
+      .update(fanProfilesTable)
       .set({ xp: afterExp, level: afterLevel })
-      .where(eq(personasTable.userId, userId));
+      .where(eq(fanProfilesTable.userId, userId));
     granted = true;
   });
 
