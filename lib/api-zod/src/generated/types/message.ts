@@ -5,6 +5,9 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { MessageLinkPreview } from './messageLinkPreview';
+import type { MessageReplyPreview } from './messageReplyPreview';
+import type { MessageStickerBadge } from './messageStickerBadge';
 import type { PublicUser } from './publicUser';
 
 export interface Message {
@@ -13,8 +16,15 @@ export interface Message {
   senderId: string;
   type: string;
   content: string;
+  /** @nullable */
+  replyToMessageId?: string | null;
+  /** @nullable */
+  deletedAt?: string | null;
   createdAt: string;
   sender?: PublicUser;
+  replyTo?: MessageReplyPreview | null;
+  stickerBadges?: MessageStickerBadge[];
+  linkPreview?: MessageLinkPreview | null;
   /** Number of other room members who have read this message */
   readCount?: number;
 }

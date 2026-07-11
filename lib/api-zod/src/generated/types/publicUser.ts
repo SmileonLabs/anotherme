@@ -10,6 +10,13 @@ export interface PublicUser {
   id: string;
   nickname: string;
   email: string;
+  /**
+     * Current viewer's saved name for this user, when available.
+     * @nullable
+     */
+  friendAlias?: string | null;
+  /** friendAlias when set, otherwise nickname. */
+  displayName?: string;
   /** @nullable */
   profileImageUrl?: string | null;
   /** @nullable */

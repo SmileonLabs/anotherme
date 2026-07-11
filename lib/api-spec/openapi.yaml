@@ -24,6 +24,8 @@ tags:
     description: Block management
   - name: calls
     description: Voice calls
+  - name: realtime
+    description: Realtime connection setup
   - name: quests
     description: Daily/weekly quests & achievements
 paths:
@@ -39,6 +41,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: A required dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /realtime/ticket:
+    post:
+      operationId: createRealtimeTicket
+      tags: [realtime]
+      summary: Create a one-time ticket for a realtime WebSocket connection
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Short-lived single-use connection ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeTicket"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Origin not allowed
+        "503":
+          description: Realtime service unavailable
 
   /users:
     get:
@@ -98,6 +126,22 @@ paths:
         "204":
           description: Deleted
 
+  /users/me/profile-history:
+    get:
+      operationId: listMyProfileHistory
+      tags: [users]
+      summary: List my profile update history
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Profile update history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfileUpdateHistoryItem"
+
   /users/me/push-token:
     post:
       operationId: registerPushToken
@@ -140,10 +184,9 @@ paths:
       tags: [users]
       summary: Get my Another Me identity card
       description: >
-        Derived "identity" view (archetype, strengths, weaknesses, growth
-        direction, archetype timeline) computed purely from existing stats and AI
-        fields. No AI call and no XP/stat mutation. Fetching records an archetype
-        history row only when the archetype changes.
+        Ontology-only Another Me identity/sync view. Returns 404 until an
+        ontology snapshot exists. No legacy stats fallback, AI call, or XP/stat
+        mutation.
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -152,6 +195,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PersonaCard"
+        "404":
+          description: Persona ontology profile has not been created yet
         "401":
           description: Unauthorized
 
@@ -161,12 +206,13 @@ paths:
       tags: [users]
       summary: Run an on-demand AI analysis of my Another Me persona
       description: >
-        Triggered only by the user. Analyzes recent app activity and updates the
-        qualitative AI fields. Rate-limited to once per 10 minutes per user.
+        Triggered only by the user. Analyzes recent app activity and enqueues
+        ontology evidence without storing legacy AI detail fields. Rate-limited
+        to once per 10 minutes per user.
       security: [{ bearerAuth: [] }]
       responses:
         "200":
-          description: Updated persona with fresh AI analysis
+          description: Persona state after enqueueing ontology analysis evidence
           content:
             application/json:
               schema:
@@ -800,6 +846,36 @@ paths:
                 items:
                   $ref: "#/components/schemas/PublicUser"
 
+  /friends/{userId}/alias:
+    patch:
+      operationId: updateFriendAlias
+      tags: [friends]
+      summary: Update my saved name for a friend
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FriendAliasInput"
+      responses:
+        "200":
+          description: Updated friend display user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicUser"
+        "400":
+          description: Invalid alias
+        "404":
+          description: Friend not found
+
   /friends/{userId}:
     delete:
       operationId: removeFriend
@@ -1098,6 +1174,127 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
 
+  /rooms/{id}/messages/{messageId}/delete:
+    post:
+      operationId: deleteMessage
+      tags: [messages]
+      summary: Delete a message for me or everyone
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteMessageInput"
+      responses:
+        "204":
+          description: Deleted
+
+  /rooms/{id}/messages/{messageId}/forward:
+    post:
+      operationId: forwardMessage
+      tags: [messages]
+      summary: Forward a message as a new message without origin attribution
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForwardMessageInput"
+      responses:
+        "201":
+          description: Forwarded message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /rooms/{id}/messages/{messageId}/sticker:
+    post:
+      operationId: addMessageStickerBadge
+      tags: [messages]
+      summary: Attach or replace my sticker badge on a message
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StickerBadgeInput"
+      responses:
+        "204":
+          description: Sticker attached
+
+  /rooms/{id}/pin:
+    post:
+      operationId: pinRoomMessage
+      tags: [rooms]
+      summary: Pin one message in a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PinMessageInput"
+      responses:
+        "204":
+          description: Pinned
+    delete:
+      operationId: unpinRoomMessage
+      tags: [rooms]
+      summary: Clear the room pin
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Unpinned
+
   /rooms/{id}/read:
     patch:
       operationId: markRoomRead
@@ -1242,7 +1439,7 @@ paths:
     post:
       operationId: createCall
       tags: [calls]
-      summary: Start a voice call
+      summary: Start a voice or video call
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1425,15 +1622,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /storage/objects/{objectPath}:
+  /storage/objects/{path}:
     get:
       tags: [Storage]
       operationId: getStorageObject
       summary: Serve an object entity from PRIVATE_OBJECT_DIR
       parameters:
-        - name: objectPath
+        - name: path
           in: path
           required: true
+          description: A path relative to the private objects directory; may contain `/` separators.
           schema:
             type: string
       responses:
@@ -2279,6 +2477,1260 @@ paths:
         "401":
           description: Unauthorized
 
+  /knowledge/memories:
+    get:
+      operationId: listKnowledgeMemories
+      tags: [knowledge]
+      summary: List my approved AI memories
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Approved memories, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeMemory"
+    post:
+      operationId: createKnowledgeMemory
+      tags: [knowledge]
+      summary: Create an approved manual AI memory
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeMemoryCreate"
+      responses:
+        "201":
+          description: Created memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeMemory"
+        "400":
+          description: Text is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /knowledge/memories/{id}:
+    patch:
+      operationId: updateKnowledgeMemory
+      tags: [knowledge]
+      summary: Update one of my AI memories
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeMemoryPatch"
+      responses:
+        "200":
+          description: Updated memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeMemory"
+        "404":
+          description: Memory not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: archiveKnowledgeMemory
+      tags: [knowledge]
+      summary: Archive one of my AI memories
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Archived memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeMemory"
+        "404":
+          description: Memory not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/settings:
+    get:
+      operationId: getAnotherMeSettings
+      tags: [another-me]
+      summary: Get my Another Me settings
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Another Me settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeSettings"
+    patch:
+      operationId: updateAnotherMeSettings
+      tags: [another-me]
+      summary: Update my Another Me settings
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnotherMeSettingsPatch"
+      responses:
+        "200":
+          description: Updated Another Me settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeSettings"
+        "400":
+          description: Invalid setting value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/rooms/{roomId}/settings:
+    get:
+      operationId: getAnotherMeRoomSettings
+      tags: [another-me]
+      summary: Get my Another Me settings for a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Room-specific Another Me settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeRoomSettings"
+        "404":
+          description: Room not found or caller is not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateAnotherMeRoomSettings
+      tags: [another-me]
+      summary: Update my Another Me settings for a room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnotherMeRoomSettingsPatch"
+      responses:
+        "200":
+          description: Updated room-specific Another Me settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeRoomSettings"
+        "400":
+          description: Invalid setting value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Room not found or caller is not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/summon/status:
+    get:
+      operationId: getAnotherMeSummonStatus
+      tags: [another-me]
+      summary: Check whether an Another Me can be summoned into a direct room
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: roomId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: targetUserId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Summon eligibility and any active session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeSummonStatus"
+        "400":
+          description: Missing or invalid room or target user id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Room not found or caller is not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/summon:
+    post:
+      operationId: summonAnotherMe
+      tags: [another-me]
+      summary: Summon another participant's Another Me into a direct room
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnotherMeSummonInput"
+      responses:
+        "201":
+          description: Active Another Me session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeSession"
+        "400":
+          description: Missing or invalid room or target user id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: The current relationship or room policy does not allow a summon
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Room not found or caller is not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The wait period is active or a session is already active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/summon/{sessionId}/dismiss:
+    post:
+      operationId: dismissAnotherMeSession
+      tags: [another-me]
+      summary: Dismiss an Another Me session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dismissed or already completed session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeSession"
+        "403":
+          description: Caller is not a party to the session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /another-me/tone-profile/generate:
+    post:
+      operationId: generateAnotherMeToneProfile
+      tags: [another-me]
+      summary: Generate my Another Me tone profile from my messages
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnotherMeToneProfileInput"
+      responses:
+        "200":
+          description: Generated tone profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnotherMeToneProfile"
+
+  /daily-talk-reward/status:
+    get:
+      operationId: getDailyTalkRewardStatus
+      tags: [daily-talk-reward]
+      summary: Get my daily talk reward eligibility
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current reward eligibility and streak
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkRewardStatus"
+
+  /daily-talk-reward/generate:
+    post:
+      operationId: generateDailyTalkReward
+      tags: [daily-talk-reward]
+      summary: Generate my AI daily talk diary draft
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Generated daily reward diary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkReward"
+        "400":
+          description: The reward is not ready to generate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Talk analysis is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Reward already claimed or insufficient messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI generation is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /daily-talk-reward/history:
+    get:
+      operationId: listDailyTalkRewardHistory
+      tags: [daily-talk-reward]
+      summary: List my daily talk reward history
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Daily talk rewards, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyTalkReward"
+
+  /daily-talk-reward/{id}:
+    get:
+      operationId: getDailyTalkReward
+      tags: [daily-talk-reward]
+      summary: Get one of my daily talk rewards
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daily talk reward
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkReward"
+        "404":
+          description: Reward not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateDailyTalkReward
+      tags: [daily-talk-reward]
+      summary: Edit an unclaimed daily talk reward diary
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DailyTalkRewardPatch"
+      responses:
+        "200":
+          description: Updated daily talk reward
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkReward"
+        "400":
+          description: Invalid diary fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Reward not found or already claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /daily-talk-reward/{id}/save:
+    post:
+      operationId: saveDailyTalkReward
+      tags: [daily-talk-reward]
+      summary: Save a daily talk reward and grant its PVT
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reward saved and granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkReward"
+        "400":
+          description: Diary has not been generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Reward not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Reward already granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /daily-talk-reward/{id}/post-to-feed:
+    post:
+      operationId: postDailyTalkRewardToFeed
+      tags: [daily-talk-reward]
+      summary: Post a daily talk reward diary to the STAR feed and grant its PVT
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reward posted and granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyTalkReward"
+        "400":
+          description: Diary has not been generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Reward not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Reward already granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /official-accounts/bibi:
+    get:
+      operationId: getBibiOfficialProfile
+      tags: [official-accounts]
+      summary: Get the BIBI Official account profile and ensure the friendship exists
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: BIBI Official profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BibiOfficialProfile"
+
+  /official-accounts/bibi/room:
+    post:
+      operationId: getOrCreateBibiOfficialRoom
+      tags: [official-accounts]
+      summary: Get or create my direct room with BIBI Official
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: BIBI Official profile and direct room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BibiOfficialRoom"
+
+  /presence/heartbeat:
+    post:
+      operationId: recordPresenceHeartbeat
+      tags: [presence]
+      summary: Record my presence heartbeat
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceHeartbeat"
+      responses:
+        "204":
+          description: Presence recorded
+
+  /presence/users:
+    get:
+      operationId: listPresenceUsers
+      tags: [presence]
+      summary: Get presence for users who share a room with me
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          description: Comma-separated user ids. Up to 50 ids are considered.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Presence states for authorized requested users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceUsersResponse"
+
+  /pvt/wallet:
+    get:
+      operationId: getPvtWallet
+      tags: [pvt]
+      summary: Get my PVT wallet balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: PVT wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PvtWallet"
+
+  /pvt/transactions:
+    get:
+      operationId: listPvtTransactions
+      tags: [pvt]
+      summary: List my PVT transactions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: PVT transactions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PvtTransaction"
+        "400":
+          description: Invalid limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /star-feed/posts:
+    get:
+      operationId: listStarFeedPosts
+      tags: [star-feed]
+      summary: List STAR feed posts visible to me
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Visible STAR feed posts, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StarFeedPost"
+        "400":
+          description: Invalid limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createStarFeedPost
+      tags: [star-feed]
+      summary: Create a FAN or official STAR feed post
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StarFeedPostInput"
+      responses:
+        "201":
+          description: Created STAR feed post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarFeedPost"
+        "400":
+          description: Invalid post body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: STAR post is not allowed for the current play state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayModeError"
+        "409":
+          description: A STAR NFT must be equipped before posting as a STAR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayModeError"
+
+  /star-feed/posts/{id}/reactions:
+    post:
+      operationId: cheerStarFeedPost
+      tags: [star-feed]
+      summary: Add my cheer reaction to a STAR feed post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: STAR feed post with the caller's reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarFeedPost"
+        "404":
+          description: Post not found or not visible to the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /star-feed/posts/{id}/comments:
+    post:
+      operationId: commentStarFeedPost
+      tags: [star-feed]
+      summary: Add a comment to a STAR feed post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StarFeedCommentInput"
+      responses:
+        "201":
+          description: STAR feed post with the new comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarFeedPost"
+        "400":
+          description: Invalid comment body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Post not found or not visible to the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /storage/uploads/object:
+    post:
+      operationId: uploadStorageObject
+      tags: [Storage]
+      summary: Upload raw object bytes through the API
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: true
+          description: Declared size. The server stores the actual uploaded byte length.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 26214400
+        - name: contentType
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Stored object path and actual upload metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectUploadResponse"
+        "400":
+          description: Missing metadata, empty bytes, or an oversized upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Upload failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /storage/public-objects/{filePath}:
+    get:
+      operationId: getPublicStorageObject
+      tags: [Storage]
+      summary: Serve an unconditionally public object
+      parameters:
+        - name: filePath
+          in: path
+          required: true
+          description: A path relative to configured public object roots; may contain `/` separators.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public object content streamed with its stored Content-Type
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Public object not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to serve the public object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /users/me/play-mode:
+    get:
+      operationId: getMyPlayMode
+      tags: [users]
+      summary: Get my FAN or STAR play mode state
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current play mode state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayModeState"
+    patch:
+      operationId: updateMyPlayMode
+      tags: [users]
+      summary: Change my FAN or STAR play mode
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayModeInput"
+      responses:
+        "200":
+          description: Updated play mode state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayModeState"
+        "400":
+          description: Mode must be fan or star
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: STAR mode is locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayModeError"
+
+  /users/me/wallet:
+    get:
+      operationId: getMyWalletStatus
+      tags: [users]
+      summary: Get my wallet and NFT verification status
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Wallet verification status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletStatus"
+
+  /users/me/wallet/challenge:
+    post:
+      operationId: createWalletChallenge
+      tags: [users]
+      summary: Create a wallet ownership verification challenge
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletChallengeInput"
+      responses:
+        "201":
+          description: Signable wallet verification challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletChallenge"
+        "400":
+          description: Invalid wallet address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/wallet/verify:
+    post:
+      operationId: verifyWalletChallenge
+      tags: [users]
+      summary: Verify a wallet signature and refresh NFT ownership
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletVerificationInput"
+      responses:
+        "200":
+          description: Wallet and NFT verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletVerificationResult"
+        "400":
+          description: Invalid wallet address or signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Challenge not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Wallet is claimed by another account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: NFT ownership check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/wallet/refresh:
+    post:
+      operationId: refreshWalletNft
+      tags: [users]
+      summary: Refresh NFT ownership for my verified wallet
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Refreshed wallet and NFT verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletVerificationResult"
+        "404":
+          description: No verified wallet exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: NFT ownership check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/star-profile:
+    get:
+      operationId: getMyStarProfile
+      tags: [users]
+      summary: Get my equipped STAR NFT profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Equipped STAR profile, if one is equipped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquippedStarProfileResponse"
+
+  /users/me/star-nft/equip:
+    post:
+      operationId: equipStarNft
+      tags: [users]
+      summary: Equip an owned STAR NFT
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipStarNftInput"
+      responses:
+        "200":
+          description: Equipped STAR profile and current play state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipStarNftResult"
+        "400":
+          description: Invalid NFT token id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: The verified wallet does not own the token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: A verified wallet is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: NFT ownership check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: NFT contract configuration is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/torimia:
+    get:
+      operationId: getTorimiaState
+      tags: [users]
+      summary: Get my Torimia progression state
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Torimia progression state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorimiaState"
+
+  /users/me/torimia/open:
+    post:
+      operationId: openTorimia
+      tags: [users]
+      summary: Open Torimia and promote my equipped STAR when requirements are met
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated Torimia progression state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorimiaState"
+        "403":
+          description: Equipped STAR is not ready to open Torimia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorimiaError"
+        "409":
+          description: An equipped STAR is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TorimiaError"
+        "500":
+          description: Torimia could not be opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/rankings:
+    get:
+      operationId: getServiceRankings
+      tags: [users]
+      summary: Get persona, FAN, STAR, or talk-battle rankings
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [persona, fan, star, battle]
+            default: fan
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [overall, persuasion, logic, empathy, strategy, archetype, fan_power, support_power, story, charm, stage_presence, bond, lore, wins, win_rate, streak]
+        - name: archetype
+          in: query
+          required: false
+          description: Used by persona rankings when type is archetype.
+          schema:
+            type: string
+            enum: [strategist, harmonizer, explorer, pioneer, sage, entertainer, activist, observer]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Service ranking list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceRanking"
+
+  /battles/{id}/feed-post:
+    post:
+      operationId: createBattleFeedPost
+      tags: [battles]
+      summary: Publish my completed battle result to the STAR feed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BattleFeedPostInput"
+      responses:
+        "200":
+          description: Existing feed post for this battle result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleFeedPostResult"
+        "201":
+          description: Created feed post for this battle result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleFeedPostResult"
+        "400":
+          description: Invalid feed post type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Caller is not eligible to publish this battle or as a STAR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Battle not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Battle is not completed or a STAR NFT must be equipped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /calls/{id}/failed:
+    post:
+      operationId: failCall
+      tags: [calls]
+      summary: Mark one of my non-terminal calls as failed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Failed call, or the existing terminal call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Call"
+        "404":
+          description: Call not found or caller is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2287,6 +3739,1011 @@ components:
       bearerFormat: JWT
 
   schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    KnowledgeMemory:
+      type: object
+      required: [id, userId, memoryType, text, privacyScope, status, confidence, source, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        subjectUserId:
+          type: ["string", "null"]
+        memoryType:
+          type: string
+        text:
+          type: string
+        privacyScope:
+          type: string
+          enum: [official_public, public_profile, user_private, relationship_private, system_internal]
+        status:
+          type: string
+          enum: [draft, approved, rejected, archived, inferred]
+        confidence:
+          type: integer
+        source:
+          type: string
+        graphMemoryId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    KnowledgeMemoryCreate:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+        memoryType:
+          type: string
+          default: preference
+        privacyScope:
+          type: string
+          default: user_private
+
+    KnowledgeMemoryPatch:
+      type: object
+      properties:
+        text:
+          type: string
+        privacyScope:
+          type: string
+        status:
+          type: string
+
+    AnotherMeToneSyncLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH]
+
+    AnotherMeRelationshipType:
+      type: string
+      enum: [FRIEND, FAMILY, WORK, PARTNER, UNKNOWN, CUSTOM]
+
+    AnotherMeSettings:
+      type: object
+      required: [summonEnabled, defaultWaitMinutes, allowFriends, allowFamily, allowWork, allowUnknown, autoReplyEnabled, sensitiveReplyBlocked, toneSyncEnabled, defaultToneSyncLevel]
+      properties:
+        summonEnabled:
+          type: boolean
+        defaultWaitMinutes:
+          type: integer
+        allowFriends:
+          type: boolean
+        allowFamily:
+          type: boolean
+        allowWork:
+          type: boolean
+        allowUnknown:
+          type: boolean
+        autoReplyEnabled:
+          type: boolean
+        sensitiveReplyBlocked:
+          type: boolean
+        toneSyncEnabled:
+          type: boolean
+        defaultToneSyncLevel:
+          $ref: "#/components/schemas/AnotherMeToneSyncLevel"
+
+    AnotherMeSettingsPatch:
+      type: object
+      properties:
+        summonEnabled:
+          type: boolean
+        defaultWaitMinutes:
+          type: integer
+          minimum: 1
+          maximum: 60
+        allowFriends:
+          type: boolean
+        allowFamily:
+          type: boolean
+        allowWork:
+          type: boolean
+        allowUnknown:
+          type: boolean
+        autoReplyEnabled:
+          type: boolean
+        sensitiveReplyBlocked:
+          type: boolean
+        toneSyncEnabled:
+          type: boolean
+        defaultToneSyncLevel:
+          $ref: "#/components/schemas/AnotherMeToneSyncLevel"
+
+    AnotherMeRoomSettings:
+      type: object
+      required: [roomId, relationshipType, autoReplyLevel]
+      properties:
+        roomId:
+          type: string
+        summonEnabled:
+          type: ["boolean", "null"]
+        waitMinutes:
+          type: ["integer", "null"]
+        toneSyncLevel:
+          oneOf:
+            - $ref: "#/components/schemas/AnotherMeToneSyncLevel"
+            - type: "null"
+        relationshipType:
+          $ref: "#/components/schemas/AnotherMeRelationshipType"
+        autoReplyLevel:
+          type: string
+
+    AnotherMeRoomSettingsPatch:
+      type: object
+      properties:
+        summonEnabled:
+          type: ["boolean", "null"]
+        waitMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 60
+        toneSyncLevel:
+          oneOf:
+            - $ref: "#/components/schemas/AnotherMeToneSyncLevel"
+            - type: "null"
+        relationshipType:
+          $ref: "#/components/schemas/AnotherMeRelationshipType"
+        autoReplyLevel:
+          type: string
+          minLength: 1
+          maxLength: 40
+
+    AnotherMeSummonInput:
+      type: object
+      required: [roomId, targetUserId]
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        targetUserId:
+          type: string
+          format: uuid
+
+    AnotherMeSession:
+      type: object
+      required: [id, ownerUserId, summonedByUserId, roomId, status, summonedAt, lastActivityAt, expiresAt, isOwner, isCaller, canDismiss]
+      properties:
+        id:
+          type: string
+        ownerUserId:
+          type: string
+        summonedByUserId:
+          type: string
+        roomId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, DISMISSED_BY_OWNER, DISMISSED_BY_CALLER, EXPIRED, FAILED]
+        summonedAt:
+          type: string
+          format: date-time
+        dismissedAt:
+          type: ["string", "null"]
+          format: date-time
+        dismissedByUserId:
+          type: ["string", "null"]
+        lastActivityAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        reason:
+          type: ["string", "null"]
+        ownerName:
+          type: ["string", "null"]
+        summonedByName:
+          type: ["string", "null"]
+        isOwner:
+          type: boolean
+        isCaller:
+          type: boolean
+        canDismiss:
+          type: boolean
+
+    AnotherMeSummonStatus:
+      type: object
+      required: [canSummon, waitMinutes, remainingSeconds, targetUserId]
+      properties:
+        canSummon:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        waitMinutes:
+          type: integer
+        remainingSeconds:
+          type: integer
+        targetUserId:
+          type: string
+        targetUserName:
+          type: ["string", "null"]
+        activeSession:
+          oneOf:
+            - $ref: "#/components/schemas/AnotherMeSession"
+            - type: "null"
+
+    AnotherMeToneProfileInput:
+      type: object
+      properties:
+        relationshipType:
+          allOf:
+            - $ref: "#/components/schemas/AnotherMeRelationshipType"
+          default: FRIEND
+
+    AnotherMeToneProfile:
+      type: object
+      required: [id, userId, relationshipType, honorificStyle, averageMessageLength, emojiUsageLevel, laughterUsageLevel, formalityLevel, warmthLevel, humorLevel, commonPhrasesJson, forbiddenPhrasesJson, updatedAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        relationshipType:
+          $ref: "#/components/schemas/AnotherMeRelationshipType"
+        toneSummary:
+          type: ["string", "null"]
+        honorificStyle:
+          type: string
+          enum: [BANMAL, JONDAETMAL, MIXED]
+        averageMessageLength:
+          type: integer
+        emojiUsageLevel:
+          type: integer
+        laughterUsageLevel:
+          type: integer
+        formalityLevel:
+          type: integer
+        warmthLevel:
+          type: integer
+        humorLevel:
+          type: integer
+        commonPhrasesJson:
+          type: array
+          items:
+            type: string
+        forbiddenPhrasesJson:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    DailyTalkRewardScores:
+      type: object
+      required: [empathy, communication, trust, positivity, contribution, spamRisk, qualityScore]
+      properties:
+        empathy:
+          type: number
+        communication:
+          type: number
+        trust:
+          type: number
+        positivity:
+          type: number
+        contribution:
+          type: number
+        spamRisk:
+          type: number
+        qualityScore:
+          type: number
+
+    DailyTalkRewardAbuseSignals:
+      type: object
+      required: [messageCount, userMessageCount, otherMessageCount, counterpartCount, repeatedMessageRatio, shortMessageRatio, selfMessageRatio, rewardMultiplier, reductions]
+      properties:
+        messageCount:
+          type: integer
+        userMessageCount:
+          type: integer
+        otherMessageCount:
+          type: integer
+        counterpartCount:
+          type: integer
+        repeatedMessageRatio:
+          type: number
+        shortMessageRatio:
+          type: number
+        selfMessageRatio:
+          type: number
+        rewardMultiplier:
+          type: number
+        reductions:
+          type: array
+          items:
+            type: string
+
+    DailyTalkRewardStatus:
+      type: object
+      required: [canClaim, claimedToday, messageCount, minMessageCount, streak]
+      properties:
+        canClaim:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        claimedToday:
+          type: boolean
+        messageCount:
+          type: integer
+        minMessageCount:
+          type: integer
+        streak:
+          type: integer
+        rewardId:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+
+    DailyTalkReward:
+      type: object
+      required: [id, rewardDate, status, title, mood, keywords, diary, summary, scores, grade, qualityScore, spamRisk, pvtAmount, estimatedPvtAmount, visibility, ontologySyncStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        rewardDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [PENDING, GENERATED, SAVED, POSTED, REWARDED, FAILED]
+        title:
+          type: string
+        mood:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        diary:
+          type: string
+        summary:
+          type: string
+        scores:
+          $ref: "#/components/schemas/DailyTalkRewardScores"
+        grade:
+          type: string
+        qualityScore:
+          type: integer
+        spamRisk:
+          type: integer
+        pvtAmount:
+          type: integer
+        estimatedPvtAmount:
+          type: integer
+        visibility:
+          type: string
+          enum: [PRIVATE, FRIENDS, PUBLIC]
+        feedPostId:
+          type: ["string", "null"]
+        abuse:
+          oneOf:
+            - $ref: "#/components/schemas/DailyTalkRewardAbuseSignals"
+            - type: "null"
+        ontologySyncStatus:
+          type: string
+          enum: [none, pending, processing, processed, retrying, failed]
+        ontologySyncedAt:
+          type: ["string", "null"]
+          format: date-time
+        rewardedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DailyTalkRewardPatch:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        diary:
+          type: string
+          minLength: 1
+          maxLength: 1200
+        visibility:
+          type: string
+          enum: [PRIVATE, FRIENDS, PUBLIC]
+
+    BibiOfficialProfile:
+      type: object
+      required: [id, email, nickname, displayName, handle]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        nickname:
+          type: string
+        displayName:
+          type: string
+        handle:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        statusMessage:
+          type: ["string", "null"]
+
+    BibiOfficialRoom:
+      type: object
+      required: [account, room]
+      properties:
+        account:
+          $ref: "#/components/schemas/BibiOfficialProfile"
+        room:
+          $ref: "#/components/schemas/ChatRoom"
+
+    PresenceHeartbeat:
+      type: object
+      properties:
+        roomId:
+          type: string
+        platform:
+          type: string
+          maxLength: 32
+
+    PresenceState:
+      type: object
+      required: [userId, online]
+      properties:
+        userId:
+          type: string
+        online:
+          type: boolean
+        lastSeenAt:
+          type: ["string", "null"]
+          format: date-time
+        platform:
+          type: ["string", "null"]
+        roomId:
+          type: ["string", "null"]
+
+    PresenceUsersResponse:
+      type: object
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresenceState"
+
+    PvtWallet:
+      type: object
+      required: [balance]
+      properties:
+        balance:
+          type: integer
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    PvtTransaction:
+      type: object
+      required: [id, amount, type, source, sourceId, balanceAfter, createdAt]
+      properties:
+        id:
+          type: string
+        amount:
+          type: integer
+        type:
+          type: string
+          enum: [EARN, SPEND, ADJUST]
+        source:
+          type: string
+          enum: [DAILY_TALK_REWARD, EVENT, ADMIN, MISSION]
+        sourceId:
+          type: string
+        description:
+          type: ["string", "null"]
+        balanceAfter:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    StarFeedAuthor:
+      type: object
+      required: [nickname]
+      properties:
+        id:
+          type: ["string", "null"]
+        nickname:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+
+    StarFeedComment:
+      type: object
+      required: [id, body, createdAt, author]
+      properties:
+        id:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        author:
+          $ref: "#/components/schemas/StarFeedAuthor"
+
+    StarFeedPost:
+      type: object
+      required: [id, kind, title, body, visibility, createdAt, author, reactionCount, commentCount, reactedByMe, recentComments]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [official, event, fan, star, growth, profile_update, talk_diary]
+        title:
+          type: string
+        body:
+          type: string
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
+        visibility:
+          type: string
+          enum: [PRIVATE, FRIENDS, PUBLIC]
+        createdAt:
+          type: string
+          format: date-time
+        author:
+          $ref: "#/components/schemas/StarFeedAuthor"
+        reactionCount:
+          type: integer
+        commentCount:
+          type: integer
+        reactedByMe:
+          type: boolean
+        recentComments:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarFeedComment"
+
+    StarFeedPostInput:
+      type: object
+      required: [body]
+      properties:
+        kind:
+          type: string
+          enum: [fan, star]
+          default: fan
+        title:
+          type: string
+          maxLength: 80
+        body:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    StarFeedCommentInput:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 240
+
+    ObjectUploadResponse:
+      type: object
+      required: [objectPath, metadata]
+      properties:
+        objectPath:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+
+    FanStats:
+      type: object
+      required: [fanPower, supportPower, empathy, story]
+      properties:
+        fanPower:
+          type: integer
+        supportPower:
+          type: integer
+        empathy:
+          type: integer
+        story:
+          type: integer
+
+    FanProfile:
+      type: object
+      required: [level, xp, stats]
+      properties:
+        level:
+          type: integer
+        xp:
+          type: integer
+        stats:
+          $ref: "#/components/schemas/FanStats"
+
+    StarStats:
+      type: object
+      required: [charm, stagePresence, bond, lore]
+      properties:
+        charm:
+          type: integer
+        stagePresence:
+          type: integer
+        bond:
+          type: integer
+        lore:
+          type: integer
+
+    StarProfile:
+      type: object
+      required: [id, starKey, displayName, tokenId, contractAddress, chainId, stage, level, xp, stats]
+      properties:
+        id:
+          type: string
+        starKey:
+          type: string
+        displayName:
+          type: string
+        tokenId:
+          type: string
+        contractAddress:
+          type: string
+        chainId:
+          type: integer
+        imageUrl:
+          type: ["string", "null"]
+        stage:
+          type: string
+          enum: [aspiring, promoted]
+        level:
+          type: integer
+        xp:
+          type: integer
+        stats:
+          $ref: "#/components/schemas/StarStats"
+        equippedAt:
+          type: ["string", "null"]
+          format: date-time
+        verifiedAt:
+          type: ["string", "null"]
+          format: date-time
+        torimiaOpenedAt:
+          type: ["string", "null"]
+          format: date-time
+        promotedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    PlayModeInput:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [fan, star]
+
+    PlayModeState:
+      type: object
+      required: [currentMode, starUnlocked, fanProfile]
+      properties:
+        currentMode:
+          type: string
+          enum: [fan, star]
+        starUnlocked:
+          type: boolean
+        fanProfile:
+          $ref: "#/components/schemas/FanProfile"
+        equippedStar:
+          oneOf:
+            - $ref: "#/components/schemas/StarProfile"
+            - type: "null"
+
+    PlayModeError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          required: [state]
+          properties:
+            state:
+              $ref: "#/components/schemas/PlayModeState"
+
+    WalletStatus:
+      type: object
+      required: [walletVerified, nftVerified, nftConfigured, starUnlocked]
+      properties:
+        walletAddress:
+          type: ["string", "null"]
+        chainId:
+          type: ["integer", "null"]
+        walletVerified:
+          type: boolean
+        nftVerified:
+          type: boolean
+        lastCheckedAt:
+          type: ["string", "null"]
+          format: date-time
+        nftContractAddress:
+          type: ["string", "null"]
+        nftChainId:
+          type: ["integer", "null"]
+        nftConfigured:
+          type: boolean
+        starUnlocked:
+          type: boolean
+
+    WalletChallengeInput:
+      type: object
+      required: [walletAddress]
+      properties:
+        walletAddress:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    WalletChallenge:
+      type: object
+      required: [id, walletAddress, message, expiresAt]
+      properties:
+        id:
+          type: string
+        walletAddress:
+          type: string
+        message:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        nftContractAddress:
+          type: ["string", "null"]
+        nftChainId:
+          type: ["integer", "null"]
+
+    WalletVerificationInput:
+      type: object
+      required: [walletAddress, challengeId, signature]
+      properties:
+        walletAddress:
+          type: string
+          minLength: 1
+          maxLength: 120
+        challengeId:
+          type: string
+          format: uuid
+        signature:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    WalletVerificationResult:
+      type: object
+      required: [ok, status, nftOwned, configMissing]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        status:
+          $ref: "#/components/schemas/WalletStatus"
+        nftOwned:
+          type: boolean
+        balance:
+          type: ["string", "null"]
+        configMissing:
+          type: boolean
+
+    EquippedStarProfileResponse:
+      type: object
+      required: [equippedStar]
+      properties:
+        equippedStar:
+          oneOf:
+            - $ref: "#/components/schemas/StarProfile"
+            - type: "null"
+
+    EquipStarNftInput:
+      type: object
+      required: [tokenId]
+      properties:
+        tokenId:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    EquipStarNftResult:
+      type: object
+      required: [equippedStar, state]
+      properties:
+        equippedStar:
+          $ref: "#/components/schemas/StarProfile"
+        state:
+          $ref: "#/components/schemas/PlayModeState"
+
+    TorimiaRequirement:
+      type: object
+      required: [key, label, current, target, met]
+      properties:
+        key:
+          type: string
+          enum: [level, missions, charm, stagePresence, bond, lore]
+        label:
+          type: string
+        current:
+          type: integer
+        target:
+          type: integer
+        met:
+          type: boolean
+
+    TorimiaState:
+      type: object
+      required: [opened, promoted, canOpen, requirements]
+      properties:
+        star:
+          oneOf:
+            - $ref: "#/components/schemas/StarProfile"
+            - type: "null"
+        opened:
+          type: boolean
+        promoted:
+          type: boolean
+        canOpen:
+          type: boolean
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/TorimiaRequirement"
+
+    TorimiaError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          required: [state]
+          properties:
+            state:
+              $ref: "#/components/schemas/TorimiaState"
+
+    ServiceRankingItem:
+      type: object
+      required: [id, rank, userId, displayName, level, title, subTitle, badgeLabel, score, primaryStatLabel, primaryStatValue]
+      properties:
+        id:
+          type: string
+        rank:
+          type: integer
+        userId:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        level:
+          type: integer
+        title:
+          type: string
+        subTitle:
+          type: string
+        badgeLabel:
+          type: string
+        score:
+          type: integer
+        primaryStatLabel:
+          type: string
+        primaryStatValue:
+          type: integer
+
+    ServiceRanking:
+      type: object
+      required: [scope, type, items]
+      properties:
+        scope:
+          type: string
+          enum: [persona, fan, star, battle]
+        type:
+          type: string
+          enum: [overall, persuasion, logic, empathy, strategy, archetype, fan_power, support_power, story, charm, stage_presence, bond, lore, wins, win_rate, streak]
+        archetype:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceRankingItem"
+        myRank:
+          oneOf:
+            - $ref: "#/components/schemas/PersonaRankingMyRank"
+            - type: "null"
+
+    BattleFeedPostInput:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [fan, star]
+          default: fan
+
+    BattleVibeSummary:
+      type: object
+      required: [key, label, description, topAxes]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        topAxes:
+          type: array
+          items:
+            type: string
+            enum: [logic, persuasiveness, rebuttal, wit, manners]
+
+    BattleResultReward:
+      type: object
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: string
+
+    BattleResultSummary:
+      type: object
+      required: [source, battleRoomId, matchSeq, topic, opponentName, outcome, outcomeLabel, myScore, opponentScore, vibe, rewards]
+      properties:
+        source:
+          type: string
+          const: battle
+        battleRoomId:
+          type: string
+        matchSeq:
+          type: integer
+        topic:
+          type: string
+        opponentName:
+          type: string
+        outcome:
+          type: string
+          enum: [win, loss, draw]
+        outcomeLabel:
+          type: string
+        myScore:
+          type: integer
+        opponentScore:
+          type: integer
+        vibe:
+          $ref: "#/components/schemas/BattleVibeSummary"
+        rewards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BattleResultReward"
+
+    BattleFeedPostResult:
+      type: object
+      required: [post, duplicate, summary]
+      properties:
+        post:
+          $ref: "#/components/schemas/StarFeedPost"
+        duplicate:
+          type: boolean
+        summary:
+          $ref: "#/components/schemas/BattleResultSummary"
+
     Quest:
       type: object
       required:
@@ -2370,6 +4827,13 @@ components:
       required: [status]
       properties:
         status:
+          type: string
+
+    RealtimeTicket:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
           type: string
 
     UserProfile:
@@ -2469,22 +4933,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GrowthEvent"
-        summary:
-          type: ["string", "null"]
-        languageStyle:
-          type: ["string", "null"]
-        personalityTraits:
-          type: ["string", "null"]
-        valuesBeliefs:
-          type: ["string", "null"]
-        knowledgeDomains:
-          type: ["string", "null"]
-        emotionalPatterns:
-          type: ["string", "null"]
-        decisionStyle:
-          type: ["string", "null"]
-        analysisConfidence:
-          type: ["number", "null"]
         lastAnalyzedAt:
           type: ["string", "null"]
         createdAt:
@@ -2505,8 +4953,11 @@ components:
       type: object
       required:
         [
+          source,
+          syncState,
           name,
           level,
+          displayLevelLabel,
           title,
           archetype,
           archetypeKey,
@@ -2515,21 +4966,28 @@ components:
           primaryTraits,
           growthDirection,
           motto,
-          history,
+          nextActions,
+          syncTimeline,
         ]
       properties:
+        source:
+          type: string
+          enum: [ontology]
+        syncState:
+          type: string
+          enum: [not_started, forming, synced]
         name:
           type: string
         level:
           type: integer
+        displayLevelLabel:
+          type: ["string", "null"]
         title:
           type: string
         archetype:
           type: string
         archetypeKey:
           type: string
-        personaSummary:
-          type: ["string", "null"]
         strengths:
           type: array
           items:
@@ -2548,11 +5006,20 @@ components:
           type: string
         houseName:
           type: ["string", "null"]
-        history:
+        nextActions:
           type: array
           items:
-            $ref: "#/components/schemas/PersonaIdentityHistoryItem"
-
+            type: string
+        syncTimeline:
+          type: array
+          items:
+            type: object
+            required: [label, createdAt]
+            properties:
+              label:
+                type: string
+              createdAt:
+                type: ["string", "null"]
     PersonaRankingItem:
       type: object
       required:
@@ -2643,6 +5110,32 @@ components:
         notificationEnabled:
           type: boolean
 
+    ProfileUpdateHistoryItem:
+      type: object
+      required: [id, userId, kind, isVisible, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        kind:
+          type: string
+          enum: [profile_image, status_message, profile_update]
+        oldProfileImageUrl:
+          type: ["string", "null"]
+        newProfileImageUrl:
+          type: ["string", "null"]
+        oldStatusMessage:
+          type: ["string", "null"]
+        newStatusMessage:
+          type: ["string", "null"]
+        feedPostId:
+          type: ["string", "null"]
+        isVisible:
+          type: boolean
+        createdAt:
+          type: string
+
     PushTokenInput:
       type: object
       required: [token]
@@ -2660,10 +5153,25 @@ components:
           type: string
         email:
           type: string
+        friendAlias:
+          type: ["string", "null"]
+          description: Current viewer's saved name for this user, when available.
+        displayName:
+          type: string
+          description: friendAlias when set, otherwise nickname.
         profileImageUrl:
           type: ["string", "null"]
         statusMessage:
           type: ["string", "null"]
+
+    FriendAliasInput:
+      type: object
+      required: [alias]
+      properties:
+        alias:
+          type: ["string", "null"]
+          maxLength: 50
+          description: Null or an empty string clears the saved name.
 
     FriendRequestInput:
       type: object
@@ -2720,6 +5228,14 @@ components:
           type: ["string", "null"]
         lastMessageAt:
           type: ["string", "null"]
+        lastMessageSeq:
+          type: integer
+        pinnedMessageId:
+          type: ["string", "null"]
+        pinnedMessage:
+          anyOf:
+            - $ref: "#/components/schemas/MessageSummary"
+            - type: "null"
         unreadCount:
           type: integer
         firstUnreadMessageId:
@@ -2732,6 +5248,25 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicUser"
+
+    MessageSummary:
+      type: object
+      required: [id, senderId, type, content, createdAt]
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: ["string", "null"]
+        type:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+        deletedAt:
+          type: ["string", "null"]
 
     ChatRoomMember:
       type: object
@@ -2784,13 +5319,78 @@ components:
           type: string
         content:
           type: string
+        replyToMessageId:
+          type: ["string", "null"]
+        deletedAt:
+          type: ["string", "null"]
         createdAt:
           type: string
         sender:
           $ref: "#/components/schemas/PublicUser"
+        replyTo:
+          anyOf:
+            - $ref: "#/components/schemas/MessageReplyPreview"
+            - type: "null"
+        stickerBadges:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageStickerBadge"
+        linkPreview:
+          anyOf:
+            - $ref: "#/components/schemas/MessageLinkPreview"
+            - type: "null"
         readCount:
           type: integer
           description: Number of other room members who have read this message
+
+    MessageReplyPreview:
+      type: object
+      required: [id, senderId, type, content]
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: ["string", "null"]
+        type:
+          type: string
+        content:
+          type: string
+        deletedAt:
+          type: ["string", "null"]
+
+    MessageStickerBadge:
+      type: object
+      required: [id, code, userId, createdAt]
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        userId:
+          type: string
+        createdAt:
+          type: string
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/PublicUser"
+            - type: "null"
+
+    MessageLinkPreview:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        domain:
+          type: ["string", "null"]
+        title:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
 
     MessageInput:
       type: object
@@ -2799,6 +5399,37 @@ components:
         content:
           type: string
         type:
+          type: string
+        replyToMessageId:
+          type: ["string", "null"]
+
+    DeleteMessageInput:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [me, everyone]
+
+    PinMessageInput:
+      type: object
+      required: [messageId]
+      properties:
+        messageId:
+          type: string
+
+    ForwardMessageInput:
+      type: object
+      required: [targetRoomId]
+      properties:
+        targetRoomId:
+          type: string
+
+    StickerBadgeInput:
+      type: object
+      required: [code]
+      properties:
+        code:
           type: string
 
     DungeonInput:
@@ -3342,6 +5973,12 @@ components:
           type: string
         roomId:
           type: string
+        media:
+          $ref: "#/components/schemas/CallMedia"
+
+    CallMedia:
+      type: string
+      enum: [audio, video]
 
     CallStatus:
       type: string
@@ -3359,7 +5996,7 @@ components:
 
     Call:
       type: object
-      required: [id, roomName, callerId, calleeId, status, createdAt]
+      required: [id, roomName, callerId, calleeId, media, status, createdAt]
       properties:
         id:
           type: string
@@ -3371,6 +6008,8 @@ components:
           type: string
         chatRoomId:
           type: ["string", "null"]
+        media:
+          $ref: "#/components/schemas/CallMedia"
         status:
           $ref: "#/components/schemas/CallStatus"
         createdAt:
@@ -3390,7 +6029,7 @@ components:
 
     CallWithCaller:
       type: object
-      required: [id, roomName, callerId, calleeId, status, createdAt, caller]
+      required: [id, roomName, callerId, calleeId, media, status, createdAt, caller]
       properties:
         id:
           type: string
@@ -3402,6 +6041,8 @@ components:
           type: string
         chatRoomId:
           type: ["string", "null"]
+        media:
+          $ref: "#/components/schemas/CallMedia"
         status:
           $ref: "#/components/schemas/CallStatus"
         createdAt:

@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CallMedia } from './callMedia';
 import type { CallStatus } from './callStatus';
 
 export interface Call {
@@ -14,6 +15,7 @@ export interface Call {
   calleeId: string;
   /** @nullable */
   chatRoomId?: string | null;
+  media: CallMedia;
   status: CallStatus;
   createdAt: string;
   /** @nullable */

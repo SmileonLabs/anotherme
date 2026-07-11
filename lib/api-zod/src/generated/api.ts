@@ -17,12 +17,22 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Create a one-time ticket for a realtime WebSocket connection
+ */
+export const CreateRealtimeTicketResponse = zod.object({
+  "ticket": zod.string()
+})
+
+
+/**
  * @summary List all registered users
  */
 export const ListUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -66,6 +76,24 @@ export const UpdateMeResponse = zod.object({
   "notificationEnabled": zod.boolean(),
   "createdAt": zod.string()
 })
+
+
+/**
+ * @summary List my profile update history
+ */
+export const ListMyProfileHistoryResponseItem = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "kind": zod.enum(['profile_image', 'status_message', 'profile_update']),
+  "oldProfileImageUrl": zod.string().nullish(),
+  "newProfileImageUrl": zod.string().nullish(),
+  "oldStatusMessage": zod.string().nullish(),
+  "newStatusMessage": zod.string().nullish(),
+  "feedPostId": zod.string().nullish(),
+  "isVisible": zod.boolean(),
+  "createdAt": zod.string()
+})
+export const ListMyProfileHistoryResponse = zod.array(ListMyProfileHistoryResponseItem)
 
 
 /**
@@ -121,47 +149,41 @@ export const GetMyPersonaResponse = zod.object({
   "afterExp": zod.number(),
   "createdAt": zod.string()
 })),
-  "summary": zod.string().nullish(),
-  "languageStyle": zod.string().nullish(),
-  "personalityTraits": zod.string().nullish(),
-  "valuesBeliefs": zod.string().nullish(),
-  "knowledgeDomains": zod.string().nullish(),
-  "emotionalPatterns": zod.string().nullish(),
-  "decisionStyle": zod.string().nullish(),
-  "analysisConfidence": zod.number().nullish(),
   "lastAnalyzedAt": zod.string().nullish(),
   "createdAt": zod.string()
 })
 
 
 /**
- * Derived "identity" view (archetype, strengths, weaknesses, growth direction, archetype timeline) computed purely from existing stats and AI fields. No AI call and no XP/stat mutation. Fetching records an archetype history row only when the archetype changes.
+ * Ontology-only Another Me identity/sync view. Returns 404 until an ontology snapshot exists. No legacy stats fallback, AI call, or XP/stat mutation.
 
  * @summary Get my Another Me identity card
  */
 export const GetMyPersonaCardResponse = zod.object({
+  "source": zod.enum(['ontology']),
+  "syncState": zod.enum(['not_started', 'forming', 'synced']),
   "name": zod.string(),
   "level": zod.number(),
+  "displayLevelLabel": zod.string().nullable(),
   "title": zod.string(),
   "archetype": zod.string(),
   "archetypeKey": zod.string(),
-  "personaSummary": zod.string().nullish(),
   "strengths": zod.array(zod.string()),
   "weaknesses": zod.array(zod.string()),
   "primaryTraits": zod.array(zod.string()),
   "growthDirection": zod.string(),
   "motto": zod.string(),
   "houseName": zod.string().nullish(),
-  "history": zod.array(zod.object({
-  "archetype": zod.string(),
-  "level": zod.number(),
-  "createdAt": zod.string()
+  "nextActions": zod.array(zod.string()),
+  "syncTimeline": zod.array(zod.object({
+  "label": zod.string(),
+  "createdAt": zod.string().nullable()
 }))
 })
 
 
 /**
- * Triggered only by the user. Analyzes recent app activity and updates the qualitative AI fields. Rate-limited to once per 10 minutes per user.
+ * Triggered only by the user. Analyzes recent app activity and enqueues ontology evidence without storing legacy AI detail fields. Rate-limited to once per 10 minutes per user.
 
  * @summary Run an on-demand AI analysis of my Another Me persona
  */
@@ -195,14 +217,6 @@ export const AnalyzeMyPersonaResponse = zod.object({
   "afterExp": zod.number(),
   "createdAt": zod.string()
 })),
-  "summary": zod.string().nullish(),
-  "languageStyle": zod.string().nullish(),
-  "personalityTraits": zod.string().nullish(),
-  "valuesBeliefs": zod.string().nullish(),
-  "knowledgeDomains": zod.string().nullish(),
-  "emotionalPatterns": zod.string().nullish(),
-  "decisionStyle": zod.string().nullish(),
-  "analysisConfidence": zod.number().nullish(),
   "lastAnalyzedAt": zod.string().nullish(),
   "createdAt": zod.string()
 })
@@ -618,6 +632,8 @@ export const SearchUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -631,10 +647,38 @@ export const ListFriendsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
 export const ListFriendsResponse = zod.array(ListFriendsResponseItem)
+
+
+/**
+ * @summary Update my saved name for a friend
+ */
+export const UpdateFriendAliasParams = zod.object({
+  "userId": zod.coerce.string()
+})
+
+export const updateFriendAliasBodyAliasMax = 50;
+
+
+
+export const UpdateFriendAliasBody = zod.object({
+  "alias": zod.string().max(updateFriendAliasBodyAliasMax).nullable().describe('Null or an empty string clears the saved name.')
+})
+
+export const UpdateFriendAliasResponse = zod.object({
+  "id": zod.string(),
+  "nickname": zod.string(),
+  "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
+  "profileImageUrl": zod.string().nullish(),
+  "statusMessage": zod.string().nullish()
+})
 
 
 /**
@@ -666,6 +710,8 @@ export const ListIncomingFriendRequestsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -686,6 +732,8 @@ export const ListOutgoingFriendRequestsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -735,6 +783,17 @@ export const ListRoomsResponseItem = zod.object({
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
   "lastMessageAt": zod.string().nullish(),
+  "lastMessageSeq": zod.number().optional(),
+  "pinnedMessageId": zod.string().nullish(),
+  "pinnedMessage": zod.union([zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string().nullish(),
+  "type": zod.string(),
+  "content": zod.string(),
+  "createdAt": zod.string(),
+  "deletedAt": zod.string().nullish()
+}),zod.null()]).optional(),
   "unreadCount": zod.number().optional(),
   "firstUnreadMessageId": zod.string().nullish(),
   "muted": zod.boolean().optional(),
@@ -743,6 +802,8 @@ export const ListRoomsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })).optional()
@@ -774,6 +835,17 @@ export const GetRoomResponse = zod.object({
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
   "lastMessageAt": zod.string().nullish(),
+  "lastMessageSeq": zod.number().optional(),
+  "pinnedMessageId": zod.string().nullish(),
+  "pinnedMessage": zod.union([zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string().nullish(),
+  "type": zod.string(),
+  "content": zod.string(),
+  "createdAt": zod.string(),
+  "deletedAt": zod.string().nullish()
+}),zod.null()]).optional(),
   "unreadCount": zod.number().optional(),
   "firstUnreadMessageId": zod.string().nullish(),
   "muted": zod.boolean().optional(),
@@ -782,6 +854,8 @@ export const GetRoomResponse = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })).optional()
@@ -827,6 +901,8 @@ export const ListRoomMembersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -851,6 +927,17 @@ export const InviteRoomMembersResponse = zod.object({
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
   "lastMessageAt": zod.string().nullish(),
+  "lastMessageSeq": zod.number().optional(),
+  "pinnedMessageId": zod.string().nullish(),
+  "pinnedMessage": zod.union([zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string().nullish(),
+  "type": zod.string(),
+  "content": zod.string(),
+  "createdAt": zod.string(),
+  "deletedAt": zod.string().nullish()
+}),zod.null()]).optional(),
   "unreadCount": zod.number().optional(),
   "firstUnreadMessageId": zod.string().nullish(),
   "muted": zod.boolean().optional(),
@@ -859,6 +946,8 @@ export const InviteRoomMembersResponse = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })).optional()
@@ -878,14 +967,48 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "senderId": zod.string(),
   "type": zod.string(),
   "content": zod.string(),
+  "replyToMessageId": zod.string().nullish(),
+  "deletedAt": zod.string().nullish(),
   "createdAt": zod.string(),
   "sender": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 }).optional(),
+  "replyTo": zod.union([zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string().nullish(),
+  "type": zod.string(),
+  "content": zod.string(),
+  "deletedAt": zod.string().nullish()
+}),zod.null()]).optional(),
+  "stickerBadges": zod.array(zod.object({
+  "id": zod.string(),
+  "code": zod.string(),
+  "userId": zod.string(),
+  "createdAt": zod.string(),
+  "user": zod.union([zod.object({
+  "id": zod.string(),
+  "nickname": zod.string(),
+  "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
+  "profileImageUrl": zod.string().nullish(),
+  "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
+})).optional(),
+  "linkPreview": zod.union([zod.object({
+  "url": zod.string(),
+  "domain": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "imageUrl": zod.string().nullish()
+}),zod.null()]).optional(),
   "readCount": zod.number().optional().describe('Number of other room members who have read this message')
 })
 export const FetchRoomMessagesResponse = zod.array(FetchRoomMessagesResponseItem)
@@ -900,7 +1023,67 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   "content": zod.string(),
-  "type": zod.string().optional()
+  "type": zod.string().optional(),
+  "replyToMessageId": zod.string().nullish()
+})
+
+
+/**
+ * @summary Delete a message for me or everyone
+ */
+export const DeleteMessageParams = zod.object({
+  "id": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const DeleteMessageBody = zod.object({
+  "scope": zod.enum(['me', 'everyone'])
+})
+
+
+/**
+ * @summary Forward a message as a new message without origin attribution
+ */
+export const ForwardMessageParams = zod.object({
+  "id": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const ForwardMessageBody = zod.object({
+  "targetRoomId": zod.string()
+})
+
+
+/**
+ * @summary Attach or replace my sticker badge on a message
+ */
+export const AddMessageStickerBadgeParams = zod.object({
+  "id": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const AddMessageStickerBadgeBody = zod.object({
+  "code": zod.string()
+})
+
+
+/**
+ * @summary Pin one message in a room
+ */
+export const PinRoomMessageParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const PinRoomMessageBody = zod.object({
+  "messageId": zod.string()
+})
+
+
+/**
+ * @summary Clear the room pin
+ */
+export const UnpinRoomMessageParams = zod.object({
+  "id": zod.coerce.string()
 })
 
 
@@ -927,6 +1110,8 @@ export const GetTypingUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -964,6 +1149,8 @@ export const ListBlockedResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -987,11 +1174,12 @@ export const UnblockUserParams = zod.object({
 
 
 /**
- * @summary Start a voice call
+ * @summary Start a voice or video call
  */
 export const CreateCallBody = zod.object({
   "calleeId": zod.string(),
-  "roomId": zod.string().optional()
+  "roomId": zod.string().optional(),
+  "media": zod.enum(['audio', 'video']).optional()
 })
 
 
@@ -1004,6 +1192,7 @@ export const ListIncomingCallsResponseItem = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "endedAt": zod.string().nullish(),
@@ -1011,6 +1200,8 @@ export const ListIncomingCallsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
   "email": zod.string(),
+  "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
+  "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
   "statusMessage": zod.string().nullish()
 })
@@ -1031,6 +1222,7 @@ export const GetCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1056,6 +1248,7 @@ export const AcceptCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1084,6 +1277,7 @@ export const JoinCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1111,6 +1305,7 @@ export const DeclineCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1135,6 +1330,7 @@ export const CancelCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1159,6 +1355,7 @@ export const EndCallResponse = zod.object({
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
   "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
@@ -1204,7 +1401,7 @@ export const RequestUploadUrlResponse = zod.object({
  * @summary Serve an object entity from PRIVATE_OBJECT_DIR
  */
 export const GetStorageObjectParams = zod.object({
-  "objectPath": zod.coerce.string()
+  "path": zod.coerce.string().describe('A path relative to the private objects directory; may contain `\/` separators.')
 })
 
 
@@ -2089,6 +2286,1325 @@ export const GetMyRewardsSummaryResponse = zod.object({
   "claimableQuests": zod.number(),
   "claimableAchievements": zod.number(),
   "total": zod.number()
+})
+
+
+/**
+ * @summary List my approved AI memories
+ */
+export const ListKnowledgeMemoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "subjectUserId": zod.string().nullish(),
+  "memoryType": zod.string(),
+  "text": zod.string(),
+  "privacyScope": zod.enum(['official_public', 'public_profile', 'user_private', 'relationship_private', 'system_internal']),
+  "status": zod.enum(['draft', 'approved', 'rejected', 'archived', 'inferred']),
+  "confidence": zod.number(),
+  "source": zod.string(),
+  "graphMemoryId": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListKnowledgeMemoriesResponse = zod.array(ListKnowledgeMemoriesResponseItem)
+
+
+/**
+ * @summary Create an approved manual AI memory
+ */
+
+export const createKnowledgeMemoryBodyMemoryTypeDefault = `preference`;
+export const createKnowledgeMemoryBodyPrivacyScopeDefault = `user_private`;
+
+export const CreateKnowledgeMemoryBody = zod.object({
+  "text": zod.string().min(1),
+  "memoryType": zod.string().default(createKnowledgeMemoryBodyMemoryTypeDefault),
+  "privacyScope": zod.string().default(createKnowledgeMemoryBodyPrivacyScopeDefault)
+})
+
+
+/**
+ * @summary Update one of my AI memories
+ */
+export const UpdateKnowledgeMemoryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateKnowledgeMemoryBody = zod.object({
+  "text": zod.string().optional(),
+  "privacyScope": zod.string().optional(),
+  "status": zod.string().optional()
+})
+
+export const UpdateKnowledgeMemoryResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "subjectUserId": zod.string().nullish(),
+  "memoryType": zod.string(),
+  "text": zod.string(),
+  "privacyScope": zod.enum(['official_public', 'public_profile', 'user_private', 'relationship_private', 'system_internal']),
+  "status": zod.enum(['draft', 'approved', 'rejected', 'archived', 'inferred']),
+  "confidence": zod.number(),
+  "source": zod.string(),
+  "graphMemoryId": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Archive one of my AI memories
+ */
+export const ArchiveKnowledgeMemoryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ArchiveKnowledgeMemoryResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "subjectUserId": zod.string().nullish(),
+  "memoryType": zod.string(),
+  "text": zod.string(),
+  "privacyScope": zod.enum(['official_public', 'public_profile', 'user_private', 'relationship_private', 'system_internal']),
+  "status": zod.enum(['draft', 'approved', 'rejected', 'archived', 'inferred']),
+  "confidence": zod.number(),
+  "source": zod.string(),
+  "graphMemoryId": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get my Another Me settings
+ */
+export const GetAnotherMeSettingsResponse = zod.object({
+  "summonEnabled": zod.boolean(),
+  "defaultWaitMinutes": zod.number(),
+  "allowFriends": zod.boolean(),
+  "allowFamily": zod.boolean(),
+  "allowWork": zod.boolean(),
+  "allowUnknown": zod.boolean(),
+  "autoReplyEnabled": zod.boolean(),
+  "sensitiveReplyBlocked": zod.boolean(),
+  "toneSyncEnabled": zod.boolean(),
+  "defaultToneSyncLevel": zod.enum(['LOW', 'MEDIUM', 'HIGH'])
+})
+
+
+/**
+ * @summary Update my Another Me settings
+ */
+export const updateAnotherMeSettingsBodyDefaultWaitMinutesMax = 60;
+
+
+
+export const UpdateAnotherMeSettingsBody = zod.object({
+  "summonEnabled": zod.boolean().optional(),
+  "defaultWaitMinutes": zod.number().min(1).max(updateAnotherMeSettingsBodyDefaultWaitMinutesMax).optional(),
+  "allowFriends": zod.boolean().optional(),
+  "allowFamily": zod.boolean().optional(),
+  "allowWork": zod.boolean().optional(),
+  "allowUnknown": zod.boolean().optional(),
+  "autoReplyEnabled": zod.boolean().optional(),
+  "sensitiveReplyBlocked": zod.boolean().optional(),
+  "toneSyncEnabled": zod.boolean().optional(),
+  "defaultToneSyncLevel": zod.enum(['LOW', 'MEDIUM', 'HIGH']).optional()
+})
+
+export const UpdateAnotherMeSettingsResponse = zod.object({
+  "summonEnabled": zod.boolean(),
+  "defaultWaitMinutes": zod.number(),
+  "allowFriends": zod.boolean(),
+  "allowFamily": zod.boolean(),
+  "allowWork": zod.boolean(),
+  "allowUnknown": zod.boolean(),
+  "autoReplyEnabled": zod.boolean(),
+  "sensitiveReplyBlocked": zod.boolean(),
+  "toneSyncEnabled": zod.boolean(),
+  "defaultToneSyncLevel": zod.enum(['LOW', 'MEDIUM', 'HIGH'])
+})
+
+
+/**
+ * @summary Get my Another Me settings for a room
+ */
+export const GetAnotherMeRoomSettingsParams = zod.object({
+  "roomId": zod.coerce.string().uuid()
+})
+
+export const GetAnotherMeRoomSettingsResponse = zod.object({
+  "roomId": zod.string(),
+  "summonEnabled": zod.boolean().nullish(),
+  "waitMinutes": zod.number().nullish(),
+  "toneSyncLevel": zod.union([zod.enum(['LOW', 'MEDIUM', 'HIGH']),zod.null()]).optional(),
+  "relationshipType": zod.enum(['FRIEND', 'FAMILY', 'WORK', 'PARTNER', 'UNKNOWN', 'CUSTOM']),
+  "autoReplyLevel": zod.string()
+})
+
+
+/**
+ * @summary Update my Another Me settings for a room
+ */
+export const UpdateAnotherMeRoomSettingsParams = zod.object({
+  "roomId": zod.coerce.string().uuid()
+})
+
+export const updateAnotherMeRoomSettingsBodyWaitMinutesMax = 60;
+
+export const updateAnotherMeRoomSettingsBodyAutoReplyLevelMax = 40;
+
+
+
+export const UpdateAnotherMeRoomSettingsBody = zod.object({
+  "summonEnabled": zod.boolean().nullish(),
+  "waitMinutes": zod.number().min(1).max(updateAnotherMeRoomSettingsBodyWaitMinutesMax).nullish(),
+  "toneSyncLevel": zod.union([zod.enum(['LOW', 'MEDIUM', 'HIGH']),zod.null()]).optional(),
+  "relationshipType": zod.enum(['FRIEND', 'FAMILY', 'WORK', 'PARTNER', 'UNKNOWN', 'CUSTOM']).optional(),
+  "autoReplyLevel": zod.string().min(1).max(updateAnotherMeRoomSettingsBodyAutoReplyLevelMax).optional()
+})
+
+export const UpdateAnotherMeRoomSettingsResponse = zod.object({
+  "roomId": zod.string(),
+  "summonEnabled": zod.boolean().nullish(),
+  "waitMinutes": zod.number().nullish(),
+  "toneSyncLevel": zod.union([zod.enum(['LOW', 'MEDIUM', 'HIGH']),zod.null()]).optional(),
+  "relationshipType": zod.enum(['FRIEND', 'FAMILY', 'WORK', 'PARTNER', 'UNKNOWN', 'CUSTOM']),
+  "autoReplyLevel": zod.string()
+})
+
+
+/**
+ * @summary Check whether an Another Me can be summoned into a direct room
+ */
+export const GetAnotherMeSummonStatusQueryParams = zod.object({
+  "roomId": zod.coerce.string().uuid(),
+  "targetUserId": zod.coerce.string().uuid()
+})
+
+export const GetAnotherMeSummonStatusResponse = zod.object({
+  "canSummon": zod.boolean(),
+  "reason": zod.string().nullish(),
+  "waitMinutes": zod.number(),
+  "remainingSeconds": zod.number(),
+  "targetUserId": zod.string(),
+  "targetUserName": zod.string().nullish(),
+  "activeSession": zod.union([zod.object({
+  "id": zod.string(),
+  "ownerUserId": zod.string(),
+  "summonedByUserId": zod.string(),
+  "roomId": zod.string(),
+  "status": zod.enum(['ACTIVE', 'DISMISSED_BY_OWNER', 'DISMISSED_BY_CALLER', 'EXPIRED', 'FAILED']),
+  "summonedAt": zod.coerce.date(),
+  "dismissedAt": zod.coerce.date().nullish(),
+  "dismissedByUserId": zod.string().nullish(),
+  "lastActivityAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date(),
+  "reason": zod.string().nullish(),
+  "ownerName": zod.string().nullish(),
+  "summonedByName": zod.string().nullish(),
+  "isOwner": zod.boolean(),
+  "isCaller": zod.boolean(),
+  "canDismiss": zod.boolean()
+}),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Summon another participant's Another Me into a direct room
+ */
+export const SummonAnotherMeBody = zod.object({
+  "roomId": zod.string().uuid(),
+  "targetUserId": zod.string().uuid()
+})
+
+
+/**
+ * @summary Dismiss an Another Me session
+ */
+export const DismissAnotherMeSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const DismissAnotherMeSessionResponse = zod.object({
+  "id": zod.string(),
+  "ownerUserId": zod.string(),
+  "summonedByUserId": zod.string(),
+  "roomId": zod.string(),
+  "status": zod.enum(['ACTIVE', 'DISMISSED_BY_OWNER', 'DISMISSED_BY_CALLER', 'EXPIRED', 'FAILED']),
+  "summonedAt": zod.coerce.date(),
+  "dismissedAt": zod.coerce.date().nullish(),
+  "dismissedByUserId": zod.string().nullish(),
+  "lastActivityAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date(),
+  "reason": zod.string().nullish(),
+  "ownerName": zod.string().nullish(),
+  "summonedByName": zod.string().nullish(),
+  "isOwner": zod.boolean(),
+  "isCaller": zod.boolean(),
+  "canDismiss": zod.boolean()
+})
+
+
+/**
+ * @summary Generate my Another Me tone profile from my messages
+ */
+export const generateAnotherMeToneProfileBodyRelationshipTypeDefault = `FRIEND`;
+
+export const GenerateAnotherMeToneProfileBody = zod.object({
+  "relationshipType": zod.enum(['FRIEND', 'FAMILY', 'WORK', 'PARTNER', 'UNKNOWN', 'CUSTOM']).default(generateAnotherMeToneProfileBodyRelationshipTypeDefault)
+})
+
+export const GenerateAnotherMeToneProfileResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "relationshipType": zod.enum(['FRIEND', 'FAMILY', 'WORK', 'PARTNER', 'UNKNOWN', 'CUSTOM']),
+  "toneSummary": zod.string().nullish(),
+  "honorificStyle": zod.enum(['BANMAL', 'JONDAETMAL', 'MIXED']),
+  "averageMessageLength": zod.number(),
+  "emojiUsageLevel": zod.number(),
+  "laughterUsageLevel": zod.number(),
+  "formalityLevel": zod.number(),
+  "warmthLevel": zod.number(),
+  "humorLevel": zod.number(),
+  "commonPhrasesJson": zod.array(zod.string()),
+  "forbiddenPhrasesJson": zod.array(zod.string()),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get my daily talk reward eligibility
+ */
+export const GetDailyTalkRewardStatusResponse = zod.object({
+  "canClaim": zod.boolean(),
+  "reason": zod.string().nullish(),
+  "claimedToday": zod.boolean(),
+  "messageCount": zod.number(),
+  "minMessageCount": zod.number(),
+  "streak": zod.number(),
+  "rewardId": zod.string().nullish(),
+  "status": zod.string().nullish()
+})
+
+
+/**
+ * @summary Generate my AI daily talk diary draft
+ */
+export const GenerateDailyTalkRewardResponse = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List my daily talk reward history
+ */
+export const ListDailyTalkRewardHistoryResponseItem = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListDailyTalkRewardHistoryResponse = zod.array(ListDailyTalkRewardHistoryResponseItem)
+
+
+/**
+ * @summary Get one of my daily talk rewards
+ */
+export const GetDailyTalkRewardParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetDailyTalkRewardResponse = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Edit an unclaimed daily talk reward diary
+ */
+export const UpdateDailyTalkRewardParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateDailyTalkRewardBodyTitleMax = 80;
+
+export const updateDailyTalkRewardBodyDiaryMax = 1200;
+
+
+
+export const UpdateDailyTalkRewardBody = zod.object({
+  "title": zod.string().min(1).max(updateDailyTalkRewardBodyTitleMax).optional(),
+  "diary": zod.string().min(1).max(updateDailyTalkRewardBodyDiaryMax).optional(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']).optional()
+})
+
+export const UpdateDailyTalkRewardResponse = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Save a daily talk reward and grant its PVT
+ */
+export const SaveDailyTalkRewardParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SaveDailyTalkRewardResponse = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Post a daily talk reward diary to the STAR feed and grant its PVT
+ */
+export const PostDailyTalkRewardToFeedParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const PostDailyTalkRewardToFeedResponse = zod.object({
+  "id": zod.string(),
+  "rewardDate": zod.coerce.date(),
+  "status": zod.enum(['PENDING', 'GENERATED', 'SAVED', 'POSTED', 'REWARDED', 'FAILED']),
+  "title": zod.string(),
+  "mood": zod.string(),
+  "keywords": zod.array(zod.string()),
+  "diary": zod.string(),
+  "summary": zod.string(),
+  "scores": zod.object({
+  "empathy": zod.number(),
+  "communication": zod.number(),
+  "trust": zod.number(),
+  "positivity": zod.number(),
+  "contribution": zod.number(),
+  "spamRisk": zod.number(),
+  "qualityScore": zod.number()
+}),
+  "grade": zod.string(),
+  "qualityScore": zod.number(),
+  "spamRisk": zod.number(),
+  "pvtAmount": zod.number(),
+  "estimatedPvtAmount": zod.number(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "feedPostId": zod.string().nullish(),
+  "abuse": zod.union([zod.object({
+  "messageCount": zod.number(),
+  "userMessageCount": zod.number(),
+  "otherMessageCount": zod.number(),
+  "counterpartCount": zod.number(),
+  "repeatedMessageRatio": zod.number(),
+  "shortMessageRatio": zod.number(),
+  "selfMessageRatio": zod.number(),
+  "rewardMultiplier": zod.number(),
+  "reductions": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "ontologySyncStatus": zod.enum(['none', 'pending', 'processing', 'processed', 'retrying', 'failed']),
+  "ontologySyncedAt": zod.coerce.date().nullish(),
+  "rewardedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get the BIBI Official account profile and ensure the friendship exists
+ */
+export const GetBibiOfficialProfileResponse = zod.object({
+  "id": zod.string(),
+  "email": zod.string(),
+  "nickname": zod.string(),
+  "displayName": zod.string(),
+  "handle": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "statusMessage": zod.string().nullish()
+})
+
+
+/**
+ * @summary Record my presence heartbeat
+ */
+export const recordPresenceHeartbeatBodyPlatformMax = 32;
+
+
+
+export const RecordPresenceHeartbeatBody = zod.object({
+  "roomId": zod.string().optional(),
+  "platform": zod.string().max(recordPresenceHeartbeatBodyPlatformMax).optional()
+})
+
+
+/**
+ * @summary Get presence for users who share a room with me
+ */
+export const ListPresenceUsersQueryParams = zod.object({
+  "ids": zod.coerce.string().optional().describe('Comma-separated user ids. Up to 50 ids are considered.')
+})
+
+export const ListPresenceUsersResponse = zod.object({
+  "users": zod.array(zod.object({
+  "userId": zod.string(),
+  "online": zod.boolean(),
+  "lastSeenAt": zod.coerce.date().nullish(),
+  "platform": zod.string().nullish(),
+  "roomId": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Get my PVT wallet balance
+ */
+export const GetPvtWalletResponse = zod.object({
+  "balance": zod.number(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List my PVT transactions
+ */
+export const listPvtTransactionsQueryLimitDefault = 50;
+export const listPvtTransactionsQueryLimitMax = 100;
+
+
+
+export const ListPvtTransactionsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listPvtTransactionsQueryLimitMax).default(listPvtTransactionsQueryLimitDefault)
+})
+
+export const ListPvtTransactionsResponseItem = zod.object({
+  "id": zod.string(),
+  "amount": zod.number(),
+  "type": zod.enum(['EARN', 'SPEND', 'ADJUST']),
+  "source": zod.enum(['DAILY_TALK_REWARD', 'EVENT', 'ADMIN', 'MISSION']),
+  "sourceId": zod.string(),
+  "description": zod.string().nullish(),
+  "balanceAfter": zod.number(),
+  "createdAt": zod.coerce.date()
+})
+export const ListPvtTransactionsResponse = zod.array(ListPvtTransactionsResponseItem)
+
+
+/**
+ * @summary List STAR feed posts visible to me
+ */
+export const listStarFeedPostsQueryLimitDefault = 30;
+export const listStarFeedPostsQueryLimitMax = 100;
+
+
+
+export const ListStarFeedPostsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listStarFeedPostsQueryLimitMax).default(listStarFeedPostsQueryLimitDefault)
+})
+
+export const ListStarFeedPostsResponseItem = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+export const ListStarFeedPostsResponse = zod.array(ListStarFeedPostsResponseItem)
+
+
+/**
+ * @summary Create a FAN or official STAR feed post
+ */
+export const createStarFeedPostBodyKindDefault = `fan`;
+export const createStarFeedPostBodyTitleMax = 80;
+
+export const createStarFeedPostBodyBodyMax = 500;
+
+
+
+export const CreateStarFeedPostBody = zod.object({
+  "kind": zod.enum(['fan', 'star']).default(createStarFeedPostBodyKindDefault),
+  "title": zod.string().max(createStarFeedPostBodyTitleMax).optional(),
+  "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax)
+})
+
+
+/**
+ * @summary Add my cheer reaction to a STAR feed post
+ */
+export const CheerStarFeedPostParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CheerStarFeedPostResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+
+
+/**
+ * @summary Add a comment to a STAR feed post
+ */
+export const CommentStarFeedPostParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const commentStarFeedPostBodyBodyMax = 240;
+
+
+
+export const CommentStarFeedPostBody = zod.object({
+  "body": zod.string().min(1).max(commentStarFeedPostBodyBodyMax)
+})
+
+
+/**
+ * @summary Upload raw object bytes through the API
+ */
+export const uploadStorageObjectQuerySizeMax = 26214400;
+
+
+
+export const UploadStorageObjectQueryParams = zod.object({
+  "name": zod.coerce.string().optional(),
+  "size": zod.coerce.number().min(1).max(uploadStorageObjectQuerySizeMax).describe('Declared size. The server stores the actual uploaded byte length.'),
+  "contentType": zod.coerce.string().optional()
+})
+
+
+
+
+
+
+export const UploadStorageObjectResponse = zod.object({
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().min(1),
+  "contentType": zod.string().min(1)
+})
+})
+
+
+/**
+ * @summary Serve an unconditionally public object
+ */
+export const GetPublicStorageObjectParams = zod.object({
+  "filePath": zod.coerce.string().describe('A path relative to configured public object roots; may contain `\/` separators.')
+})
+
+
+/**
+ * @summary Get my FAN or STAR play mode state
+ */
+export const GetMyPlayModeResponse = zod.object({
+  "currentMode": zod.enum(['fan', 'star']),
+  "starUnlocked": zod.boolean(),
+  "fanProfile": zod.object({
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "fanPower": zod.number(),
+  "supportPower": zod.number(),
+  "empathy": zod.number(),
+  "story": zod.number()
+})
+}),
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Change my FAN or STAR play mode
+ */
+export const UpdateMyPlayModeBody = zod.object({
+  "mode": zod.enum(['fan', 'star'])
+})
+
+export const UpdateMyPlayModeResponse = zod.object({
+  "currentMode": zod.enum(['fan', 'star']),
+  "starUnlocked": zod.boolean(),
+  "fanProfile": zod.object({
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "fanPower": zod.number(),
+  "supportPower": zod.number(),
+  "empathy": zod.number(),
+  "story": zod.number()
+})
+}),
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Get my wallet and NFT verification status
+ */
+export const GetMyWalletStatusResponse = zod.object({
+  "walletAddress": zod.string().nullish(),
+  "chainId": zod.number().nullish(),
+  "walletVerified": zod.boolean(),
+  "nftVerified": zod.boolean(),
+  "lastCheckedAt": zod.coerce.date().nullish(),
+  "nftContractAddress": zod.string().nullish(),
+  "nftChainId": zod.number().nullish(),
+  "nftConfigured": zod.boolean(),
+  "starUnlocked": zod.boolean()
+})
+
+
+/**
+ * @summary Create a wallet ownership verification challenge
+ */
+export const createWalletChallengeBodyWalletAddressMax = 120;
+
+
+
+export const CreateWalletChallengeBody = zod.object({
+  "walletAddress": zod.string().min(1).max(createWalletChallengeBodyWalletAddressMax)
+})
+
+
+/**
+ * @summary Verify a wallet signature and refresh NFT ownership
+ */
+export const verifyWalletChallengeBodyWalletAddressMax = 120;
+
+export const verifyWalletChallengeBodySignatureMax = 500;
+
+
+
+export const VerifyWalletChallengeBody = zod.object({
+  "walletAddress": zod.string().min(1).max(verifyWalletChallengeBodyWalletAddressMax),
+  "challengeId": zod.string().uuid(),
+  "signature": zod.string().min(1).max(verifyWalletChallengeBodySignatureMax)
+})
+
+export const VerifyWalletChallengeResponse = zod.object({
+  "ok": zod.boolean(),
+  "status": zod.object({
+  "walletAddress": zod.string().nullish(),
+  "chainId": zod.number().nullish(),
+  "walletVerified": zod.boolean(),
+  "nftVerified": zod.boolean(),
+  "lastCheckedAt": zod.coerce.date().nullish(),
+  "nftContractAddress": zod.string().nullish(),
+  "nftChainId": zod.number().nullish(),
+  "nftConfigured": zod.boolean(),
+  "starUnlocked": zod.boolean()
+}),
+  "nftOwned": zod.boolean(),
+  "balance": zod.string().nullish(),
+  "configMissing": zod.boolean()
+})
+
+
+/**
+ * @summary Refresh NFT ownership for my verified wallet
+ */
+export const RefreshWalletNftResponse = zod.object({
+  "ok": zod.boolean(),
+  "status": zod.object({
+  "walletAddress": zod.string().nullish(),
+  "chainId": zod.number().nullish(),
+  "walletVerified": zod.boolean(),
+  "nftVerified": zod.boolean(),
+  "lastCheckedAt": zod.coerce.date().nullish(),
+  "nftContractAddress": zod.string().nullish(),
+  "nftChainId": zod.number().nullish(),
+  "nftConfigured": zod.boolean(),
+  "starUnlocked": zod.boolean()
+}),
+  "nftOwned": zod.boolean(),
+  "balance": zod.string().nullish(),
+  "configMissing": zod.boolean()
+})
+
+
+/**
+ * @summary Get my equipped STAR NFT profile
+ */
+export const GetMyStarProfileResponse = zod.object({
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Equip an owned STAR NFT
+ */
+export const equipStarNftBodyTokenIdMax = 80;
+
+
+
+export const EquipStarNftBody = zod.object({
+  "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax)
+})
+
+export const EquipStarNftResponse = zod.object({
+  "equippedStar": zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),
+  "state": zod.object({
+  "currentMode": zod.enum(['fan', 'star']),
+  "starUnlocked": zod.boolean(),
+  "fanProfile": zod.object({
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "fanPower": zod.number(),
+  "supportPower": zod.number(),
+  "empathy": zod.number(),
+  "story": zod.number()
+})
+}),
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional()
+})
+})
+
+
+/**
+ * @summary Get my Torimia progression state
+ */
+export const GetTorimiaStateResponse = zod.object({
+  "star": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "opened": zod.boolean(),
+  "promoted": zod.boolean(),
+  "canOpen": zod.boolean(),
+  "requirements": zod.array(zod.object({
+  "key": zod.enum(['level', 'missions', 'charm', 'stagePresence', 'bond', 'lore']),
+  "label": zod.string(),
+  "current": zod.number(),
+  "target": zod.number(),
+  "met": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Open Torimia and promote my equipped STAR when requirements are met
+ */
+export const OpenTorimiaResponse = zod.object({
+  "star": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "opened": zod.boolean(),
+  "promoted": zod.boolean(),
+  "canOpen": zod.boolean(),
+  "requirements": zod.array(zod.object({
+  "key": zod.enum(['level', 'missions', 'charm', 'stagePresence', 'bond', 'lore']),
+  "label": zod.string(),
+  "current": zod.number(),
+  "target": zod.number(),
+  "met": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Get persona, FAN, STAR, or talk-battle rankings
+ */
+export const getServiceRankingsQueryScopeDefault = `fan`;
+export const getServiceRankingsQueryLimitDefault = 50;
+export const getServiceRankingsQueryLimitMax = 100;
+
+
+
+export const GetServiceRankingsQueryParams = zod.object({
+  "scope": zod.enum(['persona', 'fan', 'star', 'battle']).default(getServiceRankingsQueryScopeDefault),
+  "type": zod.enum(['overall', 'persuasion', 'logic', 'empathy', 'strategy', 'archetype', 'fan_power', 'support_power', 'story', 'charm', 'stage_presence', 'bond', 'lore', 'wins', 'win_rate', 'streak']).optional(),
+  "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional().describe('Used by persona rankings when type is archetype.'),
+  "limit": zod.coerce.number().min(1).max(getServiceRankingsQueryLimitMax).default(getServiceRankingsQueryLimitDefault)
+})
+
+export const GetServiceRankingsResponse = zod.object({
+  "scope": zod.enum(['persona', 'fan', 'star', 'battle']),
+  "type": zod.enum(['overall', 'persuasion', 'logic', 'empathy', 'strategy', 'archetype', 'fan_power', 'support_power', 'story', 'charm', 'stage_presence', 'bond', 'lore', 'wins', 'win_rate', 'streak']),
+  "archetype": zod.string().nullish(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "rank": zod.number(),
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "level": zod.number(),
+  "title": zod.string(),
+  "subTitle": zod.string(),
+  "badgeLabel": zod.string(),
+  "score": zod.number(),
+  "primaryStatLabel": zod.string(),
+  "primaryStatValue": zod.number()
+})),
+  "myRank": zod.union([zod.object({
+  "rank": zod.number(),
+  "score": zod.number(),
+  "pointsToNextRank": zod.number()
+}),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Publish my completed battle result to the STAR feed
+ */
+export const CreateBattleFeedPostParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const createBattleFeedPostBodyKindDefault = `fan`;
+
+export const CreateBattleFeedPostBody = zod.object({
+  "kind": zod.enum(['fan', 'star']).default(createBattleFeedPostBodyKindDefault)
+})
+
+export const CreateBattleFeedPostResponse = zod.object({
+  "post": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+}),
+  "duplicate": zod.boolean(),
+  "summary": zod.object({
+  "source": zod.literal("battle"),
+  "battleRoomId": zod.string(),
+  "matchSeq": zod.number(),
+  "topic": zod.string(),
+  "opponentName": zod.string(),
+  "outcome": zod.enum(['win', 'loss', 'draw']),
+  "outcomeLabel": zod.string(),
+  "myScore": zod.number(),
+  "opponentScore": zod.number(),
+  "vibe": zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "topAxes": zod.array(zod.enum(['logic', 'persuasiveness', 'rebuttal', 'wit', 'manners']))
+}),
+  "rewards": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+}))
+})
+})
+
+
+/**
+ * @summary Mark one of my non-terminal calls as failed
+ */
+export const FailCallParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const FailCallResponse = zod.object({
+  "id": zod.string(),
+  "roomName": zod.string(),
+  "callerId": zod.string(),
+  "calleeId": zod.string(),
+  "chatRoomId": zod.string().nullish(),
+  "media": zod.enum(['audio', 'video']),
+  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "createdAt": zod.string(),
+  "acceptedAt": zod.string().nullish(),
+  "declinedAt": zod.string().nullish(),
+  "missedAt": zod.string().nullish(),
+  "cancelledAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "durationSec": zod.number().nullish()
 })
 
 

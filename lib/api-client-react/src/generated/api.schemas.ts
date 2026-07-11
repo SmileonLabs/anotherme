@@ -5,6 +5,889 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+export interface ApiError {
+  error: string;
+  message?: string;
+}
+
+export type KnowledgeMemoryPrivacyScope = typeof KnowledgeMemoryPrivacyScope[keyof typeof KnowledgeMemoryPrivacyScope];
+
+
+export const KnowledgeMemoryPrivacyScope = {
+  official_public: 'official_public',
+  public_profile: 'public_profile',
+  user_private: 'user_private',
+  relationship_private: 'relationship_private',
+  system_internal: 'system_internal',
+} as const;
+
+export type KnowledgeMemoryStatus = typeof KnowledgeMemoryStatus[keyof typeof KnowledgeMemoryStatus];
+
+
+export const KnowledgeMemoryStatus = {
+  draft: 'draft',
+  approved: 'approved',
+  rejected: 'rejected',
+  archived: 'archived',
+  inferred: 'inferred',
+} as const;
+
+export interface KnowledgeMemory {
+  id: string;
+  userId: string;
+  /** @nullable */
+  subjectUserId?: string | null;
+  memoryType: string;
+  text: string;
+  privacyScope: KnowledgeMemoryPrivacyScope;
+  status: KnowledgeMemoryStatus;
+  confidence: number;
+  source: string;
+  /** @nullable */
+  graphMemoryId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeMemoryCreate {
+  /** @minLength 1 */
+  text: string;
+  memoryType?: string;
+  privacyScope?: string;
+}
+
+export interface KnowledgeMemoryPatch {
+  text?: string;
+  privacyScope?: string;
+  status?: string;
+}
+
+export type AnotherMeToneSyncLevel = typeof AnotherMeToneSyncLevel[keyof typeof AnotherMeToneSyncLevel];
+
+
+export const AnotherMeToneSyncLevel = {
+  LOW: 'LOW',
+  MEDIUM: 'MEDIUM',
+  HIGH: 'HIGH',
+} as const;
+
+export type AnotherMeRelationshipType = typeof AnotherMeRelationshipType[keyof typeof AnotherMeRelationshipType];
+
+
+export const AnotherMeRelationshipType = {
+  FRIEND: 'FRIEND',
+  FAMILY: 'FAMILY',
+  WORK: 'WORK',
+  PARTNER: 'PARTNER',
+  UNKNOWN: 'UNKNOWN',
+  CUSTOM: 'CUSTOM',
+} as const;
+
+export interface AnotherMeSettings {
+  summonEnabled: boolean;
+  defaultWaitMinutes: number;
+  allowFriends: boolean;
+  allowFamily: boolean;
+  allowWork: boolean;
+  allowUnknown: boolean;
+  autoReplyEnabled: boolean;
+  sensitiveReplyBlocked: boolean;
+  toneSyncEnabled: boolean;
+  defaultToneSyncLevel: AnotherMeToneSyncLevel;
+}
+
+export interface AnotherMeSettingsPatch {
+  summonEnabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 60
+     */
+  defaultWaitMinutes?: number;
+  allowFriends?: boolean;
+  allowFamily?: boolean;
+  allowWork?: boolean;
+  allowUnknown?: boolean;
+  autoReplyEnabled?: boolean;
+  sensitiveReplyBlocked?: boolean;
+  toneSyncEnabled?: boolean;
+  defaultToneSyncLevel?: AnotherMeToneSyncLevel;
+}
+
+export interface AnotherMeRoomSettings {
+  roomId: string;
+  /** @nullable */
+  summonEnabled?: boolean | null;
+  /** @nullable */
+  waitMinutes?: number | null;
+  toneSyncLevel?: AnotherMeToneSyncLevel | null;
+  relationshipType: AnotherMeRelationshipType;
+  autoReplyLevel: string;
+}
+
+export interface AnotherMeRoomSettingsPatch {
+  /** @nullable */
+  summonEnabled?: boolean | null;
+  /**
+     * @minimum 1
+     * @maximum 60
+     * @nullable
+     */
+  waitMinutes?: number | null;
+  toneSyncLevel?: AnotherMeToneSyncLevel | null;
+  relationshipType?: AnotherMeRelationshipType;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  autoReplyLevel?: string;
+}
+
+export interface AnotherMeSummonInput {
+  roomId: string;
+  targetUserId: string;
+}
+
+export type AnotherMeSessionStatus = typeof AnotherMeSessionStatus[keyof typeof AnotherMeSessionStatus];
+
+
+export const AnotherMeSessionStatus = {
+  ACTIVE: 'ACTIVE',
+  DISMISSED_BY_OWNER: 'DISMISSED_BY_OWNER',
+  DISMISSED_BY_CALLER: 'DISMISSED_BY_CALLER',
+  EXPIRED: 'EXPIRED',
+  FAILED: 'FAILED',
+} as const;
+
+export interface AnotherMeSession {
+  id: string;
+  ownerUserId: string;
+  summonedByUserId: string;
+  roomId: string;
+  status: AnotherMeSessionStatus;
+  summonedAt: string;
+  /** @nullable */
+  dismissedAt?: string | null;
+  /** @nullable */
+  dismissedByUserId?: string | null;
+  lastActivityAt: string;
+  expiresAt: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  ownerName?: string | null;
+  /** @nullable */
+  summonedByName?: string | null;
+  isOwner: boolean;
+  isCaller: boolean;
+  canDismiss: boolean;
+}
+
+export interface AnotherMeSummonStatus {
+  canSummon: boolean;
+  /** @nullable */
+  reason?: string | null;
+  waitMinutes: number;
+  remainingSeconds: number;
+  targetUserId: string;
+  /** @nullable */
+  targetUserName?: string | null;
+  activeSession?: AnotherMeSession | null;
+}
+
+export interface AnotherMeToneProfileInput {
+  relationshipType?: AnotherMeRelationshipType;
+}
+
+export type AnotherMeToneProfileHonorificStyle = typeof AnotherMeToneProfileHonorificStyle[keyof typeof AnotherMeToneProfileHonorificStyle];
+
+
+export const AnotherMeToneProfileHonorificStyle = {
+  BANMAL: 'BANMAL',
+  JONDAETMAL: 'JONDAETMAL',
+  MIXED: 'MIXED',
+} as const;
+
+export interface AnotherMeToneProfile {
+  id: string;
+  userId: string;
+  relationshipType: AnotherMeRelationshipType;
+  /** @nullable */
+  toneSummary?: string | null;
+  honorificStyle: AnotherMeToneProfileHonorificStyle;
+  averageMessageLength: number;
+  emojiUsageLevel: number;
+  laughterUsageLevel: number;
+  formalityLevel: number;
+  warmthLevel: number;
+  humorLevel: number;
+  commonPhrasesJson: string[];
+  forbiddenPhrasesJson: string[];
+  updatedAt: string;
+}
+
+export interface DailyTalkRewardScores {
+  empathy: number;
+  communication: number;
+  trust: number;
+  positivity: number;
+  contribution: number;
+  spamRisk: number;
+  qualityScore: number;
+}
+
+export interface DailyTalkRewardAbuseSignals {
+  messageCount: number;
+  userMessageCount: number;
+  otherMessageCount: number;
+  counterpartCount: number;
+  repeatedMessageRatio: number;
+  shortMessageRatio: number;
+  selfMessageRatio: number;
+  rewardMultiplier: number;
+  reductions: string[];
+}
+
+export interface DailyTalkRewardStatus {
+  canClaim: boolean;
+  /** @nullable */
+  reason?: string | null;
+  claimedToday: boolean;
+  messageCount: number;
+  minMessageCount: number;
+  streak: number;
+  /** @nullable */
+  rewardId?: string | null;
+  /** @nullable */
+  status?: string | null;
+}
+
+export type DailyTalkRewardStatusProperty = typeof DailyTalkRewardStatusProperty[keyof typeof DailyTalkRewardStatusProperty];
+
+
+export const DailyTalkRewardStatusProperty = {
+  PENDING: 'PENDING',
+  GENERATED: 'GENERATED',
+  SAVED: 'SAVED',
+  POSTED: 'POSTED',
+  REWARDED: 'REWARDED',
+  FAILED: 'FAILED',
+} as const;
+
+export type DailyTalkRewardVisibility = typeof DailyTalkRewardVisibility[keyof typeof DailyTalkRewardVisibility];
+
+
+export const DailyTalkRewardVisibility = {
+  PRIVATE: 'PRIVATE',
+  FRIENDS: 'FRIENDS',
+  PUBLIC: 'PUBLIC',
+} as const;
+
+export type DailyTalkRewardOntologySyncStatus = typeof DailyTalkRewardOntologySyncStatus[keyof typeof DailyTalkRewardOntologySyncStatus];
+
+
+export const DailyTalkRewardOntologySyncStatus = {
+  none: 'none',
+  pending: 'pending',
+  processing: 'processing',
+  processed: 'processed',
+  retrying: 'retrying',
+  failed: 'failed',
+} as const;
+
+export interface DailyTalkReward {
+  id: string;
+  rewardDate: string;
+  status: DailyTalkRewardStatusProperty;
+  title: string;
+  mood: string;
+  keywords: string[];
+  diary: string;
+  summary: string;
+  scores: DailyTalkRewardScores;
+  grade: string;
+  qualityScore: number;
+  spamRisk: number;
+  pvtAmount: number;
+  estimatedPvtAmount: number;
+  visibility: DailyTalkRewardVisibility;
+  /** @nullable */
+  feedPostId?: string | null;
+  abuse?: DailyTalkRewardAbuseSignals | null;
+  ontologySyncStatus: DailyTalkRewardOntologySyncStatus;
+  /** @nullable */
+  ontologySyncedAt?: string | null;
+  /** @nullable */
+  rewardedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DailyTalkRewardPatchVisibility = typeof DailyTalkRewardPatchVisibility[keyof typeof DailyTalkRewardPatchVisibility];
+
+
+export const DailyTalkRewardPatchVisibility = {
+  PRIVATE: 'PRIVATE',
+  FRIENDS: 'FRIENDS',
+  PUBLIC: 'PUBLIC',
+} as const;
+
+export interface DailyTalkRewardPatch {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 1200
+     */
+  diary?: string;
+  visibility?: DailyTalkRewardPatchVisibility;
+}
+
+export interface BibiOfficialProfile {
+  id: string;
+  email: string;
+  nickname: string;
+  displayName: string;
+  handle: string;
+  /** @nullable */
+  profileImageUrl?: string | null;
+  /** @nullable */
+  statusMessage?: string | null;
+}
+
+export interface MessageSummary {
+  id: string;
+  senderId: string;
+  /** @nullable */
+  senderName?: string | null;
+  type: string;
+  content: string;
+  createdAt: string;
+  /** @nullable */
+  deletedAt?: string | null;
+}
+
+export interface PublicUser {
+  id: string;
+  nickname: string;
+  email: string;
+  /**
+     * Current viewer's saved name for this user, when available.
+     * @nullable
+     */
+  friendAlias?: string | null;
+  /** friendAlias when set, otherwise nickname. */
+  displayName?: string;
+  /** @nullable */
+  profileImageUrl?: string | null;
+  /** @nullable */
+  statusMessage?: string | null;
+}
+
+export interface ChatRoom {
+  id: string;
+  type: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  ownerId?: string | null;
+  /** @nullable */
+  lastMessage?: string | null;
+  /** @nullable */
+  lastMessageAt?: string | null;
+  lastMessageSeq?: number;
+  /** @nullable */
+  pinnedMessageId?: string | null;
+  pinnedMessage?: MessageSummary | null;
+  unreadCount?: number;
+  /** @nullable */
+  firstUnreadMessageId?: string | null;
+  muted?: boolean;
+  createdAt: string;
+  members?: PublicUser[];
+}
+
+export interface BibiOfficialRoom {
+  account: BibiOfficialProfile;
+  room: ChatRoom;
+}
+
+export interface PresenceHeartbeat {
+  roomId?: string;
+  /** @maxLength 32 */
+  platform?: string;
+}
+
+export interface PresenceState {
+  userId: string;
+  online: boolean;
+  /** @nullable */
+  lastSeenAt?: string | null;
+  /** @nullable */
+  platform?: string | null;
+  /** @nullable */
+  roomId?: string | null;
+}
+
+export interface PresenceUsersResponse {
+  users: PresenceState[];
+}
+
+export interface PvtWallet {
+  balance: number;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export type PvtTransactionType = typeof PvtTransactionType[keyof typeof PvtTransactionType];
+
+
+export const PvtTransactionType = {
+  EARN: 'EARN',
+  SPEND: 'SPEND',
+  ADJUST: 'ADJUST',
+} as const;
+
+export type PvtTransactionSource = typeof PvtTransactionSource[keyof typeof PvtTransactionSource];
+
+
+export const PvtTransactionSource = {
+  DAILY_TALK_REWARD: 'DAILY_TALK_REWARD',
+  EVENT: 'EVENT',
+  ADMIN: 'ADMIN',
+  MISSION: 'MISSION',
+} as const;
+
+export interface PvtTransaction {
+  id: string;
+  amount: number;
+  type: PvtTransactionType;
+  source: PvtTransactionSource;
+  sourceId: string;
+  /** @nullable */
+  description?: string | null;
+  balanceAfter: number;
+  createdAt: string;
+}
+
+export interface StarFeedAuthor {
+  /** @nullable */
+  id?: string | null;
+  nickname: string;
+  /** @nullable */
+  profileImageUrl?: string | null;
+}
+
+export interface StarFeedComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: StarFeedAuthor;
+}
+
+export type StarFeedPostKind = typeof StarFeedPostKind[keyof typeof StarFeedPostKind];
+
+
+export const StarFeedPostKind = {
+  official: 'official',
+  event: 'event',
+  fan: 'fan',
+  star: 'star',
+  growth: 'growth',
+  profile_update: 'profile_update',
+  talk_diary: 'talk_diary',
+} as const;
+
+/**
+ * @nullable
+ */
+export type StarFeedPostMetadata = { [key: string]: unknown } | null;
+
+export type StarFeedPostVisibility = typeof StarFeedPostVisibility[keyof typeof StarFeedPostVisibility];
+
+
+export const StarFeedPostVisibility = {
+  PRIVATE: 'PRIVATE',
+  FRIENDS: 'FRIENDS',
+  PUBLIC: 'PUBLIC',
+} as const;
+
+export interface StarFeedPost {
+  id: string;
+  kind: StarFeedPostKind;
+  title: string;
+  body: string;
+  /** @nullable */
+  metadata?: StarFeedPostMetadata;
+  visibility: StarFeedPostVisibility;
+  createdAt: string;
+  author: StarFeedAuthor;
+  reactionCount: number;
+  commentCount: number;
+  reactedByMe: boolean;
+  recentComments: StarFeedComment[];
+}
+
+export type StarFeedPostInputKind = typeof StarFeedPostInputKind[keyof typeof StarFeedPostInputKind];
+
+
+export const StarFeedPostInputKind = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+export interface StarFeedPostInput {
+  kind?: StarFeedPostInputKind;
+  /** @maxLength 80 */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  body: string;
+}
+
+export interface StarFeedCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  body: string;
+}
+
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 1 */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface ObjectUploadResponse {
+  objectPath: string;
+  metadata: UploadUrlRequest;
+}
+
+export interface FanStats {
+  fanPower: number;
+  supportPower: number;
+  empathy: number;
+  story: number;
+}
+
+export interface FanProfile {
+  level: number;
+  xp: number;
+  stats: FanStats;
+}
+
+export interface StarStats {
+  charm: number;
+  stagePresence: number;
+  bond: number;
+  lore: number;
+}
+
+export type StarProfileStage = typeof StarProfileStage[keyof typeof StarProfileStage];
+
+
+export const StarProfileStage = {
+  aspiring: 'aspiring',
+  promoted: 'promoted',
+} as const;
+
+export interface StarProfile {
+  id: string;
+  starKey: string;
+  displayName: string;
+  tokenId: string;
+  contractAddress: string;
+  chainId: number;
+  /** @nullable */
+  imageUrl?: string | null;
+  stage: StarProfileStage;
+  level: number;
+  xp: number;
+  stats: StarStats;
+  /** @nullable */
+  equippedAt?: string | null;
+  /** @nullable */
+  verifiedAt?: string | null;
+  /** @nullable */
+  torimiaOpenedAt?: string | null;
+  /** @nullable */
+  promotedAt?: string | null;
+}
+
+export type PlayModeInputMode = typeof PlayModeInputMode[keyof typeof PlayModeInputMode];
+
+
+export const PlayModeInputMode = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+export interface PlayModeInput {
+  mode: PlayModeInputMode;
+}
+
+export type PlayModeStateCurrentMode = typeof PlayModeStateCurrentMode[keyof typeof PlayModeStateCurrentMode];
+
+
+export const PlayModeStateCurrentMode = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+export interface PlayModeState {
+  currentMode: PlayModeStateCurrentMode;
+  starUnlocked: boolean;
+  fanProfile: FanProfile;
+  equippedStar?: StarProfile | null;
+}
+
+export type PlayModeError = ApiError & {
+  state: PlayModeState;
+};
+
+export interface WalletStatus {
+  /** @nullable */
+  walletAddress?: string | null;
+  /** @nullable */
+  chainId?: number | null;
+  walletVerified: boolean;
+  nftVerified: boolean;
+  /** @nullable */
+  lastCheckedAt?: string | null;
+  /** @nullable */
+  nftContractAddress?: string | null;
+  /** @nullable */
+  nftChainId?: number | null;
+  nftConfigured: boolean;
+  starUnlocked: boolean;
+}
+
+export interface WalletChallengeInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  walletAddress: string;
+}
+
+export interface WalletChallenge {
+  id: string;
+  walletAddress: string;
+  message: string;
+  expiresAt: string;
+  /** @nullable */
+  nftContractAddress?: string | null;
+  /** @nullable */
+  nftChainId?: number | null;
+}
+
+export interface WalletVerificationInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  walletAddress: string;
+  challengeId: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  signature: string;
+}
+
+export interface WalletVerificationResult {
+  ok: true;
+  status: WalletStatus;
+  nftOwned: boolean;
+  /** @nullable */
+  balance?: string | null;
+  configMissing: boolean;
+}
+
+export interface EquippedStarProfileResponse {
+  equippedStar: StarProfile | null;
+}
+
+export interface EquipStarNftInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  tokenId: string;
+}
+
+export interface EquipStarNftResult {
+  equippedStar: StarProfile;
+  state: PlayModeState;
+}
+
+export type TorimiaRequirementKey = typeof TorimiaRequirementKey[keyof typeof TorimiaRequirementKey];
+
+
+export const TorimiaRequirementKey = {
+  level: 'level',
+  missions: 'missions',
+  charm: 'charm',
+  stagePresence: 'stagePresence',
+  bond: 'bond',
+  lore: 'lore',
+} as const;
+
+export interface TorimiaRequirement {
+  key: TorimiaRequirementKey;
+  label: string;
+  current: number;
+  target: number;
+  met: boolean;
+}
+
+export interface TorimiaState {
+  star?: StarProfile | null;
+  opened: boolean;
+  promoted: boolean;
+  canOpen: boolean;
+  requirements: TorimiaRequirement[];
+}
+
+export type TorimiaError = ApiError & {
+  state: TorimiaState;
+};
+
+export interface ServiceRankingItem {
+  id: string;
+  rank: number;
+  userId: string;
+  displayName: string;
+  /** @nullable */
+  avatarUrl?: string | null;
+  level: number;
+  title: string;
+  subTitle: string;
+  badgeLabel: string;
+  score: number;
+  primaryStatLabel: string;
+  primaryStatValue: number;
+}
+
+export type ServiceRankingScope = typeof ServiceRankingScope[keyof typeof ServiceRankingScope];
+
+
+export const ServiceRankingScope = {
+  persona: 'persona',
+  fan: 'fan',
+  star: 'star',
+  battle: 'battle',
+} as const;
+
+export type ServiceRankingType = typeof ServiceRankingType[keyof typeof ServiceRankingType];
+
+
+export const ServiceRankingType = {
+  overall: 'overall',
+  persuasion: 'persuasion',
+  logic: 'logic',
+  empathy: 'empathy',
+  strategy: 'strategy',
+  archetype: 'archetype',
+  fan_power: 'fan_power',
+  support_power: 'support_power',
+  story: 'story',
+  charm: 'charm',
+  stage_presence: 'stage_presence',
+  bond: 'bond',
+  lore: 'lore',
+  wins: 'wins',
+  win_rate: 'win_rate',
+  streak: 'streak',
+} as const;
+
+export interface PersonaRankingMyRank {
+  rank: number;
+  score: number;
+  pointsToNextRank: number;
+}
+
+export interface ServiceRanking {
+  scope: ServiceRankingScope;
+  type: ServiceRankingType;
+  /** @nullable */
+  archetype?: string | null;
+  items: ServiceRankingItem[];
+  myRank?: PersonaRankingMyRank | null;
+}
+
+export type BattleFeedPostInputKind = typeof BattleFeedPostInputKind[keyof typeof BattleFeedPostInputKind];
+
+
+export const BattleFeedPostInputKind = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+export interface BattleFeedPostInput {
+  kind?: BattleFeedPostInputKind;
+}
+
+export type BattleVibeSummaryTopAxesItem = typeof BattleVibeSummaryTopAxesItem[keyof typeof BattleVibeSummaryTopAxesItem];
+
+
+export const BattleVibeSummaryTopAxesItem = {
+  logic: 'logic',
+  persuasiveness: 'persuasiveness',
+  rebuttal: 'rebuttal',
+  wit: 'wit',
+  manners: 'manners',
+} as const;
+
+export interface BattleVibeSummary {
+  key: string;
+  label: string;
+  description: string;
+  topAxes: BattleVibeSummaryTopAxesItem[];
+}
+
+export interface BattleResultReward {
+  label: string;
+  value: string;
+}
+
+export type BattleResultSummaryOutcome = typeof BattleResultSummaryOutcome[keyof typeof BattleResultSummaryOutcome];
+
+
+export const BattleResultSummaryOutcome = {
+  win: 'win',
+  loss: 'loss',
+  draw: 'draw',
+} as const;
+
+export interface BattleResultSummary {
+  source: 'battle';
+  battleRoomId: string;
+  matchSeq: number;
+  topic: string;
+  opponentName: string;
+  outcome: BattleResultSummaryOutcome;
+  outcomeLabel: string;
+  myScore: number;
+  opponentScore: number;
+  vibe: BattleVibeSummary;
+  rewards: BattleResultReward[];
+}
+
+export interface BattleFeedPostResult {
+  post: StarFeedPost;
+  duplicate: boolean;
+  summary: BattleResultSummary;
+}
+
 export type QuestType = typeof QuestType[keyof typeof QuestType];
 
 
@@ -63,15 +946,6 @@ export interface RewardsSummary {
   total: number;
 }
 
-export interface UploadUrlRequest {
-  /** @minLength 1 */
-  name: string;
-  /** @minimum 1 */
-  size: number;
-  /** @minLength 1 */
-  contentType: string;
-}
-
 export interface UploadUrlResponse {
   uploadURL: string;
   objectPath: string;
@@ -84,6 +958,10 @@ export interface ErrorEnvelope {
 
 export interface HealthStatus {
   status: string;
+}
+
+export interface RealtimeTicket {
+  ticket: string;
 }
 
 export interface UserProfile {
@@ -140,22 +1018,6 @@ export interface PersonaProfile {
   stats: PersonaStats;
   recentEvents: GrowthEvent[];
   /** @nullable */
-  summary?: string | null;
-  /** @nullable */
-  languageStyle?: string | null;
-  /** @nullable */
-  personalityTraits?: string | null;
-  /** @nullable */
-  valuesBeliefs?: string | null;
-  /** @nullable */
-  knowledgeDomains?: string | null;
-  /** @nullable */
-  emotionalPatterns?: string | null;
-  /** @nullable */
-  decisionStyle?: string | null;
-  /** @nullable */
-  analysisConfidence?: number | null;
-  /** @nullable */
   lastAnalyzedAt?: string | null;
   createdAt: string;
 }
@@ -166,14 +1028,38 @@ export interface PersonaIdentityHistoryItem {
   createdAt: string;
 }
 
+export type PersonaCardSource = typeof PersonaCardSource[keyof typeof PersonaCardSource];
+
+
+export const PersonaCardSource = {
+  ontology: 'ontology',
+} as const;
+
+export type PersonaCardSyncState = typeof PersonaCardSyncState[keyof typeof PersonaCardSyncState];
+
+
+export const PersonaCardSyncState = {
+  not_started: 'not_started',
+  forming: 'forming',
+  synced: 'synced',
+} as const;
+
+export type PersonaCardSyncTimelineItem = {
+  label: string;
+  /** @nullable */
+  createdAt: string | null;
+};
+
 export interface PersonaCard {
+  source: PersonaCardSource;
+  syncState: PersonaCardSyncState;
   name: string;
   level: number;
+  /** @nullable */
+  displayLevelLabel: string | null;
   title: string;
   archetype: string;
   archetypeKey: string;
-  /** @nullable */
-  personaSummary?: string | null;
   strengths: string[];
   weaknesses: string[];
   primaryTraits: string[];
@@ -181,7 +1067,8 @@ export interface PersonaCard {
   motto: string;
   /** @nullable */
   houseName?: string | null;
-  history: PersonaIdentityHistoryItem[];
+  nextActions: string[];
+  syncTimeline: PersonaCardSyncTimelineItem[];
 }
 
 export interface PersonaRankingItem {
@@ -197,12 +1084,6 @@ export interface PersonaRankingItem {
   score: number;
   primaryStatLabel: string;
   primaryStatValue: number;
-}
-
-export interface PersonaRankingMyRank {
-  rank: number;
-  score: number;
-  pointsToNextRank: number;
 }
 
 export interface PersonaRanking {
@@ -228,18 +1109,44 @@ export interface UserProfileUpdate {
   notificationEnabled?: boolean;
 }
 
+export type ProfileUpdateHistoryItemKind = typeof ProfileUpdateHistoryItemKind[keyof typeof ProfileUpdateHistoryItemKind];
+
+
+export const ProfileUpdateHistoryItemKind = {
+  profile_image: 'profile_image',
+  status_message: 'status_message',
+  profile_update: 'profile_update',
+} as const;
+
+export interface ProfileUpdateHistoryItem {
+  id: string;
+  userId: string;
+  kind: ProfileUpdateHistoryItemKind;
+  /** @nullable */
+  oldProfileImageUrl?: string | null;
+  /** @nullable */
+  newProfileImageUrl?: string | null;
+  /** @nullable */
+  oldStatusMessage?: string | null;
+  /** @nullable */
+  newStatusMessage?: string | null;
+  /** @nullable */
+  feedPostId?: string | null;
+  isVisible: boolean;
+  createdAt: string;
+}
+
 export interface PushTokenInput {
   token: string;
 }
 
-export interface PublicUser {
-  id: string;
-  nickname: string;
-  email: string;
-  /** @nullable */
-  profileImageUrl?: string | null;
-  /** @nullable */
-  statusMessage?: string | null;
+export interface FriendAliasInput {
+  /**
+     * Null or an empty string clears the saved name.
+     * @maxLength 50
+     * @nullable
+     */
+  alias: string | null;
 }
 
 export interface FriendRequestInput {
@@ -263,25 +1170,6 @@ export interface FriendRequestWithUser {
   user: PublicUser;
 }
 
-export interface ChatRoom {
-  id: string;
-  type: string;
-  /** @nullable */
-  name?: string | null;
-  /** @nullable */
-  ownerId?: string | null;
-  /** @nullable */
-  lastMessage?: string | null;
-  /** @nullable */
-  lastMessageAt?: string | null;
-  unreadCount?: number;
-  /** @nullable */
-  firstUnreadMessageId?: string | null;
-  muted?: boolean;
-  createdAt: string;
-  members?: PublicUser[];
-}
-
 export interface ChatRoomMember {
   id: string;
   roomId: string;
@@ -301,14 +1189,52 @@ export interface InviteMembersInput {
   memberIds: string[];
 }
 
+export interface MessageReplyPreview {
+  id: string;
+  senderId: string;
+  /** @nullable */
+  senderName?: string | null;
+  type: string;
+  content: string;
+  /** @nullable */
+  deletedAt?: string | null;
+}
+
+export interface MessageStickerBadge {
+  id: string;
+  code: string;
+  userId: string;
+  createdAt: string;
+  user?: PublicUser | null;
+}
+
+export interface MessageLinkPreview {
+  url: string;
+  /** @nullable */
+  domain?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+}
+
 export interface Message {
   id: string;
   roomId: string;
   senderId: string;
   type: string;
   content: string;
+  /** @nullable */
+  replyToMessageId?: string | null;
+  /** @nullable */
+  deletedAt?: string | null;
   createdAt: string;
   sender?: PublicUser;
+  replyTo?: MessageReplyPreview | null;
+  stickerBadges?: MessageStickerBadge[];
+  linkPreview?: MessageLinkPreview | null;
   /** Number of other room members who have read this message */
   readCount?: number;
 }
@@ -316,6 +1242,32 @@ export interface Message {
 export interface MessageInput {
   content: string;
   type?: string;
+  /** @nullable */
+  replyToMessageId?: string | null;
+}
+
+export type DeleteMessageInputScope = typeof DeleteMessageInputScope[keyof typeof DeleteMessageInputScope];
+
+
+export const DeleteMessageInputScope = {
+  me: 'me',
+  everyone: 'everyone',
+} as const;
+
+export interface DeleteMessageInput {
+  scope: DeleteMessageInputScope;
+}
+
+export interface PinMessageInput {
+  messageId: string;
+}
+
+export interface ForwardMessageInput {
+  targetRoomId: string;
+}
+
+export interface StickerBadgeInput {
+  code: string;
 }
 
 export interface DungeonInput {
@@ -613,9 +1565,18 @@ export interface BlockInput {
   blockedUserId: string;
 }
 
+export type CallMedia = typeof CallMedia[keyof typeof CallMedia];
+
+
+export const CallMedia = {
+  audio: 'audio',
+  video: 'video',
+} as const;
+
 export interface CreateCallInput {
   calleeId: string;
   roomId?: string;
+  media?: CallMedia;
 }
 
 export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
@@ -639,6 +1600,7 @@ export interface Call {
   calleeId: string;
   /** @nullable */
   chatRoomId?: string | null;
+  media: CallMedia;
   status: CallStatus;
   createdAt: string;
   /** @nullable */
@@ -662,6 +1624,7 @@ export interface CallWithCaller {
   calleeId: string;
   /** @nullable */
   chatRoomId?: string | null;
+  media: CallMedia;
   status: CallStatus;
   createdAt: string;
   /** @nullable */
@@ -1159,4 +2122,103 @@ export type CreateClanWarBody = {
 export type SubmitClanWarArgumentBody = {
   content: string;
 };
+
+export type GetAnotherMeSummonStatusParams = {
+roomId: string;
+targetUserId: string;
+};
+
+export type ListPresenceUsersParams = {
+/**
+ * Comma-separated user ids. Up to 50 ids are considered.
+ */
+ids?: string;
+};
+
+export type ListPvtTransactionsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListStarFeedPostsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type UploadStorageObjectParams = {
+name?: string;
+/**
+ * Declared size. The server stores the actual uploaded byte length.
+ * @minimum 1
+ * @maximum 26214400
+ */
+size: number;
+contentType?: string;
+};
+
+export type GetServiceRankingsParams = {
+scope?: GetServiceRankingsScope;
+type?: GetServiceRankingsType;
+/**
+ * Used by persona rankings when type is archetype.
+ */
+archetype?: GetServiceRankingsArchetype;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type GetServiceRankingsScope = typeof GetServiceRankingsScope[keyof typeof GetServiceRankingsScope];
+
+
+export const GetServiceRankingsScope = {
+  persona: 'persona',
+  fan: 'fan',
+  star: 'star',
+  battle: 'battle',
+} as const;
+
+export type GetServiceRankingsType = typeof GetServiceRankingsType[keyof typeof GetServiceRankingsType];
+
+
+export const GetServiceRankingsType = {
+  overall: 'overall',
+  persuasion: 'persuasion',
+  logic: 'logic',
+  empathy: 'empathy',
+  strategy: 'strategy',
+  archetype: 'archetype',
+  fan_power: 'fan_power',
+  support_power: 'support_power',
+  story: 'story',
+  charm: 'charm',
+  stage_presence: 'stage_presence',
+  bond: 'bond',
+  lore: 'lore',
+  wins: 'wins',
+  win_rate: 'win_rate',
+  streak: 'streak',
+} as const;
+
+export type GetServiceRankingsArchetype = typeof GetServiceRankingsArchetype[keyof typeof GetServiceRankingsArchetype];
+
+
+export const GetServiceRankingsArchetype = {
+  strategist: 'strategist',
+  harmonizer: 'harmonizer',
+  explorer: 'explorer',
+  pioneer: 'pioneer',
+  sage: 'sage',
+  entertainer: 'entertainer',
+  activist: 'activist',
+  observer: 'observer',
+} as const;
 

@@ -9,4 +9,6 @@
 export interface MessageInput {
   content: string;
   type?: string;
+  /** @nullable */
+  replyToMessageId?: string | null;
 }
