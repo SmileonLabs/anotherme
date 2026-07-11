@@ -8,8 +8,10 @@ import {
   clerkProxyMiddleware,
   getClerkProxyHost,
 } from "./middlewares/clerkProxyMiddleware";
+import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { isAllowedOrigin } from "./lib/origins";
 
 const app: Express = express();
 
@@ -28,9 +30,25 @@ app.use(
 );
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
-app.use(cors({ credentials: true, origin: true }));
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  if (origin && !isAllowedOrigin(origin)) {
+    res.status(403).json({ error: "Origin is not allowed" });
+    return;
+  }
+  next();
+});
+app.use(
+  cors({
+    credentials: true,
+    // The preceding middleware rejects untrusted browser origins. React Native
+    // requests have no Origin header and remain supported.
+    origin: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/api", healthRouter);
 
 app.use(
   clerkMiddleware((req) => ({
