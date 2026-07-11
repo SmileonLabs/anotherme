@@ -51,8 +51,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_OPTIONS: --max-old-space-size=6144
+      PORT: "4173"
       PWA_ORIGIN: https://ci.anotherme.invalid
       PWA_BASE_PATH: /app
+      EXPO_PUBLIC_DOMAIN: ci.anotherme.invalid
       EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci
     steps:
       - uses: actions/checkout@v4

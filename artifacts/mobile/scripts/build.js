@@ -16,27 +16,36 @@ const path = require("path");
 const projectRoot = path.resolve(__dirname, "..");
 const OUTPUT_DIR = "web-build";
 
-function stripProtocol(domain) {
-  let urlString = domain.trim();
+function toOrigin(value) {
+  let urlString = value.trim();
   if (!/^https?:\/\//i.test(urlString)) {
     urlString = `https://${urlString}`;
   }
-  return new URL(urlString).host;
+  return new URL(urlString).origin;
 }
 
-function getDeploymentDomain() {
-  const domain =
+function getDeploymentOrigin() {
+  const origin =
+    process.env.PWA_ORIGIN ||
     process.env.REPLIT_INTERNAL_APP_DOMAIN ||
     process.env.REPLIT_DEV_DOMAIN ||
     process.env.EXPO_PUBLIC_DOMAIN;
 
-  if (!domain) {
+  if (!origin) {
     console.error(
-      "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
+      "ERROR: No PWA origin found. Set PWA_ORIGIN, REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
     );
     process.exit(1);
   }
-  return stripProtocol(domain);
+  return toOrigin(origin);
+}
+
+function getBasePath() {
+  const raw = (process.env.PWA_BASE_PATH || "/app").trim();
+  if (!raw.startsWith("/")) {
+    throw new Error("PWA_BASE_PATH must start with '/'");
+  }
+  return raw === "/" ? "" : raw.replace(/\/+$/, "");
 }
 
 function patchExportedHtml(indexHtmlPath) {
@@ -82,9 +91,58 @@ function run(cmd, args, env) {
   });
 }
 
+function patchExportedFontUrls(outPath, basePath) {
+  const version = process.env.PWA_ASSET_VERSION || Date.now().toString(36);
+  const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const jsDir = path.join(outPath, "_expo", "static", "js");
+  const jsFiles = [];
+
+  function collectJsFiles(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectJsFiles(fullPath);
+      else if (entry.isFile() && entry.name.endsWith(".js")) jsFiles.push(fullPath);
+    }
+  }
+
+  collectJsFiles(jsDir);
+  for (const jsFile of jsFiles) {
+    const original = fs.readFileSync(jsFile, "utf8");
+    const patched = original.replace(
+      new RegExp(`(${escapedBasePath}/assets/[^"'\\s)]+\\.ttf)(?!\\?)`, "g"),
+      `$1?v=${version}`,
+    );
+    if (patched !== original) {
+      fs.writeFileSync(jsFile, patched);
+      console.log(`Patched font asset URLs in ${path.relative(outPath, jsFile)}.`);
+    }
+  }
+
+  const indexHtmlPath = path.join(outPath, "index.html");
+  try {
+    let html = fs.readFileSync(indexHtmlPath, "utf8");
+    html = html.replace(
+      new RegExp(`(${escapedBasePath}/_expo/static/js/web/[^"']+\\.js)(?!\\?)`, "g"),
+      `$1?v=${version}`,
+    );
+    fs.writeFileSync(indexHtmlPath, html);
+  } catch (err) {
+    console.warn(`WARN: could not patch index.html asset version: ${err.message}`);
+  }
+}
+
+function runPnpm(args, env) {
+  return process.platform === "win32"
+    ? run("cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", ...args], env)
+    : run("pnpm", args, env);
+}
+
 async function main() {
-  const domain = getDeploymentDomain();
-  console.log(`Building browser web export (PWA) for https://${domain} ...`);
+  const origin = getDeploymentOrigin();
+  const domain = new URL(origin).host;
+  const basePath = getBasePath();
+  console.log(`Building browser web export (PWA) for ${origin}${basePath || "/"} ...`);
 
   const outPath = path.join(projectRoot, OUTPUT_DIR);
   if (fs.existsSync(outPath)) {
@@ -105,21 +163,34 @@ async function main() {
     );
     process.exit(1);
   }
+  const vapidPublicKey =
+    process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY ||
+    process.env.VAPID_PUBLIC_KEY ||
+    "";
+  if (!vapidPublicKey) {
+    console.warn(
+      "WARN: No VAPID public key found (EXPO_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PUBLIC_KEY). " +
+        "The PWA will build, but browser push notifications will be unavailable.",
+    );
+  }
 
   const env = {
     ...process.env,
     // Reduce Metro worker count to keep the web export within memory limits.
     EXPO_WEB_EXPORT: "1",
     EXPO_PUBLIC_DOMAIN: domain,
+    EXPO_PUBLIC_API_BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL || origin,
     EXPO_PUBLIC_REPL_ID:
       process.env.REPL_ID || process.env.EXPO_PUBLIC_REPL_ID || "",
     EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: clerkKey,
+    EXPO_PUBLIC_VAPID_PUBLIC_KEY: vapidPublicKey,
     // Production-only: a pk_live Clerk instance resolves its Frontend API at
     // clerk.<domain>, which has no DNS on *.replit.app. Route Clerk through the
     // api-server proxy (/api/__clerk) instead so the browser can reach it.
     // build.js only runs for the production deploy, so this never leaks to dev.
     EXPO_PUBLIC_CLERK_PROXY_URL:
-      process.env.EXPO_PUBLIC_CLERK_PROXY_URL || `https://${domain}/api/__clerk`,
+      process.env.EXPO_PUBLIC_CLERK_PROXY_URL ||
+      (clerkKey.startsWith("pk_live_") ? `${origin}/api/__clerk` : ""),
   };
 
   // experiments.baseUrl is WEB-ONLY here, but expo-router bakes it into the
@@ -132,15 +203,11 @@ async function main() {
   const appConfig = JSON.parse(originalAppJson);
   appConfig.expo = appConfig.expo || {};
   appConfig.expo.experiments = appConfig.expo.experiments || {};
-  appConfig.expo.experiments.baseUrl = "/app";
+  appConfig.expo.experiments.baseUrl = basePath || "/";
   fs.writeFileSync(appJsonPath, JSON.stringify(appConfig, null, 2) + "\n");
 
   try {
-    await run(
-      "pnpm",
-      ["exec", "expo", "export", "-p", "web", "--output-dir", OUTPUT_DIR],
-      env,
-    );
+    await runPnpm(["exec", "expo", "export", "-p", "web", "--output-dir", OUTPUT_DIR], env);
   } finally {
     // Always restore the committed app.json (no baseUrl) for native builds.
     fs.writeFileSync(appJsonPath, originalAppJson);
@@ -164,6 +231,7 @@ async function main() {
   //     screen (there's no browser chrome to snap it back). Clamping the root
   //     elements pins the layout to the viewport.
   patchExportedHtml(indexHtml);
+  patchExportedFontUrls(outPath, basePath);
 
   console.log(`Web build complete: ${outPath}`);
   process.exit(0);
