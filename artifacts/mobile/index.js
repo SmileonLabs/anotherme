@@ -1,3 +1,6 @@
+// Runtime globals must be installed before expo-router evaluates route modules.
+import "./lib/runtimePolyfills";
+
 // Custom app entry. Registers the FCM background message handler (native only;
 // web resolves to a no-op stub) BEFORE expo-router boots, so a killed or
 // backgrounded Android device can render the full-screen incoming call. This
