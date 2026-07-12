@@ -347,7 +347,6 @@ export interface DailyTalkRewardPatch {
 
 export interface BibiOfficialProfile {
   id: string;
-  email: string;
   nickname: string;
   displayName: string;
   handle: string;
@@ -369,10 +368,19 @@ export interface MessageSummary {
   deletedAt?: string | null;
 }
 
+export type PublicUserAccountKind = typeof PublicUserAccountKind[keyof typeof PublicUserAccountKind];
+
+
+export const PublicUserAccountKind = {
+  user: 'user',
+  official: 'official',
+  system: 'system',
+} as const;
+
 export interface PublicUser {
   id: string;
   nickname: string;
-  email: string;
+  accountKind: PublicUserAccountKind;
   /**
      * Current viewer's saved name for this user, when available.
      * @nullable
@@ -415,9 +423,14 @@ export interface BibiOfficialRoom {
 }
 
 export interface PresenceHeartbeat {
-  roomId?: string;
-  /** @maxLength 32 */
-  platform?: string;
+  /** @nullable */
+  roomId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     * @nullable
+     */
+  platform?: string | null;
 }
 
 export interface PresenceState {
@@ -1101,12 +1114,23 @@ export interface PersonaAnalysisError {
 }
 
 export interface UserProfileUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
   nickname?: string;
-  /** @nullable */
+  /**
+     * @maxLength 200
+     * @nullable
+     */
   statusMessage?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
   profileImageUrl?: string | null;
   notificationEnabled?: boolean;
+  talkAnalysisEnabled?: boolean;
 }
 
 export type ProfileUpdateHistoryItemKind = typeof ProfileUpdateHistoryItemKind[keyof typeof ProfileUpdateHistoryItemKind];
@@ -1137,13 +1161,17 @@ export interface ProfileUpdateHistoryItem {
 }
 
 export interface PushTokenInput {
+  /**
+     * @minLength 1
+     * @maxLength 8192
+     */
   token: string;
 }
 
 export interface FriendAliasInput {
   /**
      * Null or an empty string clears the saved name.
-     * @maxLength 50
+     * @maxLength 30
      * @nullable
      */
   alias: string | null;
@@ -1198,6 +1226,10 @@ export interface RoomInput {
 }
 
 export interface InviteMembersInput {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
   memberIds: string[];
 }
 
@@ -1328,10 +1360,19 @@ export interface StickerBadgeInput {
 }
 
 export interface DungeonInput {
-  /** @nullable */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
   name?: string | null;
+  /** @maxItems 20 */
   memberIds: string[];
-  /** @nullable */
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @nullable
+     */
   theme?: string | null;
 }
 
@@ -1460,13 +1501,23 @@ export interface LifeQuestChooseResult {
 export interface BattleCreateInput {
   /** The single friend's userId to invite. Provide this OR aiPersonaId. */
   memberId?: string;
-  /** The AI opponent persona id to battle against. Provide this OR memberId. */
+  /**
+     * The AI opponent persona id to battle against. Provide this OR memberId.
+     * @minLength 1
+     * @maxLength 100
+     */
   aiPersonaId?: string;
+  /** @maxLength 80 */
   category: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
   topic: string;
 }
 
 export interface BattleTopicInput {
+  /** @maxLength 80 */
   category: string;
 }
 
@@ -1475,6 +1526,10 @@ export interface BattleTopicSuggestions {
 }
 
 export interface BattleTurnInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
   content: string;
 }
 
@@ -1606,6 +1661,10 @@ export interface MuteInput {
 
 export interface Invite {
   id: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     */
   inviteCode: string;
   inviterUserId: string;
   status: string;

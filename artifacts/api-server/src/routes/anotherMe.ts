@@ -12,6 +12,7 @@ import {
   updateAnotherMeSettings,
 } from "../lib/anotherMe";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 
@@ -121,7 +122,7 @@ router.get("/another-me/summon/status", requireAuth, async (req, res): Promise<v
   }
 });
 
-router.post("/another-me/summon", requireAuth, async (req, res): Promise<void> => {
+router.post("/another-me/summon", requireAuth, rateLimit({ name: "another-me-summon-minute", limit: 10, windowSeconds: 60, requireRedis: true }), rateLimit({ name: "another-me-summon-daily", limit: 100, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   const parsed = summonSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "소환할 대상을 확인해 주세요." });
@@ -143,7 +144,7 @@ router.post("/another-me/summon/:sessionId/dismiss", requireAuth, async (req, re
   }
 });
 
-router.post("/another-me/tone-profile/generate", requireAuth, async (req, res): Promise<void> => {
+router.post("/another-me/tone-profile/generate", requireAuth, rateLimit({ name: "tone-profile-minute", limit: 5, windowSeconds: 60, requireRedis: true }), rateLimit({ name: "tone-profile-daily", limit: 30, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   const parsed = toneProfileSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "말투 프로필 설정을 확인해 주세요." });

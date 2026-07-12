@@ -40,10 +40,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { ChatRoomHeader } from "@/components/chat/ChatRoomHeader";
 import { MessageComposer } from "@/components/MessageComposer";
 import { useColors } from "@/hooks/useColors";
-import { usePresenceUsers } from "@/hooks/usePresence";
 import { useChatPolling } from "@/hooks/useChatPolling";
 import { useChatSendHandlers } from "@/hooks/useChatSendHandlers";
 import { useInvertedChatListController } from "@/hooks/useInvertedChatListController";
+import { useChatRoomIdentity } from "@/hooks/useChatRoomIdentity";
 import {
   useAnotherMeRoomSettings,
   useAnotherMeSummonStatus,
@@ -57,9 +57,9 @@ import { mediaUri } from "@/lib/apiBase";
 import { userDisplayName } from "@/lib/friendNames";
 import {
   formatDayLabel,
-  formatLastSeenLabel,
   formatMsgTime,
   isReadReceiptParticipant,
+  isSystemAccount,
   isSameDay,
   summarizeMessage,
 } from "@/lib/chatScreenUtils";
@@ -72,7 +72,6 @@ import {
   type DeleteMessageScope,
 } from "@/lib/messageActions";
 
-const DM_EMAIL = "dungeon-master@todotalk.system";
 const EMPTY_STICKER_BADGES: MessageStickerBadge[] = [];
 
 // Delay between each staggered dungeon line ("당~ 당~ 당~").
@@ -341,7 +340,7 @@ export default function ChatScreen() {
     let queuedAny = false;
     for (const m of messages) {
       if (revealed.has(m.id) || queued.has(m.id)) continue;
-      const isDM = (m.sender as any)?.email === DM_EMAIL;
+      const isDM = isSystemAccount(m.sender);
       const isTemp = String(m.id).startsWith("temp-");
       if (isDungeon && isDM && !isTemp) {
         revealQueueRef.current.push(m.id);
@@ -386,7 +385,7 @@ export default function ChatScreen() {
       if (!isDungeon) return messages;
       return messages.filter((m) => {
         if (revealedIdsRef.current.has(m.id)) return true;
-        const isDM = (m.sender as any)?.email === DM_EMAIL;
+        const isDM = isSystemAccount(m.sender);
         const isTemp = String(m.id).startsWith("temp-");
         return !(isDM && !isTemp);
       });
@@ -413,7 +412,7 @@ export default function ChatScreen() {
   const narrativeLanded =
     !!lastVisible &&
     lastVisible.type === "text" &&
-    (lastVisible.sender as any)?.email === DM_EMAIL;
+    isSystemAccount(lastVisible.sender);
   const choicesSynced = dungeon?.lastNarrativeMessageId
     ? lastVisible?.id === dungeon.lastNarrativeMessageId
     : narrativeLanded;
@@ -423,18 +422,12 @@ export default function ChatScreen() {
     else router.replace("/(tabs)/chats");
   }, [router]);
 
-  const isDirect = room?.type === "direct";
-  const otherMember = isDirect
-    ? (room?.members as any[])?.find((m) => m.id !== me?.id)
-    : null;
-  const { data: presenceResponse, isLoading: presenceLoading } = usePresenceUsers([
-    isDirect ? otherMember?.id : null,
-  ]);
-  const otherPresence = presenceResponse?.users.find((u) => u.userId === otherMember?.id) ?? null;
-  const isOtherOnline = !!otherPresence?.online;
-  const headerTitle =
-    room?.name || (isDirect ? userDisplayName(otherMember, "채팅") : "채팅");
-  const otherDisplayName = userDisplayName(otherMember, "상대방");
+  const { isDirect, otherMember, otherDisplayName, isOtherOnline, headerTitle, headerSubtitle } = useChatRoomIdentity({
+    room,
+    meId: me?.id,
+    isGroupRoom,
+    isDungeon,
+  });
   const { data: targetAnotherMeStatus, refetch: refetchTargetAnotherMeStatus } = useAnotherMeSummonStatus(
     isDirect ? id : undefined,
     otherMember?.id,
@@ -489,16 +482,6 @@ export default function ChatScreen() {
   }, [isDirect, refreshAnotherMeRoomState, updateRoomAnotherMeSettings]);
 
   const canCall = isDirect && callSupported && !!otherMember;
-  const memberCount = (room?.members as any[])?.length ?? 0;
-  const headerSubtitle = isGroupRoom
-    ? `멤버 ${memberCount}명`
-    : isDungeon
-      ? "🎲 AI 던전 마스터"
-      : presenceLoading && !otherPresence
-        ? "상태 확인 중..."
-        : isOtherOnline
-          ? "온라인"
-          : formatLastSeenLabel(otherPresence?.lastSeenAt);
 
   useEffect(() => {
     if (Platform.OS !== "web" || typeof window === "undefined") return;
@@ -823,7 +806,7 @@ export default function ChatScreen() {
       const isUserMessage = authorKind === "user";
       const isAnotherMe = authorKind === "another_me";
       const isMe = item.senderId === me?.id;
-      const isDM = (item.sender as any)?.email === DM_EMAIL;
+      const isDM = isSystemAccount(item.sender);
       const prevMsg = listMessages[index + 1];
       const anotherMeOwnerName = ((item as any).metadata?.ownerName as string | undefined) ?? userDisplayName(item.sender as any, "상대");
       const showSender = isAnotherMe || (isMultiParty && !isMe && !isDM && prevMsg?.senderId !== item.senderId);

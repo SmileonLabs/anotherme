@@ -11,6 +11,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { publicAccountKind } from "../lib/publicUser";
 import { scheduleLinkPreview } from "../lib/linkPreview";
 import { sendPushToUsers } from "../lib/push";
 import { getTypingUserIds, markTyping } from "../lib/typing";
@@ -50,8 +51,8 @@ type DbUser = typeof usersTable.$inferSelect;
 
 interface PublicUserPayload {
   id: string;
-  email: string;
   nickname: string;
+  accountKind: "user" | "official" | "system";
   profileImageUrl: string | null;
   statusMessage: string | null;
 }
@@ -101,8 +102,8 @@ function toPublicUser(user: DbUser | undefined): PublicUserPayload | null {
   if (!user) return null;
   return {
     id: user.id,
-    email: user.email,
     nickname: user.nickname,
+    accountKind: publicAccountKind(user),
     profileImageUrl: user.profileImageUrl ?? null,
     statusMessage: user.statusMessage ?? null,
   };
@@ -914,8 +915,8 @@ router.get("/rooms/:id/typing", requireAuth, async (req, res): Promise<void> => 
   res.json(
     users.map((u) => ({
       id: u.id,
-      email: u.email,
       nickname: u.nickname,
+      accountKind: publicAccountKind(u),
       profileImageUrl: u.profileImageUrl ?? null,
       statusMessage: u.statusMessage ?? null,
     })),

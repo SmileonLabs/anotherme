@@ -23,7 +23,6 @@ const BIBI_OFFICIAL_SEED = {
 
 export type BibiOfficialProfile = {
   id: string;
-  email: string;
   nickname: string;
   displayName: string;
   handle: string;
@@ -34,7 +33,6 @@ export type BibiOfficialProfile = {
 function toBibiProfile(user: typeof usersTable.$inferSelect): BibiOfficialProfile {
   return {
     id: user.id,
-    email: user.email,
     nickname: user.nickname,
     displayName: user.nickname,
     handle: BIBI_OFFICIAL_HANDLE,

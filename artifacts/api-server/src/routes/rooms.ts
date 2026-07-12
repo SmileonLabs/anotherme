@@ -1,14 +1,22 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod/v4";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, friendshipsTable, messageDeletionsTable, messagesTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { toPublicUser } from "../lib/publicUser";
 import { allocateRoomMessageSeq, getRoomUnreadMeta } from "../lib/readReceipts";
 import { hasMutualBlockBetween, lockUserPair } from "../lib/chatDelivery";
 
 const router: IRouter = Router();
-const USER_CREATABLE_ROOM_TYPES = new Set(["direct", "group"]);
 const MAX_ROOM_MEMBERS = 100;
+const muteRoomSchema = z.object({ muted: z.boolean() }).strict();
+const addMembersSchema = z.object({ memberIds: z.array(z.uuid()).min(1).max(50) }).strict();
+const createRoomSchema = z.object({
+  type: z.enum(["direct", "group"]),
+  name: z.string().trim().min(1).max(120).nullable().optional(),
+  memberIds: z.array(z.uuid()).max(MAX_ROOM_MEMBERS),
+}).strict();
 
 function messagePreview(type: string, content: string, deleted: boolean): string {
   if (deleted) return "삭제된 메시지";
@@ -62,13 +70,9 @@ export async function roomWithMeta(roomId: string, userId: string) {
     .map((u) => {
       const friendAlias = aliasByUserId.get(u.id) ?? null;
       return {
-        id: u.id,
-        email: u.email,
-        nickname: u.nickname,
+        ...toPublicUser(u),
         friendAlias,
         displayName: friendAlias || u.nickname,
-        profileImageUrl: u.profileImageUrl ?? null,
-        statusMessage: u.statusMessage ?? null,
       };
     });
 
@@ -148,14 +152,12 @@ router.get("/rooms", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
-  const { type, name, memberIds } = req.body as { type: string; name?: string; memberIds: string[] };
-
-  if (!USER_CREATABLE_ROOM_TYPES.has(type) || !Array.isArray(memberIds) || memberIds.length > MAX_ROOM_MEMBERS ||
-    (name !== undefined && name !== null && (typeof name !== "string" || name.length > 120)) ||
-    !memberIds.every((memberId) => typeof memberId === "string" && memberId.length > 0)) {
+  const parsed = createRoomSchema.safeParse(req.body);
+  if (!parsed.success) {
     res.status(400).json({ error: "type and memberIds are required" });
     return;
   }
+  const { type, name, memberIds } = parsed.data;
 
   const allMemberIds = Array.from(new Set([userId, ...memberIds]));
   const existingMembers = await db
@@ -350,10 +352,15 @@ router.post("/rooms/:id/leave", requireAuth, async (req, res): Promise<void> => 
 router.patch("/rooms/:id/mute", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { muted } = req.body;
+  const parsed = muteRoomSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid mute setting" });
+    return;
+  }
+  const { muted } = parsed.data;
   const [updated] = await db
     .update(chatRoomMembersTable)
-    .set({ muted: !!muted })
+    .set({ muted })
     .where(and(eq(chatRoomMembersTable.roomId, raw), eq(chatRoomMembersTable.userId, userId)))
     .returning();
   res.json({ id: updated.id, roomId: updated.roomId, userId: updated.userId, joinedAt: updated.joinedAt.toISOString(), muted: updated.muted });
@@ -381,7 +388,7 @@ router.get("/rooms/:id/members", requireAuth, async (req, res): Promise<void> =>
   const members = await Promise.all(
     memberRows.map(async (m) => {
       const [u] = await db.select().from(usersTable).where(eq(usersTable.id, m.userId));
-      return u ? { id: u.id, email: u.email, nickname: u.nickname, profileImageUrl: u.profileImageUrl ?? null, statusMessage: u.statusMessage ?? null } : null;
+      return u ? toPublicUser(u) : null;
     }),
   );
 
@@ -391,16 +398,12 @@ router.get("/rooms/:id/members", requireAuth, async (req, res): Promise<void> =>
 router.post("/rooms/:id/members", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { memberIds } = req.body as { memberIds: string[] };
-
-  if (!Array.isArray(memberIds) || memberIds.length === 0) {
-    res.status(400).json({ error: "memberIds is required" });
-    return;
-  }
-  if (memberIds.length > 50 || memberIds.some((m) => typeof m !== "string")) {
+  const parsed = addMembersSchema.safeParse(req.body);
+  if (!parsed.success) {
     res.status(400).json({ error: "Invalid memberIds" });
     return;
   }
+  const { memberIds } = parsed.data;
 
   // Only an existing member of a GROUP room may invite others.
   const [room] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, raw));

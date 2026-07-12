@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, ilike } from "drizzle-orm";
+import { z } from "zod/v4";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   profileUpdateHistoryTable,
@@ -9,16 +10,24 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { addSubscription } from "../lib/push";
+import { toPublicUser } from "../lib/publicUser";
+import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 
-const toPublic = (u: typeof usersTable.$inferSelect) => ({
-  id: u.id,
-  email: u.email,
-  nickname: u.nickname,
-  profileImageUrl: u.profileImageUrl ?? null,
-  statusMessage: u.statusMessage ?? null,
-});
+const profileImageUrlSchema = z.string().trim().max(2_048).refine(
+  (value) => value.startsWith("/objects/") || /^https:\/\//i.test(value),
+  "profileImageUrl must be an internal object path or HTTPS URL",
+);
+const updateMeSchema = z.object({
+  nickname: z.string().trim().min(1).max(30).optional(),
+  statusMessage: z.string().trim().max(200).nullable().optional(),
+  profileImageUrl: profileImageUrlSchema.nullable().optional(),
+  notificationEnabled: z.boolean().optional(),
+  talkAnalysisEnabled: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "At least one field is required");
+const pushTokenSchema = z.object({ token: z.string().min(1).max(8_192) }).strict();
+const userSearchSchema = z.object({ email: z.email().max(320).transform((value) => value.trim().toLowerCase()) });
 
 function profileUpdateKind(args: {
   profileImageChanged: boolean;
@@ -67,7 +76,7 @@ function serializeProfileHistory(row: typeof profileUpdateHistoryTable.$inferSel
 
 router.get("/users", requireAuth, async (req, res): Promise<void> => {
   const users = await db.select().from(usersTable).limit(1000);
-  res.json(users.filter((u) => u.id !== req.dbUser!.id).map(toPublic));
+  res.json(users.filter((u) => u.id !== req.dbUser!.id).map(toPublicUser));
 });
 
 router.get("/users/me", requireAuth, async (req, res): Promise<void> => {
@@ -98,7 +107,12 @@ router.get("/users/me/profile-history", requireAuth, async (req, res): Promise<v
 
 router.patch("/users/me", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
-  const { nickname, statusMessage, profileImageUrl, notificationEnabled, talkAnalysisEnabled } = req.body;
+  const parsed = updateMeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid profile update" });
+    return;
+  }
+  const { nickname, statusMessage, profileImageUrl, notificationEnabled, talkAnalysisEnabled } = parsed.data;
 
   const updates: Record<string, unknown> = {};
   if (nickname !== undefined) updates.nickname = nickname;
@@ -179,11 +193,12 @@ router.delete("/users/me", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/users/me/push-token", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
-  const { token } = req.body;
-  if (!token) {
-    res.status(400).json({ error: "Missing token" });
+  const parsed = pushTokenSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid token" });
     return;
   }
+  const { token } = parsed.data;
   await addSubscription(user.id, token);
   const [updated] = await db
     .select()
@@ -204,19 +219,20 @@ router.post("/users/me/push-token", requireAuth, async (req, res): Promise<void>
   });
 });
 
-router.get("/users/search", requireAuth, async (req, res): Promise<void> => {
-  const email = typeof req.query.email === "string" ? req.query.email : "";
-  if (!email) {
-    res.status(400).json({ error: "email query param required" });
+router.get("/users/search", requireAuth, rateLimit({ name: "user-search", limit: 20, windowSeconds: 60 }), async (req, res): Promise<void> => {
+  const parsed = userSearchSchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Valid email query param required" });
     return;
   }
+  const { email } = parsed.data;
   const users = await db
     .select()
     .from(usersTable)
-    .where(ilike(usersTable.email, `%${email}%`))
-    .limit(20);
+    .where(eq(usersTable.email, email))
+    .limit(1);
 
-  res.json(users.filter((u) => u.id !== req.dbUser!.id).map(toPublic));
+  res.json(users.filter((u) => u.id !== req.dbUser!.id).map(toPublicUser));
 });
 
 export default router;

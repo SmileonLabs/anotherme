@@ -7,5 +7,6 @@
  */
 
 export interface BattleTopicInput {
+  /** @maxLength 80 */
   category: string;
 }

@@ -40,6 +40,7 @@ import {
   createStarFeedPostWithResult,
 } from "../lib/starFeed";
 import { roomWithMeta } from "./rooms";
+import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 
@@ -53,6 +54,18 @@ const lastTopicCall = new Map<string, number>();
 const createBattleFeedPostBodySchema = z.object({
   kind: z.enum(["fan", "star"]).optional(),
 });
+const battleTopicSchema = z.object({ category: z.string().trim().max(80).optional() }).strict();
+const createBattleSchema = z.object({
+  memberId: z.uuid().optional(),
+  aiPersonaId: z.string().trim().min(1).max(100).optional(),
+  category: z.string().trim().max(80).optional(),
+  topic: z.string().trim().min(1).max(300),
+}).strict().refine((value) => Boolean(value.memberId) !== Boolean(value.aiPersonaId), {
+  message: "Provide exactly one opponent",
+});
+const battleTurnSchema = z.object({
+  content: z.string().trim().min(1).max(MAX_UTTERANCE_CHARS),
+}).strict();
 
 type BattleFeedKind = "fan" | "star";
 type BattleOutcome = "win" | "loss" | "draw";
@@ -280,7 +293,7 @@ function battleFeedBody(summary: BattleResultSummary, kind: BattleFeedKind): str
 }
 
 // Suggest debate topics for a category (no room needed).
-router.post("/battle-topics", requireAuth, async (req, res): Promise<void> => {
+router.post("/battle-topics", requireAuth, rateLimit({ name: "battle-topics", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const now = Date.now();
   const last = lastTopicCall.get(userId) ?? 0;
@@ -288,10 +301,13 @@ router.post("/battle-topics", requireAuth, async (req, res): Promise<void> => {
     res.status(429).json({ error: "잠시 후 다시 시도해 주세요." });
     return;
   }
+  const parsed = battleTopicSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid battle topic input" });
+    return;
+  }
   lastTopicCall.set(userId, now);
-
-  const { category } = req.body as { category?: string };
-  const topics = await suggestTopics(typeof category === "string" ? category : "", req.log);
+  const topics = await suggestTopics(parsed.data.category ?? "", req.log);
   res.json({ topics });
 });
 
@@ -311,25 +327,14 @@ router.get("/battle-personas", requireAuth, async (_req, res): Promise<void> => 
 // AI persona opponent, plus the AI judge bot and a fresh waiting-room session.
 router.post("/battles", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
-  const { memberId, aiPersonaId, category, topic } = req.body as {
-    memberId?: string;
-    aiPersonaId?: string;
-    category?: string;
-    topic?: string;
-  };
-
-  if (typeof topic !== "string" || !topic.trim()) {
-    res.status(400).json({ error: "topic is required" });
-    return;
-  }
-
-  // Exactly one opponent: a friend (memberId) XOR an AI persona (aiPersonaId).
-  const hasMember = typeof memberId === "string" && memberId.length > 0;
-  const hasPersona = typeof aiPersonaId === "string" && aiPersonaId.length > 0;
-  if (hasMember === hasPersona) {
+  const parsed = createBattleSchema.safeParse(req.body);
+  if (!parsed.success) {
     res.status(400).json({ error: "Provide either a friend memberId or an aiPersonaId" });
     return;
   }
+  const { memberId, aiPersonaId, category, topic } = parsed.data;
+  const hasMember = Boolean(memberId);
+  const hasPersona = Boolean(aiPersonaId);
 
   const judgeId = await getOrCreateJudgeUser();
 
@@ -640,21 +645,22 @@ router.post("/battles/:id/cancel", requireAuth, async (req, res): Promise<void> 
 router.post("/battles/:id/turn", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { content } = req.body as { content?: string };
+  const parsed = battleTurnSchema.safeParse(req.body);
 
   if (!(await requireMember(raw, userId))) {
     res.status(403).json({ error: "Not a member" });
     return;
   }
-  if (typeof content !== "string") {
+  if (!parsed.success) {
     res.status(400).json({ error: "content is required" });
     return;
   }
+  const { content } = parsed.data;
 
   const result = await submitBattleTurn(
     raw,
     userId,
-    content.slice(0, MAX_UTTERANCE_CHARS),
+    content,
     req.log,
   );
   if (!result.ok || !result.state) {

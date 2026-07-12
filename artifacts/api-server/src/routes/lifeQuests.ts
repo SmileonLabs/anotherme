@@ -8,6 +8,7 @@ import {
   type StarStats,
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 import { generateLifeQuestScenario, normalizeTheme } from "../lib/lifeQuest";
 import { ensurePlayModeState, type PlayModeState } from "../lib/fanStar";
 import { getTorimiaState, type TorimiaState } from "../lib/torimia";
@@ -81,7 +82,7 @@ function cleanStarStats(stats: Record<string, number>): Partial<StarStats> {
 // Start a new Life Quest. The AI authors the ENTIRE scenario in one call here;
 // the rest of the run never calls AI. Generation failures persist nothing and
 // surface a 502 so the client can retry.
-router.post("/life-quests", requireAuth, async (req, res): Promise<void> => {
+router.post("/life-quests", requireAuth, rateLimit({ name: "create-life-quest", limit: 20, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const access = await requireStarMissionAccess(userId);
   if (!access.ok) {

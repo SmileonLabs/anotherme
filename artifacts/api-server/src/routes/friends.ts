@@ -1,20 +1,20 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod/v4";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { friendRequestsTable, friendshipsTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { sendPushToUser } from "../lib/push";
+import { toPublicUser } from "../lib/publicUser";
 
 const router: IRouter = Router();
+const friendRequestSchema = z.object({ toUserId: z.uuid() }).strict();
+const friendAliasSchema = z.object({ alias: z.string().trim().max(30).nullable() }).strict();
 
 const toPublic = (u: typeof usersTable.$inferSelect, friendAlias?: string | null) => ({
-  id: u.id,
-  email: u.email,
-  nickname: u.nickname,
+  ...toPublicUser(u),
   friendAlias: friendAlias ?? null,
   displayName: friendAlias || u.nickname,
-  profileImageUrl: u.profileImageUrl ?? null,
-  statusMessage: u.statusMessage ?? null,
 });
 
 function aliasForViewer(friendship: typeof friendshipsTable.$inferSelect, viewerUserId: string): string | null {
@@ -66,7 +66,8 @@ router.patch("/friends/:userId/alias", requireAuth, async (req, res): Promise<vo
   const myId = req.dbUser!.id;
   const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const otherId = raw;
-  const alias = normalizeAlias(req.body?.alias);
+  const parsed = friendAliasSchema.safeParse(req.body);
+  const alias = parsed.success ? normalizeAlias(parsed.data.alias) : undefined;
 
   if (!otherId || otherId === myId || alias === undefined) {
     res.status(400).json({ error: "Invalid alias" });
@@ -127,12 +128,12 @@ router.delete("/friends/:userId", requireAuth, async (req, res): Promise<void> =
 
 router.post("/friend-requests", requireAuth, async (req, res): Promise<void> => {
   const myId = req.dbUser!.id;
-  const { toUserId } = req.body;
-
-  if (!toUserId || toUserId === myId) {
+  const parsed = friendRequestSchema.safeParse(req.body);
+  if (!parsed.success || parsed.data.toUserId === myId) {
     res.status(400).json({ error: "Invalid toUserId" });
     return;
   }
+  const { toUserId } = parsed.data;
 
   const alreadyFriends = await db
     .select()
@@ -274,7 +275,7 @@ router.get("/friend-requests/incoming", requireAuth, async (req, res): Promise<v
         toUserId: r.toUserId,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
-        user: u ? { id: u.id, email: u.email, nickname: u.nickname, profileImageUrl: u.profileImageUrl ?? null, statusMessage: u.statusMessage ?? null } : null,
+        user: u ? toPublicUser(u) : null,
       };
     }),
   );
@@ -298,7 +299,7 @@ router.get("/friend-requests/outgoing", requireAuth, async (req, res): Promise<v
         toUserId: r.toUserId,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
-        user: u ? { id: u.id, email: u.email, nickname: u.nickname, profileImageUrl: u.profileImageUrl ?? null, statusMessage: u.statusMessage ?? null } : null,
+        user: u ? toPublicUser(u) : null,
       };
     }),
   );

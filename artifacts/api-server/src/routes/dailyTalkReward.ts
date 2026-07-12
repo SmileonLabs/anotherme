@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod/v4";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 import {
   DailyTalkRewardError,
   generateDailyTalkReward,
@@ -56,7 +57,7 @@ router.get("/daily-talk-reward/status", requireAuth, async (req, res): Promise<v
   res.json(await getDailyTalkRewardStatus(req.dbUser!.id));
 });
 
-router.post("/daily-talk-reward/generate", requireAuth, async (req, res): Promise<void> => {
+router.post("/daily-talk-reward/generate", requireAuth, rateLimit({ name: "daily-talk-generate", limit: 5, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   try {
     res.json(await generateDailyTalkReward(req.dbUser!.id, req.log));
   } catch (err) {

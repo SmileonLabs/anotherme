@@ -7,7 +7,12 @@
  */
 
 export interface PresenceHeartbeat {
-  roomId?: string;
-  /** @maxLength 32 */
-  platform?: string;
+  /** @nullable */
+  roomId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     * @nullable
+     */
+  platform?: string | null;
 }

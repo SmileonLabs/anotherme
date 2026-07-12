@@ -21,6 +21,7 @@ import { upsertClaim, upsertEntity, upsertSource } from "../lib/knowledgeGraph/c
 import { queueAiCampaignDelivery } from "../lib/campaignEngine";
 import { CHAT_KNOWLEDGE_ITEM_TYPE } from "../lib/chatKnowledge";
 import { enqueueUserAiMemoryOntologySyncSafe } from "../lib/ontologySync";
+import { rateLimit } from "../lib/rateLimit";
 import {
   confidenceValue,
   GOOGLE_SEARCH_ENDPOINT,
@@ -428,7 +429,7 @@ router.get("/knowledge/admin/ontology-preview", requireAuth, async (req, res): P
   res.json(await getKnowledgePreview(tenantId));
 });
 
-router.post("/knowledge/admin/google-search", requireAuth, async (req, res): Promise<void> => {
+router.post("/knowledge/admin/google-search", requireAuth, rateLimit({ name: "knowledge-google-search", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
   if (!requireKnowledgeAdmin(req, res)) return;
   const config = requireGoogleSearchConfig();
   if (!config) {
@@ -479,7 +480,7 @@ router.post("/knowledge/admin/google-search", requireAuth, async (req, res): Pro
   });
 });
 
-router.post("/knowledge/admin/google-search/import", requireAuth, async (req, res): Promise<void> => {
+router.post("/knowledge/admin/google-search/import", requireAuth, rateLimit({ name: "knowledge-google-import", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
   if (!requireKnowledgeAdmin(req, res)) return;
   const title = textValue(req.body?.title).slice(0, 200);
   const url = validateImportUrl(textValue(req.body?.url));
@@ -571,7 +572,7 @@ router.delete("/knowledge/admin/sources/:sourceId", requireAuth, async (req, res
   res.json(updated);
 });
 
-router.post("/knowledge/admin/sources/:sourceId/extract", requireAuth, async (req, res): Promise<void> => {
+router.post("/knowledge/admin/sources/:sourceId/extract", requireAuth, rateLimit({ name: "knowledge-extract", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
   if (!requireKnowledgeAdmin(req, res)) return;
   const sourceId = routeParam(req.params.sourceId);
   const [source] = await db.select().from(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, sourceId)).limit(1);

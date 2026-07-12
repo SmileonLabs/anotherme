@@ -812,7 +812,7 @@ paths:
     get:
       operationId: searchUsers
       tags: [users]
-      summary: Search users by email
+      summary: Find a user by exact email address
       security: [{ bearerAuth: [] }]
       parameters:
         - name: email
@@ -4180,11 +4180,9 @@ components:
 
     BibiOfficialProfile:
       type: object
-      required: [id, email, nickname, displayName, handle]
+      required: [id, nickname, displayName, handle]
       properties:
         id:
-          type: string
-        email:
           type: string
         nickname:
           type: string
@@ -4210,9 +4208,11 @@ components:
       type: object
       properties:
         roomId:
-          type: string
+          type: ["string", "null"]
+          format: uuid
         platform:
-          type: string
+          type: ["string", "null"]
+          minLength: 1
           maxLength: 32
 
     PresenceState:
@@ -5116,11 +5116,17 @@ components:
       properties:
         nickname:
           type: string
+          minLength: 1
+          maxLength: 30
         statusMessage:
           type: ["string", "null"]
+          maxLength: 200
         profileImageUrl:
           type: ["string", "null"]
+          maxLength: 2048
         notificationEnabled:
+          type: boolean
+        talkAnalysisEnabled:
           type: boolean
 
     ProfileUpdateHistoryItem:
@@ -5155,17 +5161,20 @@ components:
       properties:
         token:
           type: string
+          minLength: 1
+          maxLength: 8192
 
     PublicUser:
       type: object
-      required: [id, nickname, email]
+      required: [id, nickname, accountKind]
       properties:
         id:
           type: string
         nickname:
           type: string
-        email:
+        accountKind:
           type: string
+          enum: [user, official, system]
         friendAlias:
           type: ["string", "null"]
           description: Current viewer's saved name for this user, when available.
@@ -5183,7 +5192,7 @@ components:
       properties:
         alias:
           type: ["string", "null"]
-          maxLength: 50
+          maxLength: 30
           description: Null or an empty string clears the saved name.
 
     FriendRequestInput:
@@ -5192,6 +5201,7 @@ components:
       properties:
         toUserId:
           type: string
+          format: uuid
 
     FriendRequest:
       type: object
@@ -5311,6 +5321,7 @@ components:
           maxItems: 100
           items:
             type: string
+            format: uuid
 
     InviteMembersInput:
       type: object
@@ -5318,8 +5329,11 @@ components:
       properties:
         memberIds:
           type: array
+          minItems: 1
+          maxItems: 50
           items:
             type: string
+            format: uuid
 
     Message:
       type: object
@@ -5482,12 +5496,18 @@ components:
       properties:
         name:
           type: ["string", "null"]
+          minLength: 1
+          maxLength: 120
         memberIds:
           type: array
+          maxItems: 20
           items:
             type: string
+            format: uuid
         theme:
           type: ["string", "null"]
+          minLength: 1
+          maxLength: 200
 
     DungeonCharacter:
       type: object
@@ -5719,14 +5739,20 @@ components:
       properties:
         memberId:
           type: string
+          format: uuid
           description: The single friend's userId to invite. Provide this OR aiPersonaId.
         aiPersonaId:
           type: string
+          minLength: 1
+          maxLength: 100
           description: The AI opponent persona id to battle against. Provide this OR memberId.
         category:
           type: string
+          maxLength: 80
         topic:
           type: string
+          minLength: 1
+          maxLength: 300
 
     BattleTopicInput:
       type: object
@@ -5734,6 +5760,7 @@ components:
       properties:
         category:
           type: string
+          maxLength: 80
 
     BattleTopicSuggestions:
       type: object
@@ -5750,6 +5777,8 @@ components:
       properties:
         content:
           type: string
+          minLength: 1
+          maxLength: 1000
 
     BattleEvaluation:
       type: object
@@ -5986,6 +6015,8 @@ components:
           type: string
         inviteCode:
           type: string
+          minLength: 8
+          maxLength: 128
         inviterUserId:
           type: string
         status:
@@ -6008,6 +6039,7 @@ components:
       properties:
         blockedUserId:
           type: string
+          format: uuid
 
     CreateCallInput:
       type: object
@@ -6015,8 +6047,10 @@ components:
       properties:
         calleeId:
           type: string
+          format: uuid
         roomId:
           type: string
+          format: uuid
         media:
           $ref: "#/components/schemas/CallMedia"
 

@@ -189,6 +189,7 @@ export * from './presenceUsersResponse';
 export * from './profileUpdateHistoryItem';
 export * from './profileUpdateHistoryItemKind';
 export * from './publicUser';
+export * from './publicUserAccountKind';
 export * from './pushTokenInput';
 export * from './pvtTransaction';
 export * from './pvtTransactionSource';

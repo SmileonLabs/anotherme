@@ -124,7 +124,7 @@ export default function BattleCreateScreen() {
                   <Avatar uri={item.profileImageUrl} name={displayName} size={46} />
                   <View style={styles.rowInfo}>
                     <Text style={[styles.rowName, { color: colors.foreground }]}>{displayName}</Text>
-                    <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.email}</Text>
+                    <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.statusMessage || "AnotherMe 사용자"}</Text>
                   </View>
                   <View
                     style={[

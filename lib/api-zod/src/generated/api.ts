@@ -30,7 +30,7 @@ export const CreateRealtimeTicketResponse = zod.object({
 export const ListUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -58,11 +58,20 @@ export const GetMeResponse = zod.object({
 /**
  * @summary Update my profile
  */
+export const updateMeBodyNicknameMax = 30;
+
+export const updateMeBodyStatusMessageMax = 200;
+
+export const updateMeBodyProfileImageUrlMax = 2048;
+
+
+
 export const UpdateMeBody = zod.object({
-  "nickname": zod.string().optional(),
-  "statusMessage": zod.string().nullish(),
-  "profileImageUrl": zod.string().nullish(),
-  "notificationEnabled": zod.boolean().optional()
+  "nickname": zod.string().min(1).max(updateMeBodyNicknameMax).optional(),
+  "statusMessage": zod.string().max(updateMeBodyStatusMessageMax).nullish(),
+  "profileImageUrl": zod.string().max(updateMeBodyProfileImageUrlMax).nullish(),
+  "notificationEnabled": zod.boolean().optional(),
+  "talkAnalysisEnabled": zod.boolean().optional()
 })
 
 export const UpdateMeResponse = zod.object({
@@ -99,8 +108,12 @@ export const ListMyProfileHistoryResponse = zod.array(ListMyProfileHistoryRespon
 /**
  * @summary Register push token
  */
+export const registerPushTokenBodyTokenMax = 8192;
+
+
+
 export const RegisterPushTokenBody = zod.object({
-  "token": zod.string()
+  "token": zod.string().min(1).max(registerPushTokenBodyTokenMax)
 })
 
 export const RegisterPushTokenResponse = zod.object({
@@ -622,7 +635,7 @@ export const DeleteClanMemoryResponse = zod.object({
 
 
 /**
- * @summary Search users by email
+ * @summary Find a user by exact email address
  */
 export const SearchUsersQueryParams = zod.object({
   "email": zod.coerce.string()
@@ -631,7 +644,7 @@ export const SearchUsersQueryParams = zod.object({
 export const SearchUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -646,7 +659,7 @@ export const SearchUsersResponse = zod.array(SearchUsersResponseItem)
 export const ListFriendsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -662,7 +675,7 @@ export const UpdateFriendAliasParams = zod.object({
   "userId": zod.coerce.string()
 })
 
-export const updateFriendAliasBodyAliasMax = 50;
+export const updateFriendAliasBodyAliasMax = 30;
 
 
 
@@ -673,7 +686,7 @@ export const UpdateFriendAliasBody = zod.object({
 export const UpdateFriendAliasResponse = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -693,7 +706,7 @@ export const RemoveFriendParams = zod.object({
  * @summary Send a friend request
  */
 export const SendFriendRequestBody = zod.object({
-  "toUserId": zod.string()
+  "toUserId": zod.string().uuid()
 })
 
 
@@ -709,7 +722,7 @@ export const ListIncomingFriendRequestsResponseItem = zod.object({
   "user": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -731,7 +744,7 @@ export const ListOutgoingFriendRequestsResponseItem = zod.object({
   "user": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -801,7 +814,7 @@ export const ListRoomsResponseItem = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -823,7 +836,7 @@ export const createRoomBodyMemberIdsMax = 100;
 export const CreateRoomBody = zod.object({
   "type": zod.enum(['direct', 'group']),
   "name": zod.string().max(createRoomBodyNameMax).nullish(),
-  "memberIds": zod.array(zod.string()).max(createRoomBodyMemberIdsMax)
+  "memberIds": zod.array(zod.string().uuid()).max(createRoomBodyMemberIdsMax)
 })
 
 
@@ -859,7 +872,7 @@ export const GetRoomResponse = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -906,7 +919,7 @@ export const ListRoomMembersParams = zod.object({
 export const ListRoomMembersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -922,8 +935,12 @@ export const InviteRoomMembersParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const inviteRoomMembersBodyMemberIdsMax = 50;
+
+
+
 export const InviteRoomMembersBody = zod.object({
-  "memberIds": zod.array(zod.string())
+  "memberIds": zod.array(zod.string().uuid()).min(1).max(inviteRoomMembersBodyMemberIdsMax)
 })
 
 export const InviteRoomMembersResponse = zod.object({
@@ -951,7 +968,7 @@ export const InviteRoomMembersResponse = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -995,7 +1012,7 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "sender": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -1017,7 +1034,7 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -1144,7 +1161,7 @@ export const GetTypingUsersParams = zod.object({
 export const GetTypingUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -1183,7 +1200,7 @@ export const RedeemInviteResponse = zod.object({
 export const ListBlockedResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -1196,7 +1213,7 @@ export const ListBlockedResponse = zod.array(ListBlockedResponseItem)
  * @summary Block a user
  */
 export const BlockUserBody = zod.object({
-  "blockedUserId": zod.string()
+  "blockedUserId": zod.string().uuid()
 })
 
 
@@ -1212,8 +1229,8 @@ export const UnblockUserParams = zod.object({
  * @summary Start a voice or video call
  */
 export const CreateCallBody = zod.object({
-  "calleeId": zod.string(),
-  "roomId": zod.string().optional(),
+  "calleeId": zod.string().uuid(),
+  "roomId": zod.string().uuid().optional(),
   "media": zod.enum(['audio', 'video']).optional()
 })
 
@@ -1234,7 +1251,7 @@ export const ListIncomingCallsResponseItem = zod.object({
   "caller": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
   "profileImageUrl": zod.string().nullish(),
@@ -1443,10 +1460,18 @@ export const GetStorageObjectParams = zod.object({
 /**
  * @summary Create a dungeon (MUD game room with AI Dungeon Master)
  */
+export const createDungeonBodyNameMax = 120;
+
+export const createDungeonBodyMemberIdsMax = 20;
+
+export const createDungeonBodyThemeMax = 200;
+
+
+
 export const CreateDungeonBody = zod.object({
-  "name": zod.string().nullish(),
-  "memberIds": zod.array(zod.string()),
-  "theme": zod.string().nullish()
+  "name": zod.string().min(1).max(createDungeonBodyNameMax).nullish(),
+  "memberIds": zod.array(zod.string().uuid()).max(createDungeonBodyMemberIdsMax),
+  "theme": zod.string().min(1).max(createDungeonBodyThemeMax).nullish()
 })
 
 
@@ -1694,19 +1719,31 @@ export const AbandonLifeQuestResponse = zod.object({
 /**
  * @summary Create a talk-battle room (AI-judged debate game)
  */
+export const createBattleBodyAiPersonaIdMax = 100;
+
+export const createBattleBodyCategoryMax = 80;
+
+export const createBattleBodyTopicMax = 300;
+
+
+
 export const CreateBattleBody = zod.object({
-  "memberId": zod.string().optional().describe('The single friend\'s userId to invite. Provide this OR aiPersonaId.'),
-  "aiPersonaId": zod.string().optional().describe('The AI opponent persona id to battle against. Provide this OR memberId.'),
-  "category": zod.string(),
-  "topic": zod.string()
+  "memberId": zod.string().uuid().optional().describe('The single friend\'s userId to invite. Provide this OR aiPersonaId.'),
+  "aiPersonaId": zod.string().min(1).max(createBattleBodyAiPersonaIdMax).optional().describe('The AI opponent persona id to battle against. Provide this OR memberId.'),
+  "category": zod.string().max(createBattleBodyCategoryMax),
+  "topic": zod.string().min(1).max(createBattleBodyTopicMax)
 })
 
 
 /**
  * @summary Get AI-suggested debate topics for a category
  */
+export const suggestBattleTopicsBodyCategoryMax = 80;
+
+
+
 export const SuggestBattleTopicsBody = zod.object({
-  "category": zod.string()
+  "category": zod.string().max(suggestBattleTopicsBodyCategoryMax)
 })
 
 export const SuggestBattleTopicsResponse = zod.object({
@@ -1883,8 +1920,12 @@ export const SubmitBattleTurnParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const submitBattleTurnBodyContentMax = 1000;
+
+
+
 export const SubmitBattleTurnBody = zod.object({
-  "content": zod.string()
+  "content": zod.string().min(1).max(submitBattleTurnBodyContentMax)
 })
 
 export const SubmitBattleTurnResponse = zod.object({
@@ -2939,7 +2980,6 @@ export const PostDailyTalkRewardToFeedResponse = zod.object({
  */
 export const GetBibiOfficialProfileResponse = zod.object({
   "id": zod.string(),
-  "email": zod.string(),
   "nickname": zod.string(),
   "displayName": zod.string(),
   "handle": zod.string(),
@@ -2956,8 +2996,8 @@ export const recordPresenceHeartbeatBodyPlatformMax = 32;
 
 
 export const RecordPresenceHeartbeatBody = zod.object({
-  "roomId": zod.string().optional(),
-  "platform": zod.string().max(recordPresenceHeartbeatBodyPlatformMax).optional()
+  "roomId": zod.string().uuid().nullish(),
+  "platform": zod.string().min(1).max(recordPresenceHeartbeatBodyPlatformMax).nullish()
 })
 
 

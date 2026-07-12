@@ -8,6 +8,10 @@
 
 export interface Invite {
   id: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     */
   inviteCode: string;
   inviterUserId: string;
   status: string;

@@ -115,7 +115,7 @@ export default function RequestsScreen() {
             <Avatar uri={user.profileImageUrl} name={user.nickname} size={48} />
             <View style={styles.info}>
               <Text style={[styles.name, { color: colors.foreground }]}>{user.nickname}</Text>
-              <Text style={[styles.email, { color: colors.mutedForeground }]}>{user.email}</Text>
+              <Text style={[styles.email, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>
             </View>
             {(section as any).isIncoming ? (
               <View style={styles.actions}>

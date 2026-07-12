@@ -2088,7 +2088,7 @@ export const getSearchUsersUrl = (params: SearchUsersParams,) => {
 }
 
 /**
- * @summary Search users by email
+ * @summary Find a user by exact email address
  */
 export const searchUsers = async (params: SearchUsersParams, options?: RequestInit): Promise<PublicUser[]> => {
 
@@ -2135,7 +2135,7 @@ export type SearchUsersQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Search users by email
+ * @summary Find a user by exact email address
  */
 
 export function useSearchUsers<TData = Awaited<ReturnType<typeof searchUsers>>, TError = ErrorType<unknown>>(

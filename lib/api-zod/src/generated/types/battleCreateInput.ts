@@ -9,8 +9,17 @@
 export interface BattleCreateInput {
   /** The single friend's userId to invite. Provide this OR aiPersonaId. */
   memberId?: string;
-  /** The AI opponent persona id to battle against. Provide this OR memberId. */
+  /**
+     * The AI opponent persona id to battle against. Provide this OR memberId.
+     * @minLength 1
+     * @maxLength 100
+     */
   aiPersonaId?: string;
+  /** @maxLength 80 */
   category: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
   topic: string;
 }

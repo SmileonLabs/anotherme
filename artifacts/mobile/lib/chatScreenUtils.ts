@@ -102,12 +102,9 @@ export function roomDisplayName(room: any, meId?: string): string {
 }
 
 export function isReadReceiptParticipant(user: any): boolean {
-  const email = String(user?.email ?? "").toLowerCase();
-  const clerkId = String(user?.clerkId ?? "").toLowerCase();
-  return (
-    !email.endsWith("@todotalk.system") &&
-    !email.endsWith("@anotherme.local") &&
-    !clerkId.startsWith("system:") &&
-    !clerkId.startsWith("official:")
-  );
+  return user?.accountKind === undefined || user.accountKind === "user";
+}
+
+export function isSystemAccount(user: any): boolean {
+  return user?.accountKind === "system";
 }

@@ -8,7 +8,6 @@
 
 export interface BibiOfficialProfile {
   id: string;
-  email: string;
   nickname: string;
   displayName: string;
   handle: string;

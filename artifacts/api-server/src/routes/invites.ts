@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod/v4";
 import { and, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { invitesTable, friendRequestsTable, friendshipsTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 
 const router: IRouter = Router();
+const redeemInviteSchema = z.object({ inviteCode: z.string().trim().min(8).max(128) }).strict();
 
 function generateCode(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -30,11 +32,12 @@ router.post("/invites", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/invites/redeem", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
-  const { inviteCode } = req.body;
-  if (!inviteCode) {
+  const parsed = redeemInviteSchema.safeParse(req.body);
+  if (!parsed.success) {
     res.status(400).json({ error: "inviteCode required" });
     return;
   }
+  const { inviteCode } = parsed.data;
 
   const [invite] = await db
     .select()

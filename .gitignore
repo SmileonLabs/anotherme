@@ -33,6 +33,10 @@ node_modules
 !.env.docker.example
 *.pem
 *.apk
+**/google-services.json
+attached_assets/*google-services*.json
+*.keystore
+*.jks
 /.sass-cache
 /connect.lock
 /coverage

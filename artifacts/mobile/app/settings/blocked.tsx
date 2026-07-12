@@ -48,7 +48,7 @@ export default function BlockedScreen() {
           <Avatar uri={item.profileImageUrl} name={item.nickname} size={46} />
           <View style={styles.info}>
             <Text style={[styles.name, { color: colors.foreground }]}>{item.nickname}</Text>
-            <Text style={[styles.email, { color: colors.mutedForeground }]}>{item.email}</Text>
+            <Text style={[styles.email, { color: colors.mutedForeground }]}>{item.statusMessage || "AnotherMe 사용자"}</Text>
           </View>
           <Pressable
             style={({ pressed }) => [

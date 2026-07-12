@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
+import { z } from "zod/v4";
 import { and, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import {
@@ -14,6 +15,8 @@ import {
 } from "@workspace/db";
 import type { Call } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { toPublicUser } from "../lib/publicUser";
+import { rateLimit } from "../lib/rateLimit";
 import { sendCallPush, sendCallTerminalPush, incomingCallData } from "../lib/push";
 import { logger } from "../lib/logger";
 import { publishRealtimeEvent } from "../lib/realtime";
@@ -30,6 +33,17 @@ import {
 } from "../lib/callLifecycle";
 
 const router: IRouter = Router();
+const createCallSchema = z.object({
+  calleeId: z.uuid(),
+  roomId: z.uuid().optional(),
+  media: z.enum(["audio", "video"]).optional(),
+}).strict();
+const callDiagnosticSchema = z.object({
+  phase: z.string().trim().min(1).max(100),
+  platform: z.string().trim().max(50).optional(),
+  role: z.string().trim().max(50).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+}).strict();
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
@@ -350,16 +364,6 @@ function serializeCall(c: Call, media: CallMedia = "audio") {
   };
 }
 
-function toPublicUser(u: typeof usersTable.$inferSelect) {
-  return {
-    id: u.id,
-    email: u.email,
-    nickname: u.nickname,
-    profileImageUrl: u.profileImageUrl ?? null,
-    statusMessage: u.statusMessage ?? null,
-  };
-}
-
 async function serializeCallWithMedia(c: Call) {
   return serializeCall(c, mediaFromCall(c));
 }
@@ -380,22 +384,19 @@ function publishCallRealtimeEvent(
   }).catch((err) => logger.error({ err, callId: call.id, type }, "Failed to publish call realtime event"));
 }
 
-router.post("/calls", requireAuth, async (req, res): Promise<void> => {
+router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, windowSeconds: 60 }), async (req, res): Promise<void> => {
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
     return;
   }
   const userId = req.dbUser!.id;
-  const { calleeId, roomId, media: rawMedia } = req.body as {
-    calleeId?: string;
-    roomId?: string;
-    media?: unknown;
-  };
-  const media = normalizeCallMedia(rawMedia);
-  if (!calleeId || calleeId === userId) {
+  const parsed = createCallSchema.safeParse(req.body);
+  if (!parsed.success || parsed.data.calleeId === userId) {
     res.status(400).json({ error: "calleeId is required" });
     return;
   }
+  const { calleeId, roomId } = parsed.data;
+  const media = parsed.data.media ?? "audio";
 
   const [callee] = await db.select().from(usersTable).where(eq(usersTable.id, calleeId));
   if (!callee) {
@@ -688,17 +689,22 @@ router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<voi
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  const body = req.body as Record<string, unknown> | null;
+  const parsed = callDiagnosticSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid call diagnostic" });
+    return;
+  }
+  const body = parsed.data;
   req.log.info(
     {
       callId: raw,
       userId,
       media: mediaFromCall(call),
       callStatus: call.status,
-      phase: typeof body?.phase === "string" ? body.phase : "unknown",
-      platform: typeof body?.platform === "string" ? body.platform : undefined,
-      role: typeof body?.role === "string" ? body.role : undefined,
-      details: body?.details && typeof body.details === "object" ? body.details : undefined,
+      phase: body.phase,
+      platform: body.platform,
+      role: body.role,
+      details: body.details,
     },
     "Call diagnostic",
   );

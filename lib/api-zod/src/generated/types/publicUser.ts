@@ -5,11 +5,12 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicUserAccountKind } from './publicUserAccountKind';
 
 export interface PublicUser {
   id: string;
   nickname: string;
-  email: string;
+  accountKind: PublicUserAccountKind;
   /**
      * Current viewer's saved name for this user, when available.
      * @nullable

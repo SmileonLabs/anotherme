@@ -169,7 +169,7 @@ export default function AddFriendScreen() {
             <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: colors.foreground }]}>{user.nickname}</Text>
-              <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.email}</Text>
+              <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>
             </View>
             {renderRequestButton(user.id, user.nickname)}
           </View>
@@ -192,7 +192,7 @@ export default function AddFriendScreen() {
               <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
               <View style={styles.userInfo}>
                 <Text style={[styles.userName, { color: colors.foreground }]}>{user.nickname}</Text>
-                <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.email}</Text>
+                <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>
               </View>
               {renderRequestButton(user.id, user.nickname)}
             </View>

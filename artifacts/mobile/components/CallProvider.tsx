@@ -17,9 +17,7 @@ import {
   useDeclineCall,
   useEndCall,
   getCall,
-  useGetCall,
   useJoinCall,
-  useListIncomingCalls,
   type Call,
   type CallWithCaller,
 } from "@workspace/api-client-react";
@@ -45,22 +43,12 @@ import { Avatar } from "@/components/Avatar";
 import { CallVideoView } from "@/components/CallVideoView";
 import { markCallFailed, reportCallDiagnostic } from "@/lib/callApi";
 import { crossAlert } from "@/lib/crossAlert";
-
-type CallMode = "idle" | "outgoing" | "incoming" | "joining" | "active";
+import { isTerminalCallStatus, type CallMode } from "@/lib/callLifecycle";
+import { useCallPolling } from "@/hooks/useCallPolling";
 
 const RING_TIMEOUT_MS = 45_000;
 const KEEPALIVE_MIN_INTERVAL_MS = 8000;
 const DISCONNECT_GRACE_MS = 12_000;
-
-function isTerminalCallStatus(status: string | null | undefined): boolean {
-  return (
-    status === "declined" ||
-    status === "ended" ||
-    status === "missed" ||
-    status === "cancelled" ||
-    status === "failed"
-  );
-}
 
 interface CallContextValue {
   startCall: (
@@ -133,11 +121,11 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const joinCallMut = useJoinCall();
 
   // Realtime events drive incoming calls; this is a slow fallback for reconnect gaps.
-  const { data: incomingList, refetch: refetchIncoming } = useListIncomingCalls();
-  useEffect(() => {
-    const t = setInterval(() => refetchIncoming(), 30000);
-    return () => clearInterval(t);
-  }, [refetchIncoming]);
+  const { incomingList, refetchIncoming, watched, refetchWatched, watchId } = useCallPolling({
+    mode,
+    activeCallId: activeCall?.id,
+    incomingCallId: incoming?.id,
+  });
 
   useEffect(() => {
     if (modeRef.current !== "idle") return;
@@ -155,19 +143,6 @@ function CallManager({ children }: { children: React.ReactNode }) {
   // Poll the relevant call to detect remote accept/decline/end/expiry.
   // - outgoing/joining/active: watch our active call
   // - incoming: watch the ringing call so we can auto-dismiss if the caller hangs up
-  const watchId =
-    mode === "outgoing" || mode === "joining" || mode === "active"
-      ? activeCall?.id ?? ""
-      : mode === "incoming"
-        ? incoming?.id ?? ""
-        : "";
-  const watchPollMs = mode === "active" ? 10000 : 2500;
-  const { data: watched, refetch: refetchWatched } = useGetCall(watchId);
-  useEffect(() => {
-    if (!watchId) return;
-    const t = setInterval(() => refetchWatched(), watchPollMs);
-    return () => clearInterval(t);
-  }, [watchId, watchPollMs, refetchWatched]);
 
   // Timers and realtime events can be paused while the app is backgrounded.
   // Refresh both the call currently on screen and incoming-call fallback data as
