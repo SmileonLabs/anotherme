@@ -50,7 +50,11 @@ export const messagesTable = pgTable(
     content: text("content").notNull(),
     replyToMessageId: uuid("reply_to_message_id"),
     anotherMeSessionId: uuid("another_me_session_id"),
+    // Call cards are server-created messages. The FK is added in the forward
+    // migration because the calls schema already depends on chat rooms.
+    callId: uuid("call_id"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    clientMessageId: text("client_message_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     roomSeq: integer("room_seq").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -63,6 +67,12 @@ export const messagesTable = pgTable(
     uniqueIndex("messages_room_id_room_seq_unique_idx")
       .on(t.roomId, t.roomSeq)
       .where(sql`${t.roomSeq} > 0`),
+    uniqueIndex("messages_room_id_sender_id_client_message_id_unique_idx")
+      .on(t.roomId, t.senderId, t.clientMessageId)
+      .where(sql`${t.clientMessageId} IS NOT NULL`),
+    uniqueIndex("messages_call_id_unique_idx")
+      .on(t.callId)
+      .where(sql`${t.callId} IS NOT NULL`),
   ],
 );
 

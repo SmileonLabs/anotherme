@@ -4,6 +4,9 @@
  * same-origin so a relative path is enough.
  */
 export function getApiBase(): string {
+  const explicit = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   return domain ? `https://${domain}` : "";
 }

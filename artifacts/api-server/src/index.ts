@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { attachRealtimeServer } from "./lib/realtime";
 import { startOntologySyncWorker } from "./lib/ontologySync";
+import { startCallLifecycleWorker } from "./routes/calls";
 
 const rawPort = process.env["PORT"] ?? "8080";
 
@@ -23,6 +24,7 @@ server.once("error", (err) => {
 // PostgreSQL migrations and Neo4j schema/seed writes run through one-shot jobs
 // before replicas start. App startup only begins request-serving workers.
 startOntologySyncWorker(logger);
+startCallLifecycleWorker(logger);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");

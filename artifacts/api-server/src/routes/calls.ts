@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gt, like, or } from "drizzle-orm";
-import { AccessToken } from "livekit-server-sdk";
+import { and, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import {
   db,
   callsTable,
+  callUserLocksTable,
   usersTable,
   messagesTable,
   chatRoomsTable,
@@ -13,11 +14,20 @@ import {
 } from "@workspace/db";
 import type { Call } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { sendCallPush, incomingCallData } from "../lib/push";
+import { sendCallPush, sendCallTerminalPush, incomingCallData } from "../lib/push";
 import { logger } from "../lib/logger";
 import { publishRealtimeEvent } from "../lib/realtime";
 import { allocateRoomMessageSeq, setMemberReadSeq } from "../lib/readReceipts";
-import { callDurationSec, isTerminalCallStatus } from "../lib/callLifecycle";
+import {
+  CALL_TOKEN_TTL_SECONDS,
+  callTokenGrant,
+  callDurationSec,
+  isLiveCallStatus,
+  isTerminalCallStatus,
+  terminalCallStatuses,
+  type CallMedia,
+  type TerminalCallStatus,
+} from "../lib/callLifecycle";
 
 const router: IRouter = Router();
 
@@ -26,10 +36,17 @@ const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
 const RING_TIMEOUT_MS = 45_000;
-type CallMedia = "audio" | "video";
+const ROOM_TERMINATION_RETRY_MS = 30_000;
+const DEFAULT_CALL_WORKER_BATCH_SIZE = 25;
 
 function livekitConfigured(): boolean {
-  return Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
+  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) return false;
+  try {
+    new URL(LIVEKIT_URL);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeCallMedia(value: unknown): CallMedia {
@@ -40,23 +57,203 @@ function mediaFromCall(call: Pick<Call, "media">): CallMedia {
   return normalizeCallMedia(call.media);
 }
 
-// Opportunistically transition a long-unanswered ringing call to "missed".
-async function maybeExpire(call: Call): Promise<Call> {
-  if (call.status === "ringing" && Date.now() - call.createdAt.getTime() > RING_TIMEOUT_MS) {
+function livekitServiceUrl(): string {
+  const url = new URL(LIVEKIT_URL!);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  if (url.protocol === "wss:") url.protocol = "https:";
+  return url.toString().replace(/\/$/, "");
+}
+
+function livekitRoomService(): RoomServiceClient {
+  return new RoomServiceClient(livekitServiceUrl(), LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!);
+}
+
+function isNotFoundError(err: unknown): boolean {
+  const value = err as { code?: unknown; status?: unknown; message?: unknown } | null;
+  return (
+    value?.code === 5 ||
+    value?.status === 404 ||
+    (typeof value?.message === "string" && /not found/i.test(value.message))
+  );
+}
+
+function envPositiveNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function terminalUpdate(status: TerminalCallStatus, now: Date) {
+  if (status === "declined") return { status, declinedAt: now, endedAt: now };
+  if (status === "missed") return { status, missedAt: now, endedAt: now };
+  if (status === "cancelled") return { status, cancelledAt: now, endedAt: now };
+  return { status, endedAt: now };
+}
+
+async function findCall(id: string): Promise<Call | undefined> {
+  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, id));
+  return call;
+}
+
+// This guarded update is the only path to a terminal state. Deleting both
+// participant locks in the same transaction makes the user immediately eligible
+// for another call without allowing concurrent ringing calls.
+async function transitionToTerminal(
+  callId: string,
+  fromStatuses: readonly ("ringing" | "active")[],
+  status: TerminalCallStatus,
+): Promise<Call | undefined> {
+  return db.transaction(async (tx) => {
     const now = new Date();
-    const [updated] = await db
+    const [updated] = await tx
       .update(callsTable)
-      .set({ status: "missed", missedAt: now, endedAt: now })
-      .where(and(eq(callsTable.id, call.id), eq(callsTable.status, "ringing")))
+      .set(terminalUpdate(status, now))
+      .where(and(eq(callsTable.id, callId), inArray(callsTable.status, [...fromStatuses])))
       .returning();
     if (updated) {
-      const media = mediaFromCall(updated);
-      await endCallMessage(call.id, "missed", undefined, media);
-      publishCallRealtimeEvent(updated, "call.updated", undefined, media);
+      await tx.delete(callUserLocksTable).where(eq(callUserLocksTable.callId, callId));
     }
-    return updated ?? call;
+    return updated;
+  });
+}
+
+async function activateCall(callId: string): Promise<Call | undefined> {
+  const [updated] = await db
+    .update(callsTable)
+    .set({ status: "active", acceptedAt: new Date() })
+    .where(and(eq(callsTable.id, callId), eq(callsTable.status, "ringing")))
+    .returning();
+  return updated;
+}
+
+async function createToken(
+  roomName: string,
+  identity: string,
+  name: string,
+  media: CallMedia,
+  canPublish: boolean,
+): Promise<string> {
+  const at = new AccessToken(LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!, {
+    identity,
+    name,
+    ttl: CALL_TOKEN_TTL_SECONDS,
+  });
+  at.addGrant(callTokenGrant(roomName, media, canPublish));
+  return at.toJwt();
+}
+
+async function activeCallSession(callId: string, userId: string, name: string): Promise<{
+  call: Call;
+  token: string;
+} | null> {
+  return db.transaction(async (tx) => {
+    // Serialize token issuance with terminal updates. A transition cannot delete
+    // the participant lock until this active-state check and signature complete.
+    const [row] = await tx
+      .select({ call: callsTable })
+      .from(callsTable)
+      .innerJoin(
+        callUserLocksTable,
+        and(eq(callUserLocksTable.callId, callsTable.id), eq(callUserLocksTable.userId, userId)),
+      )
+      .where(and(eq(callsTable.id, callId), eq(callsTable.status, "active")))
+      .for("update");
+    if (!row) return null;
+    return {
+      call: row.call,
+      token: await createToken(row.call.roomName, userId, name, mediaFromCall(row.call), true),
+    };
+  });
+}
+
+async function terminateLiveKitRoom(call: Call, log = logger, force = false): Promise<boolean> {
+  const now = new Date();
+  const retryCutoff = new Date(now.getTime() - ROOM_TERMINATION_RETRY_MS);
+  const [claimed] = await db
+    .update(callsTable)
+    .set({ roomTerminationAttemptedAt: now })
+    .where(
+      and(
+        eq(callsTable.id, call.id),
+        isNull(callsTable.roomTerminatedAt),
+        ...(force
+          ? []
+          : [
+              or(
+                isNull(callsTable.roomTerminationAttemptedAt),
+                lt(callsTable.roomTerminationAttemptedAt, retryCutoff),
+              ),
+            ]),
+      ),
+    )
+    .returning();
+  if (!claimed) return true;
+
+  if (!livekitConfigured()) {
+    log.warn({ callId: call.id }, "LiveKit is unavailable; room termination will be retried");
+    return false;
   }
-  return call;
+
+  try {
+    await livekitRoomService().deleteRoom(claimed.roomName);
+  } catch (err) {
+    if (!isNotFoundError(err)) {
+      log.warn({ err, callId: call.id }, "Failed to terminate LiveKit call room");
+      return false;
+    }
+  }
+
+  await db
+    .update(callsTable)
+    .set({ roomTerminatedAt: new Date() })
+    .where(and(eq(callsTable.id, call.id), isNull(callsTable.roomTerminatedAt)));
+  return true;
+}
+
+async function settleTerminalCall(
+  call: Call,
+  actorUserId?: string | null,
+  log = logger,
+): Promise<void> {
+  const media = mediaFromCall(call);
+  const [messageResult, roomResult, pushResult] = await Promise.allSettled([
+    endCallMessage(
+      call.id,
+      call.status as TerminalCallStatus,
+      call.status === "ended" ? callDurationSec(call.acceptedAt, call.endedAt) : undefined,
+      media,
+    ),
+    terminateLiveKitRoom(call, log, true),
+    sendCallTerminalPush([call.callerId, call.calleeId], {
+      callId: call.id,
+      status: call.status as TerminalCallStatus,
+      chatRoomId: call.chatRoomId ?? null,
+      media,
+    }),
+  ]);
+  if (messageResult.status === "rejected") {
+    log.error({ err: messageResult.reason, callId: call.id }, "Failed to finalize call message");
+  }
+  if (roomResult.status === "rejected") {
+    log.error({ err: roomResult.reason, callId: call.id }, "Failed to schedule LiveKit room termination");
+  }
+  if (pushResult.status === "rejected") {
+    log.error({ err: pushResult.reason, callId: call.id }, "Failed to send terminal call push");
+  }
+  publishCallRealtimeEvent(call, "call.updated", actorUserId, media);
+}
+
+// Reads may still expire a call promptly, but the worker below performs this
+// transition even when neither participant polls the API.
+async function maybeExpire(call: Call): Promise<Call> {
+  if (call.status !== "ringing" || Date.now() - call.createdAt.getTime() <= RING_TIMEOUT_MS) {
+    return call;
+  }
+  const updated = await transitionToTerminal(call.id, ["ringing"], "missed");
+  if (updated) {
+    await settleTerminalCall(updated);
+    return updated;
+  }
+  return (await findCall(call.id)) ?? call;
 }
 
 /** Whether either user has blocked the other (calls are mutually disallowed). */
@@ -80,16 +277,10 @@ async function isBlockedBetween(a: string, b: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function createToken(roomName: string, identity: string, name: string): Promise<string> {
-  const at = new AccessToken(LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!, { identity, name });
-  at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
-  return at.toJwt();
-}
-
 // Posts the in-chat "call" card (a messages row of type "call") so both parties
 // can join the call straight from the conversation. The content carries the
 // callId + status so the card can render a "통화 참여" button and later flip to
-// "ended". Reuses the messages table — no migration (same pattern as image/file).
+// "ended". Its foreign key binds the card to this exact call row.
 async function postCallMessage(
   roomId: string,
   callerId: string,
@@ -101,7 +292,7 @@ async function postCallMessage(
     const roomSeq = await allocateRoomMessageSeq(tx, roomId);
     const [message] = await tx
       .insert(messagesTable)
-      .values({ roomId, senderId: callerId, type: "call", content, roomSeq })
+      .values({ roomId, senderId: callerId, type: "call", content, callId, roomSeq })
       .returning();
     await tx
       .update(chatRoomsTable)
@@ -121,7 +312,7 @@ async function postCallMessage(
 // Flips the in-chat call card to its FINAL state so the "통화 참여" button
 // disappears and the card can render a distinct result (ended / missed /
 // declined / cancelled / failed) with an optional duration. The card is located by its
-// callId substring in the JSON content (avoids a migration).
+// callId foreign key so only the matching server-created call card changes.
 async function endCallMessage(
   callId: string,
   status: "ended" | "missed" | "declined" | "cancelled" | "failed",
@@ -137,9 +328,7 @@ async function endCallMessage(
   await db
     .update(messagesTable)
     .set({ content: JSON.stringify(payload) })
-    .where(
-      and(eq(messagesTable.type, "call"), like(messagesTable.content, `%"callId":"${callId}"%`)),
-    );
+    .where(and(eq(messagesTable.type, "call"), eq(messagesTable.callId, callId)));
 }
 
 function serializeCall(c: Call, media: CallMedia = "audio") {
@@ -248,17 +437,36 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
   }
 
   const roomName = `call_${crypto.randomUUID()}`;
-  const [call] = await db
-    .insert(callsTable)
-    .values({
-      roomName,
-      callerId: userId,
-      calleeId,
-      chatRoomId: validRoomId,
-      media,
-      status: "ringing",
-    })
-    .returning();
+  let call: Call;
+  try {
+    call = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(callsTable)
+        .values({
+          roomName,
+          callerId: userId,
+          calleeId,
+          chatRoomId: validRoomId,
+          media,
+          status: "ringing",
+        })
+        .returning();
+      const participantIds = [userId, calleeId].sort();
+      await tx.insert(callUserLocksTable).values(
+        participantIds.map((participantId) => ({ userId: participantId, callId: created.id })),
+      );
+      return created;
+    });
+  } catch (err) {
+    const cause = err as { cause?: { constraint?: unknown; code?: unknown }; constraint?: unknown; code?: unknown };
+    const constraint = cause.constraint ?? cause.cause?.constraint;
+    const code = cause.code ?? cause.cause?.code;
+    if (code === "23505" && typeof constraint === "string" && constraint.includes("call_user_locks")) {
+      res.status(409).json({ error: "통화 중인 사용자가 있어 전화를 걸 수 없습니다" });
+      return;
+    }
+    throw err;
+  }
 
   // Post the in-chat call card so both parties can join from the conversation.
   if (validRoomId) {
@@ -289,7 +497,9 @@ router.post("/calls", requireAuth, async (req, res): Promise<void> => {
     }),
   });
 
-  const token = await createToken(roomName, userId, req.dbUser!.nickname);
+  // The initial session remains subscribe-only while ringing. The caller gets
+  // media publish permission only through the active-only join endpoint.
+  const token = await createToken(roomName, userId, req.dbUser!.nickname, media, false);
   publishCallRealtimeEvent(call, "call.created", userId, media);
   res.status(201).json({ call: serializeCall(call, media), token, url: LIVEKIT_URL });
 });
@@ -346,34 +556,41 @@ router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> =>
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  // Enforce the server-authoritative ring timeout here too: a >45s ringing call
-  // must flip to "missed" and become unacceptable even if no prior GET/join
-  // touched it. The status-guarded UPDATE below then fails to find a "ringing"
-  // row and we fall through to the dead-call 409.
   const fresh = await maybeExpire(call);
-  // Stamp acceptedAt only on the ringing→active transition (so a repeat accept
-  // on an already-active call doesn't reset the connect time used for duration).
-  const now = new Date();
-  const [updated] = await db
-    .update(callsTable)
-    .set({ status: "active", acceptedAt: now })
-    .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
-    .returning();
-  if (!updated) {
-    // Already active (re-accept) is fine — return current token. Anything else
-    // (ended/declined/missed/etc.) is a dead call.
-    if (fresh.status === "active") {
-      const token = await createToken(fresh.roomName, userId, req.dbUser!.nickname);
-      res.json({ call: await serializeCallWithMedia(fresh), token, url: LIVEKIT_URL });
+  if (fresh.status === "active") {
+    const session = await activeCallSession(raw, userId, req.dbUser!.nickname);
+    if (session) {
+      res.json({ call: await serializeCallWithMedia(session.call), token: session.token, url: LIVEKIT_URL });
       return;
     }
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
-  const token = await createToken(updated.roomName, userId, req.dbUser!.nickname);
+  if (fresh.status !== "ringing") {
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
+  const updated = await activateCall(raw);
+  if (!updated) {
+    const latest = await findCall(raw);
+    if (latest?.status === "active") {
+      const session = await activeCallSession(raw, userId, req.dbUser!.nickname);
+      if (session) {
+        res.json({ call: await serializeCallWithMedia(session.call), token: session.token, url: LIVEKIT_URL });
+        return;
+      }
+    }
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
+  const session = await activeCallSession(raw, userId, req.dbUser!.nickname);
+  if (!session) {
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
   const media = mediaFromCall(updated);
   publishCallRealtimeEvent(updated, "call.updated", userId, media);
-  res.json({ call: serializeCall(updated, media), token, url: LIVEKIT_URL });
+  res.json({ call: serializeCall(updated, media), token: session.token, url: LIVEKIT_URL });
 });
 
 router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> => {
@@ -384,19 +601,13 @@ router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> =
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  const now = new Date();
-  const [updated] = await db
-    .update(callsTable)
-    .set({ status: "declined", declinedAt: now, endedAt: now })
-    .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
-    .returning();
+  const updated = await transitionToTerminal(raw, ["ringing"], "declined");
   if (updated) {
-    const media = mediaFromCall(updated);
-    await endCallMessage(raw, "declined", undefined, media);
-    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+    await settleTerminalCall(updated, userId, req.log);
   }
-  // If it was already accepted/ended, leave it as-is and return current state.
-  res.json(await serializeCallWithMedia(updated ?? call));
+  // If another transition won the race, return its current state rather than
+  // overwriting it or returning the stale pre-transition read.
+  res.json(await serializeCallWithMedia(updated ?? (await findCall(raw)) ?? call));
 });
 
 // Cancel an outgoing call before it is answered. Caller-only; only a still-
@@ -409,20 +620,13 @@ router.post("/calls/:id/cancel", requireAuth, async (req, res): Promise<void> =>
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  const now = new Date();
-  const [updated] = await db
-    .update(callsTable)
-    .set({ status: "cancelled", cancelledAt: now, endedAt: now })
-    .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
-    .returning();
+  const updated = await transitionToTerminal(raw, ["ringing"], "cancelled");
   if (updated) {
-    const media = mediaFromCall(updated);
-    await endCallMessage(raw, "cancelled", undefined, media);
-    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+    await settleTerminalCall(updated, userId, req.log);
   }
   // If the callee answered/declined in the race, return the current state so the
   // caller's UI converges instead of forcing a cancelled card over a live call.
-  res.json(await serializeCallWithMedia(updated ?? call));
+  res.json(await serializeCallWithMedia(updated ?? (await findCall(raw)) ?? call));
 });
 
 router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
@@ -433,7 +637,6 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  // Terminal states are immutable.
   if (isTerminalCallStatus(call.status)) {
     res.json(await serializeCallWithMedia(call));
     return;
@@ -441,40 +644,17 @@ router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
   // A caller hanging up a still-ringing call (callee never answered) is a cancel,
   // not an "ended" call — render it as cancelled so it isn't mistaken for a real
   // (0s) conversation.
-  if (call.status === "ringing" && call.callerId === userId) {
-    const now = new Date();
-    const [cancelled] = await db
-      .update(callsTable)
-      .set({ status: "cancelled", cancelledAt: now, endedAt: now })
-      .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
-      .returning();
-    if (cancelled) {
-      const media = mediaFromCall(cancelled);
-      await endCallMessage(raw, "cancelled", undefined, media);
-      publishCallRealtimeEvent(cancelled, "call.updated", userId, media);
-      res.json(serializeCall(cancelled, media));
-      return;
-    }
-  }
-  // Compare-and-set on the status we read so a concurrent decline/cancel/expire
-  // that terminalized the row between our read and this write is NOT clobbered
-  // back to "ended" (which would also flip the chat card to the wrong result).
-  const now = new Date();
-  const [updated] = await db
-    .update(callsTable)
-    .set({ status: "ended", endedAt: now })
-    .where(and(eq(callsTable.id, raw), eq(callsTable.status, call.status)))
-    .returning();
+  const terminalStatus: TerminalCallStatus =
+    call.status === "ringing" && call.callerId === userId ? "cancelled" : "ended";
+  const updated = isLiveCallStatus(call.status)
+    ? await transitionToTerminal(raw, [call.status], terminalStatus)
+    : undefined;
   if (!updated) {
-    // Someone else won the race and set a terminal state; converge to it without
-    // touching the card (the winning handler already wrote the correct card).
-    const [latest] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-    res.json(await serializeCallWithMedia(latest ?? call));
+    res.json(await serializeCallWithMedia((await findCall(raw)) ?? call));
     return;
   }
   const media = mediaFromCall(updated);
-  await endCallMessage(raw, "ended", callDurationSec(updated.acceptedAt, updated.endedAt), media);
-  publishCallRealtimeEvent(updated, "call.updated", userId, media);
+  await settleTerminalCall(updated, userId, req.log);
   res.json(serializeCall(updated, media));
 });
 
@@ -490,17 +670,12 @@ router.post("/calls/:id/failed", requireAuth, async (req, res): Promise<void> =>
     res.json(await serializeCallWithMedia(call));
     return;
   }
-  const now = new Date();
-  const [updated] = await db
-    .update(callsTable)
-    .set({ status: "failed", endedAt: now })
-    .where(and(eq(callsTable.id, raw), eq(callsTable.status, call.status)))
-    .returning();
-  const current = updated ?? call;
+  const updated = isLiveCallStatus(call.status)
+    ? await transitionToTerminal(raw, [call.status], "failed")
+    : undefined;
+  const current = updated ?? (await findCall(raw)) ?? call;
   if (updated) {
-    const media = mediaFromCall(updated);
-    await endCallMessage(raw, "failed", undefined, media);
-    publishCallRealtimeEvent(updated, "call.updated", userId, media);
+    await settleTerminalCall(updated, userId, req.log);
   }
   res.json(await serializeCallWithMedia(current));
 });
@@ -530,10 +705,8 @@ router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<voi
   res.status(204).end();
 });
 
-// Join a call from the in-chat call card. Either party (caller or callee) may
-// join. If the callee joins while it is still ringing, the call flips to active.
-// Already-finished calls (ended/declined/missed) return 409 so the card can show
-// "통화 종료" instead of a dead join button.
+// Join an active call from its in-chat card. A callee can accept by joining a
+// ringing call; callers cannot obtain a media token until that transition wins.
 router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
@@ -552,26 +725,98 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
-  // The callee joining a ringing call accepts it (caller stays as-is on active).
-  // The status-guarded UPDATE is atomic: if a concurrent end/decline/expire won
-  // the race, `updated` is null and we must 409 instead of issuing a token for a
-  // dead call.
   let current = call;
-  if (call.calleeId === userId && call.status === "ringing") {
-    const [updated] = await db
-      .update(callsTable)
-      .set({ status: "active", acceptedAt: new Date() })
-      .where(and(eq(callsTable.id, raw), eq(callsTable.status, "ringing")))
-      .returning();
-    if (!updated) {
-      res.status(409).json({ error: "이미 종료된 통화입니다" });
+  if (call.status === "ringing") {
+    if (call.callerId === userId) {
+      res.status(409).json({ error: "상대방의 수락을 기다리는 중입니다" });
       return;
     }
-    current = updated;
-    publishCallRealtimeEvent(updated, "call.updated", userId, mediaFromCall(updated));
+    const updated = await activateCall(raw);
+    if (!updated) {
+      const latest = await findCall(raw);
+      if (latest?.status !== "active") {
+        res.status(409).json({ error: "이미 종료된 통화입니다" });
+        return;
+      }
+      current = latest;
+    } else {
+      current = updated;
+      publishCallRealtimeEvent(updated, "call.updated", userId, mediaFromCall(updated));
+    }
   }
-  const token = await createToken(current.roomName, userId, req.dbUser!.nickname);
-  res.json({ call: await serializeCallWithMedia(current), token, url: LIVEKIT_URL });
+  if (current.status !== "active") {
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
+  const session = await activeCallSession(raw, userId, req.dbUser!.nickname);
+  if (!session) {
+    // A terminal transition that won after the local read removes the lock, so
+    // this guard prevents issuing a token for that now-invalid call.
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
+  res.json({ call: await serializeCallWithMedia(session.call), token: session.token, url: LIVEKIT_URL });
 });
+
+export async function processCallLifecycleBatch(log = logger): Promise<number> {
+  const batchSize = envPositiveNumber("CALL_LIFECYCLE_WORKER_BATCH_SIZE", DEFAULT_CALL_WORKER_BATCH_SIZE);
+  const expiryCutoff = new Date(Date.now() - RING_TIMEOUT_MS);
+  const expired = await db
+    .select()
+    .from(callsTable)
+    .where(and(eq(callsTable.status, "ringing"), lt(callsTable.createdAt, expiryCutoff)))
+    .orderBy(callsTable.createdAt)
+    .limit(batchSize);
+
+  let processed = 0;
+  for (const call of expired) {
+    const updated = await transitionToTerminal(call.id, ["ringing"], "missed");
+    if (!updated) continue;
+    processed += 1;
+    await settleTerminalCall(updated, undefined, log);
+  }
+
+  const retryCutoff = new Date(Date.now() - ROOM_TERMINATION_RETRY_MS);
+  const pendingTermination = await db
+    .select()
+    .from(callsTable)
+    .where(
+      and(
+        inArray(callsTable.status, terminalCallStatuses),
+        isNull(callsTable.roomTerminatedAt),
+        or(
+          isNull(callsTable.roomTerminationAttemptedAt),
+          lt(callsTable.roomTerminationAttemptedAt, retryCutoff),
+        ),
+      ),
+    )
+    .orderBy(callsTable.endedAt)
+    .limit(batchSize);
+  for (const call of pendingTermination) {
+    if (await terminateLiveKitRoom(call, log)) processed += 1;
+  }
+  return processed;
+}
+
+let callLifecycleWorkerStarted = false;
+let callLifecycleWorkerRunning = false;
+
+export function startCallLifecycleWorker(log = logger): void {
+  if (callLifecycleWorkerStarted || process.env.CALL_LIFECYCLE_WORKER_ENABLED === "false") return;
+  callLifecycleWorkerStarted = true;
+  const intervalMs = envPositiveNumber("CALL_LIFECYCLE_WORKER_INTERVAL_MS", 5_000);
+  const tick = () => {
+    if (callLifecycleWorkerRunning) return;
+    callLifecycleWorkerRunning = true;
+    void processCallLifecycleBatch(log)
+      .catch((err) => log.warn({ err }, "Call lifecycle worker tick failed"))
+      .finally(() => {
+        callLifecycleWorkerRunning = false;
+      });
+  };
+  tick();
+  const timer = setInterval(tick, intervalMs);
+  timer.unref?.();
+}
 
 export default router;

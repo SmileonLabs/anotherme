@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type DimensionValue,
   View,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -15,11 +16,16 @@ import { StickerPicker } from "./StickerPicker";
 import { useColors } from "@/hooks/useColors";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 
+const INPUT_MIN_HEIGHT = 44;
+const INPUT_MAX_HEIGHT = 124;
+
 interface MessageComposerProps {
   /** Whether a send mutation is currently in flight (disables the composer). */
   sending: boolean;
   /** Whether an image/file upload is in progress, for the inline spinners. */
   uploading: "image" | "file" | null;
+  uploadProgress?: number | null;
+  onCancelUpload?: () => void;
   placeholder?: string;
   /**
    * Sends the trimmed text. Returns true on success; on false the composer
@@ -31,6 +37,8 @@ interface MessageComposerProps {
   onPickImage: () => void;
   onPickFile: () => void;
   onSendSticker: (code: string) => void;
+  replyPreview?: { senderName?: string | null; content: string } | null;
+  onCancelReply?: () => void;
 }
 
 /**
@@ -43,18 +51,23 @@ interface MessageComposerProps {
 function MessageComposerComponent({
   sending,
   uploading,
+  uploadProgress = null,
+  onCancelUpload,
   placeholder = "메시지",
   onSend,
   onTyping,
   onPickImage,
   onPickFile,
   onSendSticker,
+  replyPreview,
+  onCancelReply,
 }: MessageComposerProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const pwaBottom = usePwaBottomInset();
   const [text, setText] = useState("");
   const [showStickers, setShowStickers] = useState(false);
+  const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const inputRef = useRef<TextInput>(null);
   const lastTypingSentRef = useRef(0);
 
@@ -62,6 +75,7 @@ function MessageComposerComponent({
     const content = text.trim();
     if (!content || sending) return;
     setText("");
+    setInputHeight(INPUT_MIN_HEIGHT);
     lastTypingSentRef.current = 0;
     const ok = await onSend(content);
     if (!ok) setText(content);
@@ -108,9 +122,69 @@ function MessageComposerComponent({
   );
 
   const hasText = text.trim().length > 0;
+  const uploadLabel = uploading === "image" ? "사진 업로드 중" : uploading === "file" ? "파일 업로드 중" : null;
+  const progressText = typeof uploadProgress === "number" ? `${uploadProgress}%` : "준비 중";
+  const progressWidth = `${Math.max(6, uploadProgress ?? 12)}%` as DimensionValue;
 
   return (
     <>
+      {replyPreview ? (
+        <View
+          style={[
+            styles.replyPreview,
+            { backgroundColor: colors.background, borderTopColor: colors.border },
+          ]}
+        >
+          <View style={[styles.replyAccent, { backgroundColor: colors.primary }]} />
+          <View style={styles.replyTextWrap}>
+            <Text style={[styles.replyLabel, { color: colors.primary }]} numberOfLines={1}>
+              {replyPreview.senderName ? `${replyPreview.senderName}에게 답장` : "답장"}
+            </Text>
+            <Text style={[styles.replyText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {replyPreview.content}
+            </Text>
+          </View>
+          <Pressable
+            onPress={onCancelReply}
+            hitSlop={8}
+            style={({ pressed }) => [styles.replyClose, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="x" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+      ) : null}
+      {uploading ? (
+        <View
+          style={[
+            styles.uploadStatus,
+            { backgroundColor: colors.background, borderTopColor: colors.border },
+          ]}
+        >
+          <View style={styles.uploadStatusTop}>
+            <View style={styles.uploadStatusTextWrap}>
+              <Text style={[styles.uploadStatusLabel, { color: colors.foreground }]} numberOfLines={1}>
+                {uploadLabel}
+              </Text>
+              <Text style={[styles.uploadStatusProgress, { color: colors.mutedForeground }]}>
+                {progressText}
+              </Text>
+            </View>
+            {onCancelUpload ? (
+              <Pressable onPress={onCancelUpload} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}>
+                <Text style={[styles.uploadCancel, { color: colors.primary }]}>취소</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={[styles.uploadTrack, { backgroundColor: colors.muted }]}>
+            <View
+              style={[
+                styles.uploadFill,
+                { backgroundColor: colors.primary, width: progressWidth },
+              ]}
+            />
+          </View>
+        </View>
+      ) : null}
       <View
         style={[
           styles.inputRow,
@@ -139,9 +213,16 @@ function MessageComposerComponent({
           </Pressable>
           <TextInput
             ref={inputRef}
-            style={[styles.input, { color: colors.foreground }]}
+            style={[styles.input, { color: colors.foreground, height: inputHeight }]}
             value={text}
             onChangeText={handleChangeText}
+            onContentSizeChange={(event) => {
+              const next = Math.min(
+                INPUT_MAX_HEIGHT,
+                Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+              );
+              setInputHeight(next);
+            }}
             onKeyPress={handleKeyPress}
             onFocus={() => setShowStickers(false)}
             placeholder={placeholder}
@@ -150,6 +231,7 @@ function MessageComposerComponent({
             numberOfLines={1}
             maxLength={2000}
             blurOnSubmit={false}
+            scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT}
           />
           <Pressable
             style={({ pressed }) => [styles.fieldBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -199,6 +281,78 @@ function MessageComposerComponent({
 export const MessageComposer = React.memo(MessageComposerComponent);
 
 const styles = StyleSheet.create({
+  replyPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 7,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  replyAccent: {
+    width: 3,
+    alignSelf: "stretch",
+    borderRadius: 2,
+  },
+  replyTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  replyLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  replyText: {
+    marginTop: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  replyClose: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  uploadStatus: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 7,
+    gap: 7,
+  },
+  uploadStatusTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  uploadStatusTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  uploadStatusLabel: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  uploadStatusProgress: {
+    marginTop: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  uploadCancel: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
+  uploadTrack: {
+    height: 3,
+    overflow: "hidden",
+    borderRadius: 999,
+  },
+  uploadFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",

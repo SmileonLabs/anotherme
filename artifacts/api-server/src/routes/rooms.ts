@@ -4,8 +4,11 @@ import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, friendshipsTable, messageDeletionsTable, messagesTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { allocateRoomMessageSeq, getRoomUnreadMeta } from "../lib/readReceipts";
+import { hasMutualBlockBetween, lockUserPair } from "../lib/chatDelivery";
 
 const router: IRouter = Router();
+const USER_CREATABLE_ROOM_TYPES = new Set(["direct", "group"]);
+const MAX_ROOM_MEMBERS = 100;
 
 function messagePreview(type: string, content: string, deleted: boolean): string {
   if (deleted) return "삭제된 메시지";
@@ -147,12 +150,22 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const { type, name, memberIds } = req.body as { type: string; name?: string; memberIds: string[] };
 
-  if (!type || !Array.isArray(memberIds)) {
+  if (!USER_CREATABLE_ROOM_TYPES.has(type) || !Array.isArray(memberIds) || memberIds.length > MAX_ROOM_MEMBERS ||
+    (name !== undefined && name !== null && (typeof name !== "string" || name.length > 120)) ||
+    !memberIds.every((memberId) => typeof memberId === "string" && memberId.length > 0)) {
     res.status(400).json({ error: "type and memberIds are required" });
     return;
   }
 
   const allMemberIds = Array.from(new Set([userId, ...memberIds]));
+  const existingMembers = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(inArray(usersTable.id, allMemberIds));
+  if (existingMembers.length !== allMemberIds.length) {
+    res.status(400).json({ error: "All room members must exist" });
+    return;
+  }
 
   // Helper: find an existing direct room shared by exactly the given two users.
   const findDirectRoom = async (
@@ -186,6 +199,10 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
     // advisory lock so two simultaneous requests can't both create a room.
     const roomId = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`direct:${a}:${b}`}))`);
+      // Blocking and direct-room creation share this pair lock, so a newly
+      // created/re-entered room cannot race with a block request.
+      await lockUserPair(tx, a, b);
+      if (await hasMutualBlockBetween(tx, a, b)) return null;
 
       const existingId = await findDirectRoom(tx, a, b);
       if (existingId) {
@@ -212,6 +229,11 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
         .values(allMemberIds.map((mid) => ({ roomId: created.id, userId: mid })));
       return created.id;
     });
+
+    if (!roomId) {
+      res.status(403).json({ error: "Blocked users cannot create or re-enter a direct room" });
+      return;
+    }
 
     const result = await roomWithMeta(roomId, userId);
     res.status(201).json(result);

@@ -1,6 +1,6 @@
 import { CustomScrollView } from "@/components/CustomScroll";
 import { useSignIn } from "@clerk/expo";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -29,17 +29,42 @@ export default function ForgotPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const getErrorMessage = (error: any) =>
+    error?.longMessage ?? error?.message ?? error?.errors?.[0]?.longMessage ?? error?.errors?.[0]?.message ?? "오류가 발생했습니다";
+
+  const finalizeReset = async () => {
+    const { error } = await signIn.finalize({
+      navigate: ({ session, decorateUrl }) => {
+        if (session?.currentTask) return;
+        const url = decorateUrl("/");
+        if (url.startsWith("http")) {
+          if (typeof window !== "undefined") window.location.href = url;
+        } else {
+          router.replace(url as Href);
+        }
+      },
+    });
+    if (error) setErrorMsg(getErrorMessage(error));
+  };
+
   const handleSendCode = async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      await (signIn as any).create({
-        strategy: "reset_password_email_code",
-        identifier: email,
-      });
+      await signIn.reset();
+      const createResult = await signIn.create({ identifier: email.trim() });
+      if (createResult.error) {
+        setErrorMsg(getErrorMessage(createResult.error));
+        return;
+      }
+      const sendResult = await signIn.resetPasswordEmailCode.sendCode();
+      if (sendResult.error) {
+        setErrorMsg(getErrorMessage(sendResult.error));
+        return;
+      }
       setStep("code");
     } catch (e: any) {
-      setErrorMsg(e?.errors?.[0]?.message ?? "오류가 발생했습니다");
+      setErrorMsg(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -49,16 +74,19 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     setErrorMsg("");
     try {
-      const result = await (signIn as any).attemptFirstFactor({
-        strategy: "reset_password_email_code",
-        code,
-        password: newPassword,
-      });
-      if (result?.status === "complete") {
-        router.replace("/(tabs)");
+      const verifyResult = await signIn.resetPasswordEmailCode.verifyCode({ code: code.trim() });
+      if (verifyResult.error) {
+        setErrorMsg(getErrorMessage(verifyResult.error));
+        return;
       }
+      const submitResult = await signIn.resetPasswordEmailCode.submitPassword({ password: newPassword });
+      if (submitResult.error) {
+        setErrorMsg(getErrorMessage(submitResult.error));
+        return;
+      }
+      await finalizeReset();
     } catch (e: any) {
-      setErrorMsg(e?.errors?.[0]?.message ?? "오류가 발생했습니다");
+      setErrorMsg(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -93,9 +121,9 @@ export default function ForgotPasswordScreen() {
             />
             {errorMsg ? <Text style={[styles.error, { color: colors.destructive }]}>{errorMsg}</Text> : null}
             <Pressable
-              style={({ pressed }) => [styles.button, { backgroundColor: colors.primary, opacity: !email || loading || pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [styles.button, { backgroundColor: colors.primary, opacity: !email.trim() || loading || pressed ? 0.7 : 1 }]}
               onPress={handleSendCode}
-              disabled={!email || loading}
+              disabled={!email.trim() || loading}
             >
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.buttonText, { color: colors.primaryForeground }]}>코드 전송</Text>}
             </Pressable>
@@ -121,9 +149,9 @@ export default function ForgotPasswordScreen() {
             />
             {errorMsg ? <Text style={[styles.error, { color: colors.destructive }]}>{errorMsg}</Text> : null}
             <Pressable
-              style={({ pressed }) => [styles.button, { backgroundColor: colors.primary, opacity: !code || !newPassword || loading || pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [styles.button, { backgroundColor: colors.primary, opacity: !code.trim() || !newPassword || loading || pressed ? 0.7 : 1 }]}
               onPress={handleReset}
-              disabled={!code || !newPassword || loading}
+              disabled={!code.trim() || !newPassword || loading}
             >
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={[styles.buttonText, { color: colors.primaryForeground }]}>비밀번호 변경</Text>}
             </Pressable>

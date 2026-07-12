@@ -3,10 +3,20 @@ import {
   RoomEvent,
   Track,
   type LocalAudioTrack,
+  type LocalVideoTrack,
   type RemoteTrack,
 } from "livekit-client";
+import NoSleep from "nosleep.js";
 
 export const voiceCallSupported = true;
+export type CallMedia = "audio" | "video";
+export type CallDiagnostic = (phase: string, details?: Record<string, unknown>) => void;
+export interface CallJoinResult {
+  room: Room;
+  media: CallMedia;
+  microphonePublished: boolean;
+  cameraPublished: boolean;
+}
 
 let room: Room | null = null;
 let unlockHandler: (() => void) | null = null;
@@ -14,6 +24,10 @@ let visibilityHandler: (() => void) | null = null;
 let micTrack: MediaStreamTrack | null = null;
 let micRestarting = false;
 let micLost = false;
+let cameraFacingMode: "user" | "environment" = "user";
+let videoPreparePromise: Promise<void> | null = null;
+let preparedVideoTrack: MediaStreamTrack | null = null;
+let callDiagnostic: CallDiagnostic = () => {};
 
 // Mobile browsers route WebRTC remote audio through the quiet earpiece/call
 // channel and an <audio> element's `volume` is hard-capped at 1.0, so on a phone
@@ -45,6 +59,31 @@ const boostedEls = new Set<HTMLAudioElement>();
 // can be pushed past the old 1.0 element cap for a genuinely louder phone call
 // without the distortion a raw 2x+ gain would cause.
 const REMOTE_GAIN = 3.0;
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function micDiagnosticDetails(track: MediaStreamTrack | null = micTrack): Record<string, unknown> {
+  if (!track) return { hasMicTrack: false };
+  return {
+    hasMicTrack: true,
+    micEnabled: track.enabled,
+    micMuted: track.muted,
+    micReadyState: track.readyState,
+  };
+}
+
+function callStateDetails(): Record<string, unknown> {
+  return {
+    audioContextState: audioCtx?.state,
+    canPlaybackAudio: room?.canPlaybackAudio,
+    hidden: document.hidden,
+    microphoneEnabled: room?.localParticipant.isMicrophoneEnabled,
+    visibilityState: document.visibilityState,
+    ...micDiagnosticDetails(),
+  };
+}
 
 // The (un-)muted state of every boosted element tracks the context's run state:
 // muted while running (graph is the sound source), audible while suspended (graph
@@ -164,10 +203,26 @@ type WakeLockLike = {
   addEventListener?: (type: "release", cb: () => void) => void;
 };
 let wakeLock: WakeLockLike | null = null;
+let noSleep: NoSleep | null = null;
 // Bumped on every release/invalidate so an in-flight request() that resolves
 // after teardown (or is superseded by a newer request) drops its sentinel
 // instead of leaking it.
 let wakeLockGen = 0;
+
+function enableNoSleepFallback(): void {
+  try {
+    noSleep ??= new NoSleep();
+    if (!noSleep.isEnabled) void noSleep.enable().catch(() => {});
+  } catch {
+    // Unsupported or blocked. Screen Wake Lock remains as the primary path.
+  }
+}
+
+function disableNoSleepFallback(): void {
+  try {
+    noSleep?.disable();
+  } catch {}
+}
 
 async function requestWakeLock(): Promise<void> {
   const wl = (
@@ -223,6 +278,10 @@ let primeEl: HTMLAudioElement | null = null;
 // button press) before any await. Best-effort; silently no-ops if blocked.
 export function primeAudioPlayback(): void {
   try {
+    // NoSleep's video fallback must be started from the same real user gesture
+    // as the call button. It only prevents auto-lock; it cannot keep WebRTC alive
+    // after a manual lock or iOS background suspension.
+    enableNoSleepFallback();
     if (!primeEl) {
       primeEl = document.createElement("audio");
       primeEl.setAttribute("playsinline", "true");
@@ -533,8 +592,15 @@ function armMicRecovery() {
   if (mst === micTrack) return;
   micTrack = mst;
   if (!mst) return;
-  const onLost = () => {
+  callDiagnostic("web_microphone_track_armed", micDiagnosticDetails(mst));
+  const onLost = (event: Event) => {
+    if (micTrack !== mst) return;
     micLost = true;
+    callDiagnostic("web_microphone_track_lost", {
+      eventType: event.type,
+      ...callStateDetails(),
+      ...micDiagnosticDetails(mst),
+    });
     // Only recover if the user still intends the mic to be on (don't override a
     // deliberate mute).
     if (room && room.localParticipant.isMicrophoneEnabled) {
@@ -558,6 +624,8 @@ async function restartMic() {
   if (!room || micRestarting) return;
   if (!room.localParticipant.isMicrophoneEnabled) return;
   micRestarting = true;
+  let succeeded = false;
+  callDiagnostic("web_microphone_restart_start", callStateDetails());
   try {
     const pub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
     const track = pub?.track as LocalAudioTrack | undefined;
@@ -571,7 +639,12 @@ async function restartMic() {
       await room.localParticipant.setMicrophoneEnabled(false);
       await room.localParticipant.setMicrophoneEnabled(true);
     }
-  } catch {
+    succeeded = true;
+  } catch (err) {
+    callDiagnostic("web_microphone_restart_failed", {
+      message: errorMessage(err),
+      ...callStateDetails(),
+    });
     // best effort
   } finally {
     micRestarting = false;
@@ -579,17 +652,27 @@ async function restartMic() {
     // The underlying track changed; re-arm listeners on the fresh one.
     micTrack = null;
     armMicRecovery();
+    if (succeeded) callDiagnostic("web_microphone_restart_succeeded", callStateDetails());
   }
 }
 
 function installVisibilityHandler() {
   if (visibilityHandler) return;
-  visibilityHandler = () => {
+  visibilityHandler = (event?: Event) => {
+    if (room) {
+      callDiagnostic("web_visibility_change", {
+        eventType: event?.type,
+        ...callStateDetails(),
+      });
+    }
     if (document.visibilityState === "visible") {
       resumeAllAudio();
       // The OS releases the wake lock whenever the page is hidden, so re-acquire
       // it every time we return to the foreground while a call is live.
-      if (room) void requestWakeLock();
+      if (room) {
+        enableNoSleepFallback();
+        void requestWakeLock();
+      }
       // Coming back to the foreground is the most reliable moment to rescue a
       // mic the OS suspended while we were away — but only if it actually looks
       // dead, so a healthy app-switch return doesn't cause a needless gap.
@@ -609,8 +692,111 @@ function removeVisibilityHandler() {
   visibilityHandler = null;
 }
 
-export async function joinCall(url: string, token: string): Promise<void> {
-  await leaveCall();
+function cameraOptions() {
+  return {
+    facingMode: cameraFacingMode,
+    width: { ideal: 640 },
+    height: { ideal: 360 },
+    frameRate: { ideal: 15, max: 20 },
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function prepareVideoCall(): Promise<void> {
+  if (preparedVideoTrack?.readyState === "live") return Promise.resolve();
+  if (videoPreparePromise) return videoPreparePromise;
+  videoPreparePromise = (async () => {
+    const gum = navigator.mediaDevices?.getUserMedia;
+    if (!gum) return;
+    let stream: MediaStream | null = null;
+    try {
+      stream = await gum.call(navigator.mediaDevices, {
+        video: cameraOptions(),
+        audio: false,
+      });
+      const track = stream.getVideoTracks()[0];
+      if (!track) return;
+      releasePreparedVideoTrack();
+      preparedVideoTrack = track;
+      track.addEventListener(
+        "ended",
+        () => {
+          if (preparedVideoTrack === track) preparedVideoTrack = null;
+        },
+        { once: true },
+      );
+    } catch {
+      return;
+    } finally {
+      stream
+        ?.getTracks()
+        .filter((track) => track.kind !== "video" || track !== preparedVideoTrack)
+        .forEach((track) => track.stop());
+    }
+  })().finally(() => {
+    videoPreparePromise = null;
+  });
+  return videoPreparePromise;
+}
+
+function releasePreparedVideoTrack(): void {
+  if (preparedVideoTrack) {
+    try {
+      preparedVideoTrack.stop();
+    } catch {}
+    preparedVideoTrack = null;
+  }
+}
+
+async function publishPreparedVideoTrack(r: Room): Promise<boolean> {
+  const track = preparedVideoTrack;
+  if (!track || track.readyState !== "live") {
+    preparedVideoTrack = null;
+    return false;
+  }
+  try {
+    await r.localParticipant.publishTrack(track, { source: Track.Source.Camera });
+    preparedVideoTrack = null;
+    return !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+  } catch {
+    if (preparedVideoTrack === track) preparedVideoTrack = null;
+    try {
+      track.stop();
+    } catch {}
+    return false;
+  }
+}
+
+async function enableCameraWithRetry(r: Room): Promise<boolean> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (await publishPreparedVideoTrack(r)) return true;
+    try {
+      await r.localParticipant.setCameraEnabled(true, cameraOptions());
+      if (r.localParticipant.getTrackPublication(Track.Source.Camera)?.track) return true;
+    } catch {}
+    await delay(350 + attempt * 250);
+  }
+  return !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+}
+
+function hasLocalTrack(r: Room, source: Track.Source): boolean {
+  return !!r.localParticipant.getTrackPublication(source)?.track;
+}
+
+export async function joinCall(
+  url: string,
+  token: string,
+  options: { media?: CallMedia; onDiagnostic?: CallDiagnostic } = {},
+): Promise<CallJoinResult> {
+  await cleanupCall({ releaseNoSleep: false });
+  const media = options.media ?? "audio";
+  const diagnostic = options.onDiagnostic ?? (() => {});
+  callDiagnostic = diagnostic;
+  cameraFacingMode = "user";
+  diagnostic("web_join_start", { media });
 
   // Explicit voice-call audio processing. Without echo cancellation the remote
   // side hears their own voice bounced back off this device's loudspeaker —
@@ -620,6 +806,9 @@ export async function joinCall(url: string, token: string): Promise<void> {
   // (re)acquisition — initial publish, restartTrack(), and the republish
   // fallback — not just the first one.
   const r = new Room({
+    adaptiveStream: media === "video",
+    dynacast: media === "video",
+    videoCaptureDefaults: cameraOptions(),
     audioCaptureDefaults: {
       echoCancellation: true,
       noiseSuppression: true,
@@ -692,7 +881,16 @@ export async function joinCall(url: string, token: string): Promise<void> {
   r.on(RoomEvent.LocalTrackPublished, () => armMicRecovery());
 
   await r.connect(url, token);
+  room = r;
+  diagnostic("web_room_connected", { connectionState: r.state });
   await r.localParticipant.setMicrophoneEnabled(true);
+  const microphonePublished = hasLocalTrack(r, Track.Source.Microphone);
+  diagnostic("web_microphone_publish_result", { microphonePublished });
+  let cameraPublished = false;
+  if (media === "video") {
+    cameraPublished = await enableCameraWithRetry(r);
+    diagnostic("web_camera_publish_result", { cameraPublished });
+  }
   // Secondary pre-authorization. The button-gesture activation is already spent
   // by the createCall/acceptCall await that precedes this — primeAudioPlayback()
   // (called on that gesture in CallProvider) is what actually unlocks playback;
@@ -700,13 +898,19 @@ export async function joinCall(url: string, token: string): Promise<void> {
   if (!r.canPlaybackAudio) {
     await r.startAudio().catch(() => {});
   }
-  room = r;
   armMicRecovery();
   // Recover audio after iOS interruptions / app-switch once the call is live.
   installVisibilityHandler();
   // Keep the screen awake so an auto-lock doesn't silence the call.
   void requestWakeLock();
+  return { room: r, media, microphonePublished, cameraPublished };
 }
+
+export async function ensureCallKeepAlive(
+  _media: CallMedia,
+  _reason: string,
+  _onDiagnostic: CallDiagnostic = () => {},
+): Promise<void> {}
 
 export async function setMuted(muted: boolean): Promise<void> {
   if (room) {
@@ -717,10 +921,39 @@ export async function setMuted(muted: boolean): Promise<void> {
   }
 }
 
-export async function leaveCall(): Promise<void> {
+export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
+  if (room) {
+    if (enabled) {
+      await prepareVideoCall();
+      return enableCameraWithRetry(room);
+    } else {
+      await room.localParticipant.setCameraEnabled(false, cameraOptions());
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function switchCamera(): Promise<"user" | "environment"> {
+  cameraFacingMode = cameraFacingMode === "user" ? "environment" : "user";
+  if (room) {
+    const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = pub?.track as LocalVideoTrack | undefined;
+    if (track) {
+      await track.restartTrack(cameraOptions());
+    } else {
+      await prepareVideoCall();
+      await enableCameraWithRetry(room);
+    }
+  }
+  return cameraFacingMode;
+}
+
+async function cleanupCall({ releaseNoSleep }: { releaseNoSleep: boolean }): Promise<void> {
   removeUnlockHandler();
   removeVisibilityHandler();
   releaseWakeLock();
+  if (releaseNoSleep) disableNoSleepFallback();
   // Null `room` before disconnecting so keepPlaying()'s pause handler and the
   // mic-recovery listeners don't try to resurrect tracks as they're torn down.
   const r = room;
@@ -728,9 +961,15 @@ export async function leaveCall(): Promise<void> {
   micTrack = null;
   micRestarting = false;
   micLost = false;
+  callDiagnostic = () => {};
+  releasePreparedVideoTrack();
   if (r) {
     await r.disconnect();
   }
   clearAudioElements();
   teardownAudioGraph();
+}
+
+export async function leaveCall(): Promise<void> {
+  await cleanupCall({ releaseNoSleep: true });
 }

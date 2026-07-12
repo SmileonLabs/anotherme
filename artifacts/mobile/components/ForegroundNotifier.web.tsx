@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
+import { userDisplayName } from "@/lib/friendNames";
 
 type ToastData = {
   key: number;
@@ -98,9 +99,9 @@ function roomDisplayName(room: any, myId?: string): string {
   if (room.name) return room.name;
   if (room.type === "direct") {
     const other = room.members?.find((m: any) => m.id !== myId);
-    return other?.nickname ?? "채팅방";
+    return userDisplayName(other, "채팅방");
   }
-  return room.members?.map((m: any) => m.nickname).join(", ") ?? "그룹 채팅";
+  return room.members?.map((m: any) => userDisplayName(m, "사용자")).join(", ") ?? "그룹 채팅";
 }
 
 function roomAvatar(room: any, myId?: string): string | null {

@@ -16,6 +16,7 @@ import {
 } from "@workspace/db";
 import { getOpenAI } from "./aiClient";
 import { sendPushToUsers } from "./push";
+import { getRoomDeliveryRecipients } from "./chatDelivery";
 import { recordActivity } from "./growth";
 import { allocateRoomMessageSeq } from "./readReceipts";
 
@@ -618,13 +619,9 @@ export async function runDungeonTurn(
 
     // Notify human players of the DM's move (fire-and-forget).
     try {
-      const members = await db
-        .select({ userId: chatRoomMembersTable.userId })
-        .from(chatRoomMembersTable)
-        .where(eq(chatRoomMembersTable.roomId, roomId));
-      const recipients = members.map((m) => m.userId).filter((id) => id !== dmUserId);
-      if (recipients.length > 0) {
-        await sendPushToUsers(recipients, {
+      const recipients = await getRoomDeliveryRecipients(roomId, dmUserId);
+      if (recipients.pushUserIds.length > 0) {
+        await sendPushToUsers(recipients.pushUserIds, {
           title: `🎲 ${DM_NICKNAME}`,
           body: narrative.length > 80 ? `${narrative.slice(0, 80)}…` : narrative,
           url: `/chat/${roomId}`,

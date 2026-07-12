@@ -5,10 +5,15 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { RoomInputType } from './roomInputType';
 
 export interface RoomInput {
-  type: string;
-  /** @nullable */
+  type: RoomInputType;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   name?: string | null;
+  /** @maxItems 100 */
   memberIds: string[];
 }

@@ -14,9 +14,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGetMe, useListRooms } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
+import { BibiOfficialEntry } from "@/components/BibiOfficialEntry";
+import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
 import { EmptyState } from "@/components/EmptyState";
+import { ModeSwitch } from "@/components/ModeSwitch";
 import { useColors } from "@/hooks/useColors";
 import { gradients } from "@/constants/colors";
+import { userDisplayName } from "@/lib/friendNames";
 
 type Filter = "all" | "unread" | "group" | "dungeon" | "battle";
 
@@ -32,9 +36,9 @@ function getRoomDisplayName(room: any, myId?: string): string {
   if (room.name) return room.name;
   if (room.type === "direct") {
     const other = room.members?.find((m: any) => m.id !== myId);
-    return other?.nickname ?? "채팅방";
+    return userDisplayName(other, "채팅방");
   }
-  return room.members?.map((m: any) => m.nickname).join(", ") ?? "그룹 채팅";
+  return room.members?.map((m: any) => userDisplayName(m, "사용자")).join(", ") ?? "그룹 채팅";
 }
 
 function getRoomAvatar(room: any, myId?: string) {
@@ -65,13 +69,16 @@ export default function ChatsScreen() {
   const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
-    const timer = setInterval(() => refetch(), 5000);
+    const timer = setInterval(() => refetch(), 30000);
     return () => clearInterval(timer);
   }, [refetch]);
 
+  // Realtime websocket events refresh the list immediately; this slower interval
+  // is only a fallback for reconnect gaps.
+
   // Refetch every time the list regains focus (e.g. returning from a chat after
   // reading it). The room screen advances the server read pointer, but if this
-  // tab was unmounted/blurred its 5s interval wasn't running, so the cached
+  // tab was unmounted/blurred its fallback interval wasn't running, so the cached
   // unread badge would linger until the next poll. Pulling fresh data on focus
   // makes the badge reflect server truth immediately on return.
   useFocusEffect(
@@ -92,7 +99,10 @@ export default function ChatsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>채팅</Text>
+        <View style={styles.titleStack}>
+          <Text style={[styles.title, { color: colors.foreground }]}>채팅</Text>
+          <ModeSwitch />
+        </View>
         <View style={styles.headerActions}>
           <Pressable
             accessibilityLabel="새 토크배틀"
@@ -103,7 +113,7 @@ export default function ChatsScreen() {
             <Feather name="mic" size={22} color={colors.primary} />
           </Pressable>
           <Pressable
-            accessibilityLabel="라이프 퀘스트"
+            accessibilityLabel="STAR 미션"
             hitSlop={8}
             onPress={() => router.push("/(tabs)/dungeon")}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -154,6 +164,19 @@ export default function ChatsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={
           filteredRooms.length === 0 ? styles.emptyContainer : styles.listContent
+        }
+        ListHeaderComponent={
+          <View style={styles.rewardHeader}>
+            <DailyTalkRewardCard
+              onClaim={() => router.push("/daily-talk-reward/generate" as never)}
+              onOpenDraft={(id) => router.push(`/daily-talk-reward/${id}` as never)}
+              onOpenWallet={() => router.push("/pvt/wallet" as never)}
+              onOpenHistory={() => router.push("/daily-talk-reward/history" as never)}
+            />
+            <BibiOfficialEntry
+              onOpenRoom={(roomId) => router.push({ pathname: "/chat/[id]", params: { id: roomId } })}
+            />
+          </View>
         }
         refreshControl={
           <RefreshControl
@@ -267,11 +290,12 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
+  titleStack: { gap: 8 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   iconBtn: { padding: 6 },
@@ -290,6 +314,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  rewardHeader: { paddingHorizontal: 16, paddingTop: 4 },
   listContent: { paddingBottom: 120 },
   emptyContainer: { flexGrow: 1, minHeight: 400 },
   roomItem: {

@@ -2,7 +2,6 @@ import { CustomScrollView } from "@/components/CustomScroll";
 import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,74 +12,140 @@ import { Feather } from "@expo/vector-icons";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  useAnalyzeMyPersona,
+  customFetch,
   useGetClanRankings,
   useGetMe,
   useGetMyClan,
   useGetMyPersona,
-  useGetMyPersonaCard,
   useGetMyQuests,
-  useGetMyRewardsSummary,
-  useGetPersonaRankings,
   useListClanWars,
   useListIncomingFriendRequests,
   type Quest,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
+import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
 import { useColors } from "@/hooks/useColors";
+import { dailyTalkRewardStatusQueryKey } from "@/hooks/useDailyTalkReward";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
+import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
 
-/** Light-touch overlay so the hero background image shows through while text stays legible. */
-const HERO_OVERLAY = [
-  "rgba(10,8,24,0.15)",
-  "rgba(10,8,24,0.30)",
-  "rgba(10,8,24,0.78)",
-] as const;
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
+const FAN_CHARACTER_IMAGE = require("../../assets/images/fan.png");
+const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
+const STAR_CARD_BG_IMAGE = require("../../assets/images/star_bg.png");
 
-/** Mockup hero stats (order + Korean label) mapped to PersonaStats keys. */
-const HERO_STATS: {
-  key: "conviction" | "logic" | "decisiveness" | "empathy" | "knowledge";
-  label: string;
+const HOME_NAV_ITEMS: Array<{
+  key: string;
+  title: string;
+  tagline: string;
+  desc: string;
+  cta: string;
   icon: keyof typeof Feather.glyphMap;
-  color: string;
-}[] = [
-  { key: "conviction", label: "설득력", icon: "message-circle", color: "#A78BFA" },
-  { key: "logic", label: "논리성", icon: "cpu", color: "#60A5FA" },
-  { key: "decisiveness", label: "전략성", icon: "target", color: "#34D399" },
-  { key: "empathy", label: "공감력", icon: "heart", color: "#F472B6" },
-  { key: "knowledge", label: "지식", icon: "book-open", color: "#FBBF24" },
+  grad: readonly [string, string];
+  accent: string;
+  route: string;
+}> = [
+  { key: "battle", title: "토크배틀", tagline: "말로 증명하라", desc: "AI 심판이 판정하는 3라운드 토론", cta: "시작하기", icon: "mic", grad: ["#2E1650", "#4A2389"], accent: "#C084FC", route: "/(tabs)/battle" },
+  { key: "dungeon", title: "STAR 미션", tagline: "선택으로 성장하라", desc: "현실 같은 선택 시뮬레이션", cta: "시작하기", icon: "compass", grad: ["#0E3327", "#155C41"], accent: "#34D399", route: "/(tabs)/dungeon" },
+  { key: "persona", title: "또 다른 나", tagline: "정체성을 확인하라", desc: "성장과 분석 확인하기", cta: "보기", icon: "user", grad: ["#0E2B47", "#1A4E7A"], accent: "#38BDF8", route: "/(tabs)/persona" },
+  { key: "clan", title: "팬클럽", tagline: "함께 성장하라", desc: "팬클럽 기억과 지혜", cta: "입장하기", icon: "shield", grad: ["#3A2A0C", "#6E5113"], accent: "#FBBF24", route: "/clan" },
 ];
 
-/** Stat metadata for the "최근 성장 변화" aggregation (covers every PersonaStats key). */
-const GROWTH_STAT_META: Record<
-  string,
+const HomeNavigationGrid = React.memo(function HomeNavigationGrid() {
+  const router = useRouter();
+  return (
+    <View style={styles.navGrid}>
+      {HOME_NAV_ITEMS.map((item) => (
+        <Pressable
+          key={item.key}
+          onPress={() => router.push(item.route as never)}
+          style={({ pressed }) => [styles.navWrap, { opacity: pressed ? 0.9 : 1 }]}
+        >
+          <LinearGradient
+            colors={item.grad}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.navCard, { borderColor: `${item.accent}40` }]}
+          >
+            <View style={[styles.navIcon, { backgroundColor: `${item.accent}26` }]}>
+              <Feather name={item.icon} size={20} color={item.accent} />
+            </View>
+            <Text style={styles.navTitle}>{item.title}</Text>
+            <Text style={[styles.navTagline, { color: item.accent }]}>{item.tagline}</Text>
+            <Text style={styles.navDesc} numberOfLines={2}>{item.desc}</Text>
+            <View style={[styles.navCta, { backgroundColor: `${item.accent}26` }]}>
+              <Text style={[styles.navCtaText, { color: item.accent }]}>{item.cta}</Text>
+            </View>
+          </LinearGradient>
+        </Pressable>
+      ))}
+    </View>
+  );
+});
+
+type RankingScope = "persona" | "fan" | "star" | "battle";
+type PlayModeChoice = "fan" | "star";
+
+interface ServiceRankingItem {
+  id: string;
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  level: number;
+  title: string;
+  subTitle: string;
+  badgeLabel: string;
+  score: number;
+  primaryStatLabel: string;
+  primaryStatValue: number;
+}
+
+interface ServiceRankingResult {
+  scope: RankingScope;
+  type: string;
+  items: ServiceRankingItem[];
+  myRank: {
+    rank: number;
+    score: number;
+    pointsToNextRank: number;
+  } | null;
+}
+
+interface PersonaOntologyProfile {
+  evidenceSummary: string[];
+  traitTags?: string[];
+  communicationStyles?: string[];
+  capabilities?: string[];
+  conflictStyles?: string[];
+  confidence: number;
+}
+
+const RANK_SCOPE_META: Record<
+  RankingScope,
   { label: string; icon: keyof typeof Feather.glyphMap; color: string }
 > = {
-  conviction: { label: "설득력", icon: "message-circle", color: "#A78BFA" },
-  logic: { label: "논리성", icon: "cpu", color: "#60A5FA" },
-  decisiveness: { label: "전략성", icon: "target", color: "#34D399" },
-  empathy: { label: "공감력", icon: "heart", color: "#F472B6" },
-  knowledge: { label: "지식", icon: "book-open", color: "#FBBF24" },
-  wit: { label: "위트", icon: "zap", color: "#FB923C" },
-  emotion: { label: "감정", icon: "droplet", color: "#FB7185" },
+  persona: { label: "자아", icon: "user", color: "#60A5FA" },
+  fan: { label: "FAN", icon: "heart", color: "#F472B6" },
+  star: { label: "STAR", icon: "star", color: "#FBBF24" },
+  battle: { label: "배틀", icon: "mic", color: "#C084FC" },
 };
 
-const STAT_ORDER = [
-  "conviction",
-  "logic",
-  "decisiveness",
-  "empathy",
-  "knowledge",
-  "wit",
-  "emotion",
-];
+const STAR_STAT_META = [
+  { key: "charm", label: "매력" },
+  { key: "stagePresence", label: "무대감" },
+  { key: "bond", label: "유대" },
+  { key: "lore", label: "세계관" },
+] as const;
 
 function questIcon(q: Quest): keyof typeof Feather.glyphMap {
   const s = `${q.key} ${q.title}`;
   if (/배틀|battle/i.test(s)) return "mic";
   if (/던전|dungeon/i.test(s)) return "compass";
-  if (/가문|clan/i.test(s)) return "shield";
+  if (/팬클럽|가문|clan/i.test(s)) return "shield";
   if (/분석|analyze|persona|자아/i.test(s)) return "cpu";
   if (/대화|채팅|chat|메시지/i.test(s)) return "message-circle";
   return "target";
@@ -96,15 +161,65 @@ function questColor(q: Quest): string {
   return "#A78BFA";
 }
 
+function starStageLabel(stage: "aspiring" | "promoted" | undefined): string {
+  if (stage === "promoted") return "공식 STAR";
+  return "연습생 STAR";
+}
+
+function xpToReachLevel(level: number): number {
+  if (level <= 1) return 0;
+  return 50 * (level - 1) * level;
+}
+
+function rankLabel(result: ServiceRankingResult | undefined): string {
+  return result?.myRank ? `${result.myRank.rank}위` : "진입 전";
+}
+
+function formatCompactNumber(value: number | undefined): string {
+  const safe = value ?? 0;
+  if (safe >= 10000) return `${Math.floor(safe / 1000) / 10}만`;
+  return safe.toLocaleString();
+}
+
+function feedKindLabel(kind: StarFeedPost["kind"]): string {
+  if (kind === "star") return "공식 STAR 기록";
+  if (kind === "fan") return "FAN 응원글";
+  if (kind === "growth") return "성장 기록";
+  if (kind === "profile_update") return "프로필 업데이트";
+  if (kind === "talk_diary") return "오늘의 대화 일기";
+  if (kind === "event") return "이벤트";
+  return "공식 소식";
+}
+
+function useHomeRanking(scope: RankingScope) {
+  return useQuery({
+    queryKey: ["home-service-ranking", scope],
+    queryFn: () =>
+      customFetch<ServiceRankingResult>(`/api/users/rankings?scope=${scope}&type=overall&limit=5`, {
+        responseType: "json",
+      }),
+  });
+}
+
 export default function HomeScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const { data: me } = useGetMe();
+  const { data: me, refetch: refetchMe } = useGetMe();
   const { data: persona, refetch: refetchPersona } = useGetMyPersona();
-  const { data: card, refetch: refetchCard } = useGetMyPersonaCard();
   const { data: quests = [], refetch: refetchQuests } = useGetMyQuests();
+  const {
+    mode,
+    fanProfile,
+    equippedStar,
+    starUnlocked,
+    isChanging: isChangingMode,
+    refetch: refetchPlayMode,
+    setMode,
+  } = usePlayMode();
+  const { posts: feedPosts, refetch: refetchFeed } = useStarFeed();
   const { data: myClan, refetch: refetchClan } = useGetMyClan();
   const { data: clanRanking, refetch: refetchClanRank } = useGetClanRankings({
     type: "overall",
@@ -112,80 +227,100 @@ export default function HomeScreen() {
   const { data: wars = [], refetch: refetchWars } = useListClanWars({
     status: "active",
   });
-  const { data: ranking, refetch: refetchRanking } = useGetPersonaRankings({
-    type: "overall",
-    limit: 5,
-  });
+  const { data: personaRankingData, refetch: refetchPersonaRanking } = useHomeRanking("persona");
+  const { data: fanRankingData, refetch: refetchFanRanking } = useHomeRanking("fan");
+  const { data: starRankingData, refetch: refetchStarRanking } = useHomeRanking("star");
+  const { data: battleRankingData, refetch: refetchBattleRanking } = useHomeRanking("battle");
   const { data: incomingRequests = [], refetch: refetchRequests } =
     useListIncomingFriendRequests();
-  const { data: rewardsSummary, refetch: refetchRewards } =
-    useGetMyRewardsSummary();
 
   const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [analysisError, setAnalysisError] = React.useState<string | null>(null);
+  const [selectedPlayMode, setSelectedPlayMode] = React.useState<PlayModeChoice>("fan");
 
-  const { mutate: analyze, isPending: isAnalyzing } = useAnalyzeMyPersona({
-    mutation: {
-      onMutate: () => setAnalysisError(null),
-      onSuccess: () => {
-        refetchPersona();
-        refetchCard();
-      },
-      onError: (err: unknown) => {
-        const data = (err as { data?: { message?: string } } | null)?.data;
-        setAnalysisError(
-          data?.message ?? "분석에 실패했어요. 잠시 후 다시 시도해 주세요.",
-        );
-      },
-    },
-  });
+  React.useEffect(() => {
+    if (mode === "star" && equippedStar) {
+      setSelectedPlayMode("star");
+    } else if (mode === "fan") {
+      setSelectedPlayMode("fan");
+    }
+  }, [mode, equippedStar]);
 
   const refetchAll = React.useCallback(async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([
+        refetchMe(),
         refetchPersona(),
-        refetchCard(),
         refetchQuests(),
+        refetchPlayMode(),
+        refetchFeed(),
         refetchClan(),
         refetchClanRank(),
         refetchWars(),
-        refetchRanking(),
+        refetchPersonaRanking(),
+        refetchFanRanking(),
+        refetchStarRanking(),
+        refetchBattleRanking(),
         refetchRequests(),
-        refetchRewards(),
+        queryClient.invalidateQueries({ queryKey: dailyTalkRewardStatusQueryKey }),
+        queryClient.invalidateQueries({ queryKey: pvtWalletQueryKey }),
       ]);
     } finally {
       setIsRefreshing(false);
     }
   }, [
+    refetchMe,
     refetchPersona,
-    refetchCard,
     refetchQuests,
+    refetchPlayMode,
+    refetchFeed,
     refetchClan,
     refetchClanRank,
     refetchWars,
-    refetchRanking,
+    refetchPersonaRanking,
+    refetchFanRanking,
+    refetchStarRanking,
+    refetchBattleRanking,
     refetchRequests,
-    refetchRewards,
+    queryClient,
   ]);
 
   useFocusEffect(
     React.useCallback(() => {
+      refetchMe();
       refetchPersona();
       refetchQuests();
-      refetchRewards();
+      refetchPlayMode();
+      refetchFeed();
+      refetchClan();
+      refetchClanRank();
+      refetchWars();
+      refetchPersonaRanking();
+      refetchFanRanking();
+      refetchStarRanking();
+      refetchBattleRanking();
       refetchRequests();
-    }, [refetchPersona, refetchQuests, refetchRewards, refetchRequests]),
+      void queryClient.invalidateQueries({ queryKey: dailyTalkRewardStatusQueryKey });
+      void queryClient.invalidateQueries({ queryKey: pvtWalletQueryKey });
+    }, [
+      refetchMe,
+      refetchPersona,
+      refetchQuests,
+      refetchPlayMode,
+      refetchFeed,
+      refetchClan,
+      refetchClanRank,
+      refetchWars,
+      refetchPersonaRanking,
+      refetchFanRanking,
+      refetchStarRanking,
+      refetchBattleRanking,
+      refetchRequests,
+      queryClient,
+    ]),
   );
 
   const hasRequests = incomingRequests.length > 0;
-  const level = persona?.level ?? 1;
-  const xpInto = persona?.xpIntoLevel ?? 0;
-  const xpFor = persona?.xpForNextLevel ?? 100;
-  const xpProgress = Math.min(100, Math.round((xpInto / (xpFor || 1)) * 100));
-  const archetype = card?.archetype ?? "성장하는 자아";
-  const motto =
-    card?.motto ?? "활동을 쌓을수록 또 다른 내가 깨어납니다.";
 
   const dailyQuests = quests
     .filter((q) => q.type === "daily")
@@ -193,83 +328,96 @@ export default function HomeScreen() {
   const allDailyDone =
     dailyQuests.length > 0 && dailyQuests.every((q) => q.completed);
 
-  // Aggregate recent stat changes + earned XP for "최근 성장 변화".
-  const { growthRows, growthExp } = React.useMemo(() => {
-    const totals: Record<string, number> = {};
-    let exp = 0;
-    for (const ev of persona?.recentEvents ?? []) {
-      exp += ev.expDelta ?? 0;
-      for (const [k, v] of Object.entries(ev.statChanges ?? {})) {
-        if (!v) continue;
-        totals[k] = (totals[k] ?? 0) + (v as number);
-      }
-    }
-    const rows = STAT_ORDER.filter((k) => (totals[k] ?? 0) > 0)
-      .map((k) => ({ key: k, value: totals[k], meta: GROWTH_STAT_META[k] }))
-      .slice(0, 5);
-    return { growthRows: rows, growthExp: exp };
-  }, [persona?.recentEvents]);
+  const ontologyProfile = (persona as typeof persona & { ontologyProfile?: PersonaOntologyProfile | null } | undefined)?.ontologyProfile ?? null;
+  const syncEvidence = ontologyProfile?.evidenceSummary?.slice(0, 3) ?? [];
+  const syncSignals = ontologyProfile
+    ? Array.from(new Set([
+        ...(ontologyProfile.communicationStyles ?? []),
+        ...(ontologyProfile.traitTags ?? []),
+        ...(ontologyProfile.capabilities ?? []),
+        ...(ontologyProfile.conflictStyles ?? []),
+      ])).slice(0, 3)
+    : [];
 
   const clan = myClan?.clan;
   const clanRank = clanRanking?.myClanRank?.rank;
   const activeWar = wars[0];
-  const rankItems = ranking?.items?.slice(0, 5) ?? [];
-
-  const NAV: {
-    key: string;
-    title: string;
-    tagline: string;
-    desc: string;
-    cta: string;
-    icon: keyof typeof Feather.glyphMap;
-    grad: readonly [string, string];
-    accent: string;
-    onPress: () => void;
-  }[] = [
-    {
-      key: "battle",
-      title: "토크배틀",
-      tagline: "말로 싸워라",
-      desc: "AI·친구와 말빨 대결",
-      cta: "시작하기",
-      icon: "mic",
-      grad: ["#2E1650", "#4A2389"],
-      accent: "#C084FC",
-      onPress: () => router.push("/(tabs)/battle"),
-    },
-    {
-      key: "dungeon",
-      title: "라이프 퀘스트",
-      tagline: "선택으로 성장하라",
-      desc: "현실 같은 선택 시뮬레이션",
-      cta: "시작하기",
-      icon: "compass",
-      grad: ["#0E3327", "#155C41"],
-      accent: "#34D399",
-      onPress: () => router.push("/(tabs)/dungeon"),
-    },
-    {
-      key: "persona",
-      title: "또 다른 나",
-      tagline: "정체성을 확인하라",
-      desc: "성장과 분석 확인하기",
-      cta: "보기",
-      icon: "user",
-      grad: ["#0E2B47", "#1A4E7A"],
-      accent: "#38BDF8",
-      onPress: () => router.push("/(tabs)/persona"),
-    },
-    {
-      key: "clan",
-      title: "가문",
-      tagline: "함께 성장하라",
-      desc: "가문 기억과 지혜",
-      cta: "입장하기",
-      icon: "shield",
-      grad: ["#3A2A0C", "#6E5113"],
-      accent: "#FBBF24",
-      onPress: () => router.push("/clan"),
-    },
+  const rankItems = battleRankingData?.items?.slice(0, 5) ?? [];
+  const latestFeedPosts = feedPosts.slice(0, 2);
+  const starStage = equippedStar ? starStageLabel(equippedStar.stage) : null;
+  const activePlayMode = selectedPlayMode;
+  const activeLevel = activePlayMode === "star" ? equippedStar?.level ?? 1 : fanProfile?.level ?? 1;
+  const activeXp = activePlayMode === "star" ? equippedStar?.xp ?? 0 : fanProfile?.xp ?? 0;
+  const activeXpLabel = activePlayMode === "star" ? "STAR XP" : "FAN XP";
+  const activeXpFloor = xpToReachLevel(activeLevel);
+  const activeXpForNext = xpToReachLevel(activeLevel + 1) - activeXpFloor;
+  const activeXpInto = Math.max(0, activeXp - activeXpFloor);
+  const activeXpProgress = Math.min(100, Math.round((activeXpInto / (activeXpForNext || 1)) * 100));
+  const activeCardStatus = activePlayMode === "star"
+    ? equippedStar
+      ? `${equippedStar.displayName} 보유`
+      : starUnlocked
+        ? "NFT 장착 필요"
+        : "NFT 등록 필요"
+    : "FAN 모드";
+  const activeCardBgImage = activePlayMode === "fan" ? FAN_CARD_BG_IMAGE : STAR_CARD_BG_IMAGE;
+  const activeImageSource = activePlayMode === "fan"
+    ? FAN_CHARACTER_IMAGE
+    : equippedStar?.imageUrl
+      ? { uri: equippedStar.imageUrl }
+      : null;
+  const activeStats = activePlayMode === "star"
+    ? [
+        { label: "매력", value: equippedStar?.stats.charm ?? 0, icon: "heart" as const, color: "#F472B6" },
+        { label: "무대감", value: equippedStar?.stats.stagePresence ?? 0, icon: "star" as const, color: "#A78BFA" },
+        { label: "유대", value: equippedStar?.stats.bond ?? 0, icon: "message-circle" as const, color: "#38BDF8" },
+        { label: "세계관", value: equippedStar?.stats.lore ?? 0, icon: "book-open" as const, color: "#FACC15" },
+      ]
+    : [
+        { label: "친밀도", value: fanProfile?.level ?? 1, icon: "heart" as const, color: "#F472B6" },
+        { label: "팬심", value: fanProfile?.stats.fanPower ?? 0, icon: "star" as const, color: "#A78BFA" },
+        { label: "응원력", value: fanProfile?.stats.supportPower ?? 0, icon: "volume-2" as const, color: "#38BDF8" },
+        { label: "공감력", value: fanProfile?.stats.empathy ?? 0, icon: "message-circle" as const, color: "#5EEAD4" },
+        { label: "스토리", value: fanProfile?.stats.story ?? 0, icon: "book-open" as const, color: "#FACC15" },
+      ];
+  const openStarRegistration = () => {
+    router.push({ pathname: "/(tabs)/persona", params: { focus: "star-nft" } } as never);
+  };
+  const handleModeSelect = (nextMode: PlayModeChoice) => {
+    setSelectedPlayMode(nextMode);
+    if (nextMode === "star" && (!starUnlocked || !equippedStar)) {
+      return;
+    }
+    void setMode(nextMode);
+  };
+  const playPrimaryLabel = activePlayMode === "star"
+    ? equippedStar
+      ? "STAR 미션"
+      : starUnlocked
+        ? "NFT 장착하기"
+        : "NFT 등록하기"
+    : "응원하기";
+  const playPrimaryIcon: keyof typeof Feather.glyphMap = activePlayMode === "star"
+    ? equippedStar
+      ? "compass"
+      : "star"
+    : "heart";
+  const handlePlayPrimaryPress = () => {
+    if (activePlayMode === "star") {
+      if (equippedStar) {
+        router.push("/(tabs)/dungeon" as never);
+      } else {
+        openStarRegistration();
+      }
+      return;
+    }
+    router.push("/(tabs)/feed" as never);
+  };
+  const rankSummaries = [
+    { scope: "persona" as const, result: personaRankingData },
+    { scope: "fan" as const, result: fanRankingData },
+    { scope: "star" as const, result: starRankingData },
+    { scope: "battle" as const, result: battleRankingData },
   ];
 
   return (
@@ -329,85 +477,148 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Persona hero card */}
-        <View style={styles.hero}>
+        <DailyTalkRewardCard
+          onClaim={() => router.push("/daily-talk-reward/generate" as never)}
+          onOpenDraft={(id) => router.push(`/daily-talk-reward/${id}` as never)}
+          onOpenWallet={() => router.push("/pvt/wallet" as never)}
+          onOpenHistory={() => router.push("/daily-talk-reward/history" as never)}
+        />
+
+        {/* FAN / STAR growth card */}
+        <View style={styles.playCard}>
           <ExpoImage
-            source={require("../../assets/images/persona-card-bg.png")}
-            style={StyleSheet.absoluteFill}
+            source={activeCardBgImage}
+            style={[StyleSheet.absoluteFill, styles.playCardBg]}
             contentFit="cover"
           />
           <LinearGradient
-            colors={HERO_OVERLAY}
+            colors={["rgba(9,6,28,0.62)", "rgba(17,9,45,0.34)", "rgba(6,5,20,0.82)"]}
             start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
+            end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <View style={styles.heroTop}>
-            <View style={styles.heroInfo}>
-              <View style={styles.archetypeRow}>
-                <Text style={styles.archetype}>{archetype}</Text>
-                <Feather name="chevron-down" size={14} color="#B7B0E8" />
+
+          <View style={styles.playCardHeader}>
+            <View style={styles.modeSwitchWrap}>
+              <Pressable
+                onPress={() => handleModeSelect("star")}
+                disabled={isChangingMode}
+                style={[
+                  styles.modeSwitchChip,
+                  activePlayMode === "star" && styles.modeSwitchChipActive,
+                ]}
+              >
+                <Feather name="star" size={13} color={activePlayMode === "star" ? "#fff" : "#8E85B7"} />
+                <Text style={[styles.modeSwitchText, activePlayMode === "star" && styles.modeSwitchTextActive]}>STAR</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleModeSelect("fan")}
+                disabled={isChangingMode}
+                style={[
+                  styles.modeSwitchChip,
+                  activePlayMode === "fan" && styles.modeSwitchChipActive,
+                ]}
+              >
+                <Feather name="heart" size={13} color={activePlayMode === "fan" ? "#fff" : "#8E85B7"} />
+                <Text style={[styles.modeSwitchText, activePlayMode === "fan" && styles.modeSwitchTextActive]}>FAN</Text>
+              </Pressable>
+            </View>
+            <View style={styles.playStatusWrap}>
+              <Text style={styles.playStatusText}>{activeCardStatus}</Text>
+              <Feather name="info" size={13} color="#8E85B7" />
+            </View>
+          </View>
+
+          <View style={styles.playCardBody}>
+            <View style={styles.playInfoCol}>
+              <Text style={styles.playLevel}>Lv. {activeLevel}</Text>
+              <View style={styles.playXpTrack}>
+                <View style={[styles.playXpFill, { width: `${activeXpProgress}%` }]} />
               </View>
-              <Text style={styles.heroLevel}>Lv. {level}</Text>
-              <View style={styles.xpTrack}>
-                <View style={[styles.xpFill, { width: `${xpProgress}%` }]} />
-              </View>
-              <Text style={styles.xpText}>
-                {xpInto.toLocaleString()} / {xpFor.toLocaleString()} XP
+              <Text style={styles.playXpText}>
+                {activeXpInto.toLocaleString()} / {activeXpForNext.toLocaleString()} {activeXpLabel}
               </Text>
+
+              <View style={styles.playStatList}>
+                {activeStats.map((stat) => (
+                  <View key={stat.label} style={styles.playStatRow}>
+                    <Feather name={stat.icon} size={18} color={stat.color} />
+                    <Text style={styles.playStatLabel}>{stat.label}</Text>
+                    <Text style={styles.playStatValue}>{stat.value.toLocaleString()}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
 
-            <View style={styles.heroAvatarWrap}>
-              <View style={styles.heroAvatarGlow} />
-              <View style={styles.heroAvatarRing}>
-                <Avatar
-                  uri={me?.profileImageUrl}
-                  name={me?.nickname ?? "나"}
-                  size={92}
+            <View style={styles.playCharacterCol}>
+              <View style={styles.playOrbitOuter} />
+              <View style={styles.playOrbitInner} />
+              <View style={styles.playCharacterGlow} />
+              {activeImageSource ? (
+                <ExpoImage
+                  source={activeImageSource}
+                  style={activePlayMode === "star" ? styles.playStarImage : styles.playFanImage}
+                  contentFit="contain"
                 />
-              </View>
+              ) : (
+                <View style={styles.playFallbackAvatar}>
+                  <Feather name={activePlayMode === "star" ? "star" : "heart"} size={52} color="#E8DDFF" />
+                </View>
+              )}
+              <View style={styles.playPlatform} />
             </View>
           </View>
 
-          {/* Stats */}
-          <View style={styles.heroStats}>
-            {HERO_STATS.map((s) => (
-              <View key={s.key} style={styles.heroStatRow}>
-                <Feather name={s.icon} size={15} color={s.color} />
-                <Text style={styles.heroStatLabel}>{s.label}</Text>
-                <Text style={styles.heroStatValue}>
-                  {persona?.stats?.[s.key] ?? 0}
-                </Text>
-              </View>
-            ))}
+          <View style={styles.playCardActions}>
+            <Pressable
+              onPress={() => router.push("/profile/ranking")}
+              style={({ pressed }) => [styles.playActionGhost, { opacity: pressed ? 0.72 : 1 }]}
+            >
+              <Feather name="bar-chart-2" size={15} color="#E8DDFF" />
+              <Text style={styles.playActionGhostText}>상세 성장 리포트</Text>
+              <Feather name="chevron-right" size={15} color="#8E85B7" />
+            </Pressable>
+            <Pressable
+              onPress={handlePlayPrimaryPress}
+              style={({ pressed }) => [styles.playActionPrimary, { opacity: pressed ? 0.86 : 1 }]}
+            >
+              <Feather name={playPrimaryIcon} size={15} color="#fff" />
+              <Text style={styles.playActionPrimaryText} numberOfLines={1}>
+                {playPrimaryLabel}
+              </Text>
+            </Pressable>
           </View>
+        </View>
 
-          {/* Motto */}
-          <Text style={styles.heroMotto} numberOfLines={2}>
-            “{motto}”
-          </Text>
-
-          {analysisError ? (
-            <Text style={styles.heroError}>{analysisError}</Text>
-          ) : null}
-
-          <Pressable
-            onPress={() => analyze()}
-            disabled={isAnalyzing}
-            style={({ pressed }) => [
-              styles.analyzeBtn,
-              { opacity: isAnalyzing ? 0.7 : pressed ? 0.85 : 1 },
-            ]}
-          >
-            {isAnalyzing ? (
-              <ActivityIndicator size="small" color="#E9E5FF" />
-            ) : (
-              <Feather name="refresh-cw" size={14} color="#E9E5FF" />
-            )}
-            <Text style={styles.analyzeBtnText}>
-              {isAnalyzing ? "분석 중…" : "분석 업데이트"}
-            </Text>
-          </Pressable>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>내 성장 위치</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => router.push("/profile/ranking")}
+              style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>전체 랭킹</Text>
+              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+          <View style={styles.rankSummaryGrid}>
+            {rankSummaries.map(({ scope, result }) => {
+              const meta = RANK_SCOPE_META[scope];
+              return (
+                <View key={scope} style={[styles.rankSummaryCell, { borderColor: colors.border }]}>
+                  <View style={styles.rankSummaryTop}>
+                    <Feather name={meta.icon} size={14} color={meta.color} />
+                    <Text style={[styles.rankSummaryLabel, { color: colors.mutedForeground }]}>{meta.label}</Text>
+                  </View>
+                  <Text style={[styles.rankSummaryValue, { color: colors.foreground }]}>{rankLabel(result)}</Text>
+                  <Text style={[styles.rankSummaryScore, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {result?.myRank ? `${formatCompactNumber(result.myRank.score)}점` : "활동 필요"}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
         {/* Daily quests */}
@@ -469,9 +680,7 @@ export default function HomeScreen() {
                     <Text style={[styles.questProgress, { color: colors.mutedForeground }]}>
                       {q.progress} / {q.target}
                     </Text>
-                    <Text style={[styles.questReward, { color: c }]}>
-                      +{q.rewardExp} XP
-                    </Text>
+                    <Text style={[styles.questReward, { color: c }]}>+{q.rewardExp} FAN XP</Text>
                   </View>
                 );
               })}
@@ -498,43 +707,13 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Navigation cards */}
-        <View style={styles.navGrid}>
-          {NAV.map((n) => (
-            <Pressable
-              key={n.key}
-              onPress={n.onPress}
-              style={({ pressed }) => [styles.navWrap, { opacity: pressed ? 0.9 : 1 }]}
-            >
-              <LinearGradient
-                colors={n.grad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.navCard, { borderColor: `${n.accent}40` }]}
-              >
-                <View style={[styles.navIcon, { backgroundColor: `${n.accent}26` }]}>
-                  <Feather name={n.icon} size={20} color={n.accent} />
-                </View>
-                <Text style={styles.navTitle}>{n.title}</Text>
-                <Text style={[styles.navTagline, { color: n.accent }]}>
-                  {n.tagline}
-                </Text>
-                <Text style={styles.navDesc} numberOfLines={2}>
-                  {n.desc}
-                </Text>
-                <View style={[styles.navCta, { backgroundColor: `${n.accent}26` }]}>
-                  <Text style={[styles.navCtaText, { color: n.accent }]}>{n.cta}</Text>
-                </View>
-              </LinearGradient>
-            </Pressable>
-          ))}
-        </View>
+        <HomeNavigationGrid />
 
-        {/* Recent growth changes */}
+        {/* Recent Another Me sync changes */}
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-              최근 성장 변화
+              오늘 동기화 효과
             </Text>
             <Pressable
               hitSlop={8}
@@ -542,43 +721,138 @@ export default function HomeScreen() {
               style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
             >
               <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
-                성장 기록 보기
+                동기화 기록 보기
               </Text>
               <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
             </Pressable>
           </View>
 
-          {growthRows.length === 0 && growthExp === 0 ? (
+          {!ontologyProfile || syncEvidence.length === 0 ? (
             <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
-              아직 성장 변화가 없어요. 활동할수록 또 다른 내가 깨어납니다.
+              Talk to Earn 보상을 받으면 원문 없이 오늘 대화 요약이 Another Me에 반영돼요.
             </Text>
           ) : (
             <>
-              {growthRows.map((r) => (
-                <View key={r.key} style={styles.growthRow}>
-                  <Feather name={r.meta.icon} size={15} color={r.meta.color} />
-                  <Text style={[styles.growthLabel, { color: colors.foreground }]}>
-                    {r.meta.label}
-                  </Text>
-                  <Text style={styles.growthDelta}>+{r.value}</Text>
-                  <Feather name="arrow-up" size={13} color="#34D399" />
+              <View style={[styles.syncPreviewBox, { backgroundColor: colors.muted }]}>
+                <View style={[styles.syncPreviewIcon, { backgroundColor: `${colors.primary}18` }]}>
+                  <Feather name="cpu" size={16} color={colors.primary} />
                 </View>
-              ))}
-              {growthExp > 0 ? (
-                <View
-                  style={[
-                    styles.growthExpRow,
-                    { borderTopColor: colors.border },
-                  ]}
-                >
-                  <Feather name="zap" size={15} color="#FBBF24" />
-                  <Text style={[styles.growthLabel, { color: colors.foreground }]}>
-                    획득 EXP
-                  </Text>
-                  <Text style={[styles.growthExp]}>+{growthExp.toLocaleString()}</Text>
+                <View style={styles.syncPreviewBody}>
+                  <Text style={[styles.syncPreviewTitle, { color: colors.foreground }]}>Another Me 신뢰도 {ontologyProfile.confidence}%</Text>
+                  <Text style={[styles.syncPreviewSub, { color: colors.mutedForeground }]}>최근 요약과 평가가 반영된 상태예요.</Text>
+                </View>
+              </View>
+              {syncSignals.length > 0 ? (
+                <View style={styles.syncChipRow}>
+                  {syncSignals.map((item) => (
+                    <View key={item} style={[styles.syncChip, { backgroundColor: `${colors.primary}14` }]}>
+                      <Text style={[styles.syncChipText, { color: colors.primary }]}>+ {item}</Text>
+                    </View>
+                  ))}
                 </View>
               ) : null}
+              {syncEvidence.map((item, index) => (
+                <View key={`${item}-${index}`} style={styles.syncEvidenceRow}>
+                  <View style={[styles.syncEvidenceDot, { backgroundColor: index === 0 ? colors.primary : colors.border }]} />
+                  <Text style={[styles.syncEvidenceText, { color: colors.mutedForeground }]} numberOfLines={2}>{item}</Text>
+                </View>
+              ))}
             </>
+          )}
+        </View>
+
+        {/* STAR status */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>STAR 진행 상태</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => router.push(equippedStar ? "/(tabs)/dungeon" : "/(tabs)/persona")}
+              style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
+                {equippedStar ? "미션으로" : "인증/장착"}
+              </Text>
+              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+          {equippedStar ? (
+            <View style={styles.starStatusWrap}>
+              <View style={[styles.starAvatar, { backgroundColor: `${colors.primary}18` }]}>
+                {equippedStar.imageUrl ? (
+                  <ExpoImage source={{ uri: equippedStar.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                ) : (
+                  <Feather name="star" size={22} color="#FBBF24" />
+                )}
+              </View>
+              <View style={styles.starStatusBody}>
+                <Text style={[styles.starStatusTitle, { color: colors.foreground }]} numberOfLines={1}>
+                  {equippedStar.displayName} · {starStage}
+                </Text>
+                <Text style={[styles.starStatusSub, { color: colors.mutedForeground }]}>
+                  Lv.{equippedStar.level} · {equippedStar.xp.toLocaleString()} STAR XP
+                </Text>
+                <View style={styles.starStatRow}>
+                  {STAR_STAT_META.map((stat) => (
+                    <View key={stat.key} style={[styles.starStatChip, { backgroundColor: colors.muted }]}>
+                      <Text style={[styles.starStatValue, { color: colors.foreground }]}>
+                        {equippedStar.stats[stat.key]}
+                      </Text>
+                      <Text style={[styles.starStatLabel, { color: colors.mutedForeground }]}>{stat.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.starEmptyRow}>
+              <View style={[styles.starEmptyIcon, { backgroundColor: `${colors.primary}18` }]}>
+                <Feather name="star" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.starStatusBody}>
+                <Text style={[styles.starStatusTitle, { color: colors.foreground }]}>STAR NFT 장착이 필요해요</Text>
+                <Text style={[styles.starStatusSub, { color: colors.mutedForeground }]}>
+                  STAR NFT를 인증하면 연습생 STAR 미션과 캐릭터 랭킹이 열립니다.
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Feed spotlight */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>공개 성장 기록</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => router.push("/(tabs)/feed" as never)}
+              style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>피드 보기</Text>
+              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+          {latestFeedPosts.length > 0 ? (
+            <View style={styles.feedList}>
+              {latestFeedPosts.map((post) => (
+                <View key={post.id} style={[styles.feedPreview, { borderColor: colors.border }]}>
+                  <Text style={[styles.feedKind, { color: post.kind === "star" ? "#FBBF24" : colors.primary }]}>
+                    {feedKindLabel(post.kind)}
+                  </Text>
+                  <Text style={[styles.feedTitle, { color: colors.foreground }]} numberOfLines={1}>{post.title}</Text>
+                  <Text style={[styles.feedBody, { color: colors.mutedForeground }]} numberOfLines={2}>{post.body}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => router.push("/(tabs)/feed" as never)}
+              style={({ pressed }) => [styles.feedEmpty, { borderColor: colors.border, opacity: pressed ? 0.72 : 1 }]}
+            >
+              <Feather name="edit-3" size={18} color={colors.primary} />
+              <Text style={[styles.feedEmptyText, { color: colors.foreground }]}>첫 FAN 응원글을 남겨보세요</Text>
+              <Text style={[styles.feedEmptySub, { color: colors.mutedForeground }]}>토크배틀과 STAR 활동이 피드 기록으로 이어집니다.</Text>
+            </Pressable>
           )}
         </View>
 
@@ -593,11 +867,11 @@ export default function HomeScreen() {
           >
             <View style={styles.cardHeader}>
               <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-                소속 가문
+                소속 팬클럽
               </Text>
               <View style={styles.moreBtn}>
                 <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
-                  가문 홈으로
+                  팬클럽 홈으로
                 </Text>
                 <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
               </View>
@@ -611,7 +885,7 @@ export default function HomeScreen() {
                   {clan.name}
                 </Text>
                 <Text style={[styles.clanMeta, { color: colors.mutedForeground }]}>
-                  가문 레벨 {clan.level} · {clan.exp.toLocaleString()} EXP
+                  팬클럽 레벨 {clan.level} · {clan.exp.toLocaleString()} Clan EXP
                 </Text>
               </View>
               {clanRank ? (
@@ -620,7 +894,7 @@ export default function HomeScreen() {
                     {clanRank}위
                   </Text>
                   <Text style={[styles.clanRankLabel, { color: colors.mutedForeground }]}>
-                    가문 랭킹
+                    팬클럽 랭킹
                   </Text>
                 </View>
               ) : null}
@@ -639,7 +913,7 @@ export default function HomeScreen() {
           >
             <View style={styles.cardHeader}>
               <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-                진행 중인 가문전
+                진행 중인 팬클럽전
               </Text>
               <View style={styles.moreBtn}>
                 <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
@@ -654,7 +928,7 @@ export default function HomeScreen() {
             <View style={styles.warScoreRow}>
               <View style={styles.warSide}>
                 <Text style={[styles.warSideLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {activeWar.challengerClanName ?? "우리 가문"}
+                  {activeWar.challengerClanName ?? "우리 팬클럽"}
                 </Text>
                 <Text style={[styles.warScore, { color: colors.primary }]}>
                   {activeWar.challengerScore}
@@ -663,7 +937,7 @@ export default function HomeScreen() {
               <Text style={[styles.warVs, { color: colors.mutedForeground }]}>VS</Text>
               <View style={styles.warSide}>
                 <Text style={[styles.warSideLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {activeWar.opponentClanName ?? "상대 가문"}
+                  {activeWar.opponentClanName ?? "상대 팬클럽"}
                 </Text>
                 <Text style={[styles.warScore, { color: colors.foreground }]}>
                   {activeWar.opponentScore}
@@ -673,12 +947,12 @@ export default function HomeScreen() {
           </Pressable>
         ) : null}
 
-        {/* Weekly top ranking */}
+        {/* Cumulative top ranking */}
         {rankItems.length > 0 ? (
           <View style={[styles.card, { backgroundColor: colors.card }]}>
             <View style={styles.cardHeader}>
               <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-                이번 주 TOP 랭킹
+                토크배틀 TOP 랭킹
               </Text>
               <Pressable
                 hitSlop={8}
@@ -761,107 +1035,142 @@ const styles = StyleSheet.create({
 
   scrollContent: { paddingHorizontal: 16, gap: 14 },
 
-  // Hero
-  hero: {
-    borderRadius: 20,
-    padding: 18,
+  // FAN / STAR growth card
+  playCard: {
+    minHeight: 366,
+    borderRadius: 22,
+    overflow: "hidden",
+    padding: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(147,140,255,0.25)",
-    overflow: "hidden",
-    backgroundColor: "#0C0A1C",
+    borderColor: "rgba(139,92,246,0.42)",
+    backgroundColor: "#090717",
   },
-  heroTop: { flexDirection: "row", alignItems: "center" },
-  heroInfo: { flex: 1 },
-  archetypeRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  archetype: { color: "#B7B0E8", fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  heroLevel: {
-    color: "#FFFFFF",
-    fontSize: 38,
-    fontFamily: "Inter_800ExtraBold",
-    marginTop: 2,
-  },
-  xpTrack: {
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    overflow: "hidden",
-    marginTop: 8,
-  },
-  xpFill: { height: "100%", borderRadius: 4, backgroundColor: "#8A7CF6" },
-  xpText: {
-    color: "#A9A2D6",
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    marginTop: 6,
-  },
-  heroAvatarWrap: {
-    width: 116,
-    height: 116,
+  playCardBg: { opacity: 0.9 },
+  playCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  modeSwitchWrap: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    borderRadius: 14,
+    padding: 3,
+    backgroundColor: "rgba(10,8,28,0.72)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(139,92,246,0.28)",
   },
-  heroAvatarGlow: {
-    position: "absolute",
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    backgroundColor: "rgba(124,92,252,0.22)",
-  },
-  heroAvatarRing: {
-    padding: 4,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: "rgba(147,140,255,0.55)",
-    backgroundColor: "rgba(124,92,252,0.12)",
-  },
-  heroStats: { marginTop: 18, gap: 10 },
-  heroStatRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  heroStatLabel: {
-    flex: 1,
-    color: "#D9D4F2",
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-  },
-  heroStatValue: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontFamily: "Inter_700Bold",
-  },
-  heroMotto: {
-    color: "#C9C2EC",
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-    fontStyle: "italic",
-    textAlign: "center",
-    marginTop: 18,
-    lineHeight: 19,
-  },
-  heroError: {
-    color: "#FCA5A5",
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    textAlign: "center",
-    marginTop: 8,
-  },
-  analyzeBtn: {
+  modeSwitchChip: {
+    minWidth: 66,
+    height: 30,
+    borderRadius: 11,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
-    alignSelf: "center",
-    marginTop: 14,
-    paddingVertical: 9,
-    paddingHorizontal: 18,
-    borderRadius: 999,
+    gap: 5,
+  },
+  modeSwitchChipActive: { backgroundColor: "#6D35F6" },
+  modeSwitchText: { color: "#8E85B7", fontSize: 11, fontFamily: "Inter_800ExtraBold" },
+  modeSwitchTextActive: { color: "#fff" },
+  playStatusWrap: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
+  playStatusText: { color: "#B8AFD7", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  playCardBody: { flex: 1, flexDirection: "row", marginTop: 16 },
+  playInfoCol: { width: "46%", zIndex: 2 },
+  playLevel: { color: "#fff", fontSize: 40, fontFamily: "Inter_800ExtraBold", letterSpacing: -1.2 },
+  playXpTrack: {
+    height: 8,
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.10)",
+    marginTop: 8,
+  },
+  playXpFill: { height: "100%", borderRadius: 6, backgroundColor: "#8B5CF6" },
+  playXpText: { color: "#A79ACB", fontSize: 12, fontFamily: "Inter_600SemiBold", marginTop: 7 },
+  playStatList: { marginTop: 22, gap: 14 },
+  playStatRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  playStatLabel: { flex: 1, color: "#D9D3EB", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  playStatValue: { color: "#fff", fontSize: 14, fontFamily: "Inter_800ExtraBold" },
+  playCharacterCol: {
+    flex: 1,
+    minHeight: 230,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playOrbitOuter: {
+    position: "absolute",
+    width: 188,
+    height: 188,
+    borderRadius: 94,
+    borderWidth: 2,
+    borderColor: "rgba(139,92,246,0.42)",
+  },
+  playOrbitInner: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 75,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(147,140,255,0.5)",
-    backgroundColor: "rgba(124,92,252,0.18)",
+    borderColor: "rgba(216,180,254,0.34)",
   },
-  analyzeBtnText: {
-    color: "#E9E5FF",
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
+  playCharacterGlow: {
+    position: "absolute",
+    width: 158,
+    height: 158,
+    borderRadius: 79,
+    backgroundColor: "rgba(109,53,246,0.28)",
   },
+  playStarImage: { width: 168, height: 206, zIndex: 2 },
+  playFanImage: { width: 236, height: 304, marginRight: -16, marginTop: -18, zIndex: 2 },
+  playFallbackAvatar: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    zIndex: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(139,92,246,0.24)",
+    borderWidth: 2,
+    borderColor: "rgba(216,180,254,0.62)",
+  },
+  playPlatform: {
+    position: "absolute",
+    bottom: 14,
+    width: 142,
+    height: 32,
+    borderRadius: 71,
+    borderWidth: 1,
+    borderColor: "rgba(139,92,246,0.62)",
+    backgroundColor: "rgba(109,53,246,0.16)",
+  },
+  playCardActions: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 },
+  playActionGhost: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(216,180,254,0.22)",
+  },
+  playActionGhostText: { color: "#E8DDFF", fontSize: 12.5, fontFamily: "Inter_700Bold" },
+  playActionPrimary: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#6D35F6",
+  },
+  playActionPrimaryText: { color: "#fff", fontSize: 12.5, fontFamily: "Inter_800ExtraBold" },
+  rankSummaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  rankSummaryCell: { width: "48.5%", borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 12, gap: 4 },
+  rankSummaryTop: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rankSummaryLabel: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  rankSummaryValue: { fontSize: 18, fontFamily: "Inter_800ExtraBold" },
+  rankSummaryScore: { fontSize: 11, fontFamily: "Inter_500Medium" },
 
   // Generic card
   card: {
@@ -871,11 +1180,12 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
     justifyContent: "space-between",
     marginBottom: 14,
   },
-  cardTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  moreBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  cardTitle: { flex: 1, fontSize: 16, fontFamily: "Inter_700Bold" },
+  moreBtn: { flexDirection: "row", alignItems: "center", flexShrink: 0, gap: 2 },
   moreText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   emptyHint: {
     fontSize: 13,
@@ -982,24 +1292,59 @@ const styles = StyleSheet.create({
   },
   navCtaText: { fontSize: 13, fontFamily: "Inter_700Bold" },
 
-  // Growth
-  growthRow: {
+  // Another Me sync preview
+  syncPreviewBox: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 7,
+    borderRadius: 16,
+    gap: 11,
+    padding: 12,
   },
-  growthLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium" },
-  growthDelta: { color: "#34D399", fontSize: 14, fontFamily: "Inter_700Bold" },
-  growthExpRow: {
+  syncPreviewIcon: { alignItems: "center", borderRadius: 12, height: 38, justifyContent: "center", width: 38 },
+  syncPreviewBody: { flex: 1, gap: 2, minWidth: 0 },
+  syncPreviewTitle: { flexShrink: 1, fontSize: 14, fontFamily: "Inter_800ExtraBold" },
+  syncPreviewSub: { flexShrink: 1, fontSize: 12, fontFamily: "Inter_500Medium", lineHeight: 17 },
+  syncChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 10 },
+  syncChip: { borderRadius: 999, flexShrink: 1, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 6 },
+  syncChipText: { flexShrink: 1, fontSize: 12, fontFamily: "Inter_700Bold", lineHeight: 17 },
+  syncEvidenceRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingTop: 11,
-    marginTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    alignItems: "flex-start",
+    gap: 9,
+    paddingTop: 10,
   },
-  growthExp: { color: "#FBBF24", fontSize: 14, fontFamily: "Inter_800ExtraBold" },
+  syncEvidenceDot: { borderRadius: 4, height: 8, marginTop: 5, width: 8 },
+  syncEvidenceText: { flex: 1, fontSize: 12.5, fontFamily: "Inter_500Medium", lineHeight: 18 },
+
+  // STAR status
+  starStatusWrap: { flexDirection: "row", gap: 12 },
+  starAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  starStatusBody: { flex: 1 },
+  starStatusTitle: { fontSize: 15, fontFamily: "Inter_800ExtraBold" },
+  starStatusSub: { fontSize: 12.5, fontFamily: "Inter_500Medium", marginTop: 3, lineHeight: 18 },
+  starStatRow: { flexDirection: "row", gap: 6, marginTop: 10 },
+  starStatChip: { flex: 1, borderRadius: 10, paddingVertical: 7, alignItems: "center", gap: 1 },
+  starStatValue: { fontSize: 13, fontFamily: "Inter_800ExtraBold" },
+  starStatLabel: { fontSize: 10, fontFamily: "Inter_500Medium" },
+  starEmptyRow: { flexDirection: "row", gap: 12, alignItems: "center" },
+  starEmptyIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+
+  // Feed
+  feedList: { gap: 8 },
+  feedPreview: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 13, padding: 12 },
+  feedKind: { fontSize: 11, fontFamily: "Inter_800ExtraBold", marginBottom: 4 },
+  feedTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  feedBody: { fontSize: 12, fontFamily: "Inter_500Medium", lineHeight: 17, marginTop: 4 },
+  feedEmpty: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 16, alignItems: "center", gap: 5 },
+  feedEmptyText: { fontSize: 14, fontFamily: "Inter_800ExtraBold" },
+  feedEmptySub: { fontSize: 12, fontFamily: "Inter_500Medium", textAlign: "center", lineHeight: 17 },
 
   // Clan
   clanRow: { flexDirection: "row", alignItems: "center", gap: 12 },

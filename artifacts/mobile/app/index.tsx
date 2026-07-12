@@ -25,23 +25,23 @@ export default function Index() {
 
     // 3초 후에도 로드 안 되면 디버그 정보 표시
     timerRef.current = setTimeout(() => {
-      if (Platform.OS === "web") {
-        const key = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "(없음)";
-        const domain = process.env.EXPO_PUBLIC_DOMAIN || "(없음)";
-        const proxyUrl = process.env.EXPO_PUBLIC_CLERK_PROXY_URL || "(없음)";
-        const origin = typeof window !== "undefined" ? window.location.origin : "(없음)";
-        const ua = typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 60) : "";
-        const clerkLoaded = typeof window !== "undefined" && (window as any).Clerk ? "Clerk 객체 존재" : "Clerk 객체 없음";
-        setDebugInfo(
-          `Clerk isLoaded=false (3초 경과)\n` +
-          `키: ${key.slice(0, 20)}...\n` +
-          `Proxy: ${proxyUrl}\n` +
-          `도메인: ${domain}\n` +
-          `Origin: ${origin}\n` +
-          `${clerkLoaded}\n` +
-          `UA: ${ua}`
-        );
-      }
+      const key = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "(없음)";
+      const domain = process.env.EXPO_PUBLIC_DOMAIN || "(없음)";
+      const apiBase = process.env.EXPO_PUBLIC_API_BASE_URL || "(없음)";
+      const proxyUrl = process.env.EXPO_PUBLIC_CLERK_PROXY_URL || "(없음)";
+      const origin = typeof window !== "undefined" ? window.location.origin : "native";
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 60) : Platform.OS;
+      const clerkLoaded = typeof window !== "undefined" && (window as any).Clerk ? "Clerk 객체 존재" : "Clerk 객체 없음";
+      setDebugInfo(
+        `Clerk isLoaded=false (3초 경과)\n` +
+        `키: ${key.slice(0, 20)}...\n` +
+        `API: ${apiBase}\n` +
+        `Proxy: ${proxyUrl}\n` +
+        `도메인: ${domain}\n` +
+        `Origin: ${origin}\n` +
+        `${clerkLoaded}\n` +
+        `UA: ${ua}`
+      );
     }, 3000);
 
     return () => {

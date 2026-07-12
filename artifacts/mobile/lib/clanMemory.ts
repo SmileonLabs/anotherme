@@ -19,7 +19,7 @@ export const MEMORY_TYPE_TONE: Record<ClanMemoryMemoryType, string> = {
 export const MEMORY_TYPE_HINT: Record<ClanMemoryMemoryType, string> = {
   strategy: "승리를 부른 작전이나 접근법",
   lesson: "패배나 실수에서 얻은 깨달음",
-  value: "가문이 지켜야 할 신념",
+  value: "팬클럽이 지켜야 할 신념",
   achievement: "함께 이뤄낸 성과",
   warning: "다시는 반복하지 말아야 할 일",
 };

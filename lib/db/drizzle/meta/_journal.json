@@ -8,6 +8,27 @@
       "when": 1783664362666,
       "tag": "0000_eminent_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783749372396,
+      "tag": "0001_call-hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783751085211,
+      "tag": "0002_red_darkhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783752065658,
+      "tag": "0003_fresh_nighthawk",
+      "breakpoints": true
     }
   ]
 }

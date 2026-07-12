@@ -21,8 +21,10 @@
           "audio",
           "voip"
         ],
-        "NSMicrophoneUsageDescription": "음성 통화를 위해 마이크 접근 권한이 필요합니다."
-      }
+        "NSMicrophoneUsageDescription": "음성 통화를 위해 마이크 접근 권한이 필요합니다.",
+        "NSCameraUsageDescription": "영상통화를 위해 카메라 접근 권한이 필요합니다."
+      },
+      "bitcode": false
     },
     "android": {
       "package": "com.anotherme.app",
@@ -34,7 +36,13 @@
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.WAKE_LOCK",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.FOREGROUND_SERVICE_CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.BLUETOOTH"
       ]
     },
     "web": {
@@ -52,11 +60,12 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://anothermeai.app/"
         }
       ],
       "expo-font",
       "expo-web-browser",
+      "./plugins/withCallForegroundService",
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
       "@react-native-firebase/app",
@@ -77,6 +86,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e77d5bb1-663e-4cb9-8679-40be200c2249"
+      }
     }
   }
 }

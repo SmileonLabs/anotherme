@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import {
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,16 +14,26 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useListFriends, useCreateRoom, useGetMe } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getListFriendsQueryKey,
+  getListRoomsQueryKey,
+  useListFriends,
+  useCreateRoom,
+  useGetMe,
+} from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
+import { crossAlert } from "@/lib/crossAlert";
+import { updateFriendAlias, userDisplayName } from "@/lib/friendNames";
 
 
 export default function FriendsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const colors = useColors();
   const { scheme } = useThemeMode();
   const insets = useSafeAreaInsets();
@@ -30,6 +41,9 @@ export default function FriendsScreen() {
   const { data: friends = [], isLoading, refetch, isRefetching } = useListFriends();
   const createRoom = useCreateRoom();
   const [query, setQuery] = React.useState("");
+  const [editingFriend, setEditingFriend] = React.useState<any | null>(null);
+  const [aliasDraft, setAliasDraft] = React.useState("");
+  const [aliasSaving, setAliasSaving] = React.useState(false);
 
   // Re-fetch whenever the screen regains focus so nickname/profile edits made
   // elsewhere (or on another device) are reflected without a manual refresh.
@@ -46,12 +60,55 @@ export default function FriendsScreen() {
     router.push({ pathname: "/chat/[id]", params: { id: room.id } });
   };
 
+  const openAliasEditor = (friend: any) => {
+    setEditingFriend(friend);
+    setAliasDraft(friend.friendAlias ?? "");
+  };
+
+  const closeAliasEditor = () => {
+    if (aliasSaving) return;
+    setEditingFriend(null);
+    setAliasDraft("");
+  };
+
+  const saveAlias = async (value: string | null) => {
+    if (!editingFriend || aliasSaving) return;
+    const nextAlias = value === null ? null : value.trim() || null;
+    if (nextAlias && nextAlias.length > 50) {
+      crossAlert("이름이 너무 깁니다", "친구 이름은 50자 이하로 입력해주세요.");
+      return;
+    }
+
+    setAliasSaving(true);
+    try {
+      const updated = await updateFriendAlias(editingFriend.id, nextAlias);
+      queryClient.setQueryData<any[]>(getListFriendsQueryKey(), (old = []) =>
+        old.map((friend) => (friend.id === editingFriend.id ? { ...friend, ...updated } : friend)),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListFriendsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListRoomsQueryKey() }),
+      ]);
+      setEditingFriend(null);
+      setAliasDraft("");
+    } catch {
+      crossAlert("오류", "친구 이름을 저장하지 못했습니다. 다시 시도해주세요.");
+    } finally {
+      setAliasSaving(false);
+    }
+  };
+
   const q = query.trim().toLowerCase();
   const filtered = q
     ? friends.filter(
-        (f) =>
-          f.nickname?.toLowerCase().includes(q) ||
-          f.statusMessage?.toLowerCase().includes(q),
+        (f) => {
+          const displayName = userDisplayName(f, "").toLowerCase();
+          return (
+            displayName.includes(q) ||
+            f.nickname?.toLowerCase().includes(q) ||
+            f.statusMessage?.toLowerCase().includes(q)
+          );
+        },
       )
     : friends;
 
@@ -190,32 +247,108 @@ export default function FriendsScreen() {
             />
           ) : null
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [
-              styles.friendItem,
-              { backgroundColor: colors.background, opacity: pressed ? 0.6 : 1 },
-            ]}
-            onPress={() => handleOpenChat(item.id)}
-          >
-            <Avatar uri={item.profileImageUrl} name={item.nickname} size={50} />
-            <View style={styles.friendInfo}>
-              <Text style={[styles.friendName, { color: colors.foreground }]} numberOfLines={1}>
-                {item.nickname}
-              </Text>
-              {item.statusMessage ? (
-                <Text
-                  style={[styles.friendStatus, { color: colors.mutedForeground }]}
-                  numberOfLines={1}
+        renderItem={({ item }) => {
+          const displayName = userDisplayName(item);
+          const hasAlias = !!(item as any).friendAlias;
+          return (
+            <View style={[styles.friendItem, { backgroundColor: colors.background }]}>
+              <Pressable
+                style={({ pressed }) => [styles.friendMain, { opacity: pressed ? 0.6 : 1 }]}
+                onPress={() => handleOpenChat(item.id)}
+              >
+                <Avatar uri={item.profileImageUrl} name={displayName} size={50} />
+                <View style={styles.friendInfo}>
+                  <Text style={[styles.friendName, { color: colors.foreground }]} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <Text
+                    style={[styles.friendStatus, { color: colors.mutedForeground }]}
+                    numberOfLines={1}
+                  >
+                    {hasAlias ? item.nickname : item.statusMessage || "상태 메시지 없음"}
+                  </Text>
+                </View>
+              </Pressable>
+              <View style={styles.friendActions}>
+                <Pressable
+                  accessibilityLabel="친구 이름 수정"
+                  hitSlop={8}
+                  onPress={() => openAliasEditor(item)}
+                  style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.5 : 1 }]}
                 >
-                  {item.statusMessage}
-                </Text>
-              ) : null}
+                  <Feather name="edit-2" size={18} color={colors.mutedForeground} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="채팅 열기"
+                  hitSlop={8}
+                  onPress={() => handleOpenChat(item.id)}
+                  style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.5 : 1 }]}
+                >
+                  <Feather name="message-circle" size={20} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
             </View>
-            <Feather name="message-circle" size={20} color={colors.mutedForeground} />
-          </Pressable>
-        )}
+          );
+        }}
       />
+
+      <Modal
+        visible={!!editingFriend}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAliasEditor}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closeAliasEditor}>
+          <Pressable
+            style={[styles.aliasSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {}}
+          >
+            <Text style={[styles.aliasTitle, { color: colors.foreground }]}>친구 이름 수정</Text>
+            <Text style={[styles.aliasHint, { color: colors.mutedForeground }]}>
+              내 화면에서만 보이는 이름입니다. 비워두면 원래 닉네임으로 표시됩니다.
+            </Text>
+            <TextInput
+              value={aliasDraft}
+              onChangeText={setAliasDraft}
+              placeholder={editingFriend?.nickname ?? "친구 이름"}
+              placeholderTextColor={colors.mutedForeground}
+              maxLength={50}
+              autoFocus
+              selectTextOnFocus
+              style={[
+                styles.aliasInput,
+                { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background },
+              ]}
+            />
+            <View style={styles.aliasActions}>
+              <Pressable
+                disabled={aliasSaving}
+                onPress={() => saveAlias(null)}
+                style={({ pressed }) => [styles.aliasBtn, { opacity: pressed || aliasSaving ? 0.55 : 1 }]}
+              >
+                <Text style={[styles.aliasBtnText, { color: colors.mutedForeground }]}>초기화</Text>
+              </Pressable>
+              <Pressable
+                disabled={aliasSaving}
+                onPress={closeAliasEditor}
+                style={({ pressed }) => [styles.aliasBtn, { opacity: pressed || aliasSaving ? 0.55 : 1 }]}
+              >
+                <Text style={[styles.aliasBtnText, { color: colors.mutedForeground }]}>취소</Text>
+              </Pressable>
+              <Pressable
+                disabled={aliasSaving}
+                onPress={() => saveAlias(aliasDraft)}
+                style={({ pressed }) => [
+                  styles.aliasSaveBtn,
+                  { backgroundColor: colors.primary, opacity: pressed || aliasSaving ? 0.7 : 1 },
+                ]}
+              >
+                <Text style={styles.aliasSaveText}>{aliasSaving ? "저장 중..." : "저장"}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -286,7 +419,49 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
   },
+  friendMain: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   friendInfo: { flex: 1, gap: 2 },
+  friendActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  actionBtn: { padding: 8 },
   friendName: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
   friendStatus: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 22,
+    backgroundColor: "rgba(0,0,0,0.38)",
+  },
+  aliasSheet: {
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+  },
+  aliasTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  aliasHint: { marginTop: 6, fontSize: 13, lineHeight: 18, fontFamily: "Inter_400Regular" },
+  aliasInput: {
+    marginTop: 16,
+    height: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    fontFamily: "Inter_500Medium",
+  },
+  aliasActions: {
+    marginTop: 16,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 8,
+  },
+  aliasBtn: { paddingHorizontal: 10, paddingVertical: 10 },
+  aliasBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  aliasSaveBtn: { minWidth: 72, alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  aliasSaveText: { color: "#fff", fontSize: 14, fontFamily: "Inter_700Bold" },
 });

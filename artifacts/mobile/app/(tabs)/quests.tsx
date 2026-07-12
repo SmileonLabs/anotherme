@@ -1,6 +1,5 @@
 import { CustomScrollView } from "@/components/CustomScroll";
 import { EmptyState } from "@/components/EmptyState";
-import { useRouter } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
@@ -25,6 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
+import { playModeQueryKey } from "@/hooks/usePlayMode";
 
 type TabKey = "daily" | "weekly" | "achievements";
 
@@ -43,7 +43,6 @@ const CATEGORY_ICON: Record<Achievement["category"], keyof typeof Feather.glyphM
 };
 
 export default function QuestsScreen() {
-  const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -71,6 +70,7 @@ export default function QuestsScreen() {
     queryClient.invalidateQueries({ queryKey: getGetMyQuestsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetMyAchievementsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetMyRewardsSummaryQueryKey() });
+    queryClient.invalidateQueries({ queryKey: playModeQueryKey });
   }, [queryClient]);
 
   const { mutate: claimQuest } = useClaimQuestReward({
@@ -104,15 +104,8 @@ export default function QuestsScreen() {
           { paddingTop: insets.top + 8, backgroundColor: colors.muted },
         ]}
       >
-        <Pressable
-          accessibilityLabel="뒤로"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
-        >
-          <Feather name="chevron-left" size={26} color={colors.foreground} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>퀘스트</Text>
+        <View style={styles.headerBtn} />
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>데일리 미션</Text>
         <View style={styles.headerBtn} />
       </View>
 
@@ -148,7 +141,7 @@ export default function QuestsScreen() {
       <CustomScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingBottom: insets.bottom + 40 },
+          { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -175,7 +168,7 @@ export default function QuestsScreen() {
           ) : (
             <>
               <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-                활동으로 잠금 해제하고 어나더 미 EXP를 받으세요.
+                  STAR 미션과 활동으로 잠금 해제하고 FAN XP 보상을 받으세요.
               </Text>
               {achievements.map((a) => (
                 <AchievementRow
@@ -415,7 +408,7 @@ function RewardBadge({
           { color: claimed ? colors.mutedForeground : colors.primary },
         ]}
       >
-        +{exp} EXP
+        +{exp} FAN XP
       </Text>
     </View>
   );

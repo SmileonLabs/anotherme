@@ -100,7 +100,7 @@ export default function ClanMemoryNewScreen() {
       ]);
       router.back();
     } catch {
-      crossAlert("오류", "가문 기억을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
+      crossAlert("오류", "팬클럽 기억을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
   };
 
@@ -170,7 +170,7 @@ export default function ClanMemoryNewScreen() {
           <TextInput
             value={summary}
             onChangeText={(t) => setSummary(t.slice(0, SUMMARY_MAX))}
-            placeholder="가문에 남기고 싶은 교훈이나 전략을 적어 주세요."
+            placeholder="팬클럽에 남기고 싶은 교훈이나 전략을 적어 주세요."
             placeholderTextColor={colors.mutedForeground}
             multiline
             style={[
@@ -227,7 +227,7 @@ export default function ClanMemoryNewScreen() {
           ]}
         >
           <Text style={styles.submitText}>
-            {create.isPending ? "저장 중..." : "가문 기억 남기기"}
+            {create.isPending ? "저장 중..." : "팬클럽 기억 남기기"}
           </Text>
         </Pressable>
       </CustomScrollView>

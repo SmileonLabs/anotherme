@@ -1178,16 +1178,33 @@ export interface ChatRoomMember {
   muted: boolean;
 }
 
+export type RoomInputType = typeof RoomInputType[keyof typeof RoomInputType];
+
+
+export const RoomInputType = {
+  direct: 'direct',
+  group: 'group',
+} as const;
+
 export interface RoomInput {
-  type: string;
-  /** @nullable */
+  type: RoomInputType;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   name?: string | null;
+  /** @maxItems 100 */
   memberIds: string[];
 }
 
 export interface InviteMembersInput {
   memberIds: string[];
 }
+
+/**
+ * @nullable
+ */
+export type MessageMetadata = {[key: string]: unknown} | null;
 
 export interface MessageReplyPreview {
   id: string;
@@ -1223,11 +1240,21 @@ export interface MessageLinkPreview {
 export interface Message {
   id: string;
   roomId: string;
+  roomSeq: number;
   senderId: string;
+  authorKind: string;
   type: string;
   content: string;
   /** @nullable */
   replyToMessageId?: string | null;
+  /** @nullable */
+  anotherMeSessionId?: string | null;
+  /** @nullable */
+  callId?: string | null;
+  /** @nullable */
+  metadata?: MessageMetadata;
+  /** @nullable */
+  clientMessageId?: string | null;
   /** @nullable */
   deletedAt?: string | null;
   createdAt: string;
@@ -1239,11 +1266,35 @@ export interface Message {
   readCount?: number;
 }
 
+export type MessageInputType = typeof MessageInputType[keyof typeof MessageInputType];
+
+
+export const MessageInputType = {
+  text: 'text',
+  image: 'image',
+  file: 'file',
+  sticker: 'sticker',
+} as const;
+
+/**
+ * @nullable
+ */
+export type MessageInputMetadata = {[key: string]: unknown} | null;
+
 export interface MessageInput {
+  /** @maxLength 4096 */
   content: string;
-  type?: string;
+  type?: MessageInputType;
   /** @nullable */
   replyToMessageId?: string | null;
+  /** @nullable */
+  metadata?: MessageInputMetadata;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     * @nullable
+     */
+  clientMessageId?: string | null;
 }
 
 export type DeleteMessageInputScope = typeof DeleteMessageInputScope[keyof typeof DeleteMessageInputScope];
@@ -1264,6 +1315,12 @@ export interface PinMessageInput {
 
 export interface ForwardMessageInput {
   targetRoomId: string;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     * @nullable
+     */
+  clientMessageId?: string | null;
 }
 
 export interface StickerBadgeInput {
@@ -1585,7 +1642,6 @@ export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
 export const CallStatus = {
   ringing: 'ringing',
   active: 'active',
-  accepted: 'accepted',
   declined: 'declined',
   missed: 'missed',
   cancelled: 'cancelled',
@@ -2092,6 +2148,20 @@ export const ListClanMemoriesType = {
 
 export type SearchUsersParams = {
 email: string;
+};
+
+export type FetchRoomMessagesParams = {
+/**
+ * Return messages with roomSeq lower than this cursor.
+ * @minimum 1
+ */
+beforeSeq?: number;
+/**
+ * Page size, from 1 through 100 (defaults to 50).
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 
 export type CancelBattle200 = {

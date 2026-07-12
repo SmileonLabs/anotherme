@@ -17,6 +17,7 @@ import { crossAlert } from "@/lib/crossAlert";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { useColors } from "@/hooks/useColors";
+import { userDisplayName } from "@/lib/friendNames";
 
 export default function CreateGroupScreen() {
   const router = useRouter();
@@ -79,6 +80,7 @@ export default function CreateGroupScreen() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
           renderItem={({ item }) => {
             const isSelected = selected.includes(item.id);
+            const displayName = userDisplayName(item);
             return (
               <Pressable
                 style={({ pressed }) => [
@@ -87,9 +89,9 @@ export default function CreateGroupScreen() {
                 ]}
                 onPress={() => toggle(item.id)}
               >
-                <Avatar uri={item.profileImageUrl} name={item.nickname} size={46} />
+                <Avatar uri={item.profileImageUrl} name={displayName} size={46} />
                 <View style={styles.rowInfo}>
-                  <Text style={[styles.rowName, { color: colors.foreground }]}>{item.nickname}</Text>
+                  <Text style={[styles.rowName, { color: colors.foreground }]}>{displayName}</Text>
                   <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.email}</Text>
                 </View>
                 <View

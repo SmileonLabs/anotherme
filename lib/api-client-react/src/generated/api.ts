@@ -75,6 +75,7 @@ import type {
   EquipStarNftResult,
   EquippedStarProfileResponse,
   ErrorEnvelope,
+  FetchRoomMessagesParams,
   ForwardMessageInput,
   FriendAliasInput,
   FriendRequest,
@@ -3255,20 +3256,29 @@ export const useInviteRoomMembers = <TError = ErrorType<unknown>,
       return useMutation(getInviteRoomMembersMutationOptions(options));
     }
 
-export const getFetchRoomMessagesUrl = (id: string,) => {
+export const getFetchRoomMessagesUrl = (id: string,
+    params?: FetchRoomMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/rooms/${id}/messages`
+  return stringifiedParams.length > 0 ? `/api/rooms/${id}/messages?${stringifiedParams}` : `/api/rooms/${id}/messages`
 }
 
 /**
- * @summary List messages in a room (last 50)
+ * @summary List messages in a room using a room sequence cursor
  */
-export const fetchRoomMessages = async (id: string, options?: RequestInit): Promise<Message[]> => {
+export const fetchRoomMessages = async (id: string,
+    params?: FetchRoomMessagesParams, options?: RequestInit): Promise<Message[]> => {
 
-  return customFetch<Message[]>(getFetchRoomMessagesUrl(id),
+  return customFetch<Message[]>(getFetchRoomMessagesUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -3281,23 +3291,25 @@ export const fetchRoomMessages = async (id: string, options?: RequestInit): Prom
 
 
 
-export const getFetchRoomMessagesQueryKey = (id: string,) => {
+export const getFetchRoomMessagesQueryKey = (id: string,
+    params?: FetchRoomMessagesParams,) => {
     return [
-    `/api/rooms/${id}/messages`
+    `/api/rooms/${id}/messages`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getFetchRoomMessagesQueryOptions = <TData = Awaited<ReturnType<typeof fetchRoomMessages>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof fetchRoomMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getFetchRoomMessagesQueryOptions = <TData = Awaited<ReturnType<typeof fetchRoomMessages>>, TError = ErrorType<unknown>>(id: string,
+    params?: FetchRoomMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof fetchRoomMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getFetchRoomMessagesQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getFetchRoomMessagesQueryKey(id,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof fetchRoomMessages>>> = ({ signal }) => fetchRoomMessages(id, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof fetchRoomMessages>>> = ({ signal }) => fetchRoomMessages(id,params, { signal, ...requestOptions });
 
 
 
@@ -3311,15 +3323,16 @@ export type FetchRoomMessagesQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List messages in a room (last 50)
+ * @summary List messages in a room using a room sequence cursor
  */
 
 export function useFetchRoomMessages<TData = Awaited<ReturnType<typeof fetchRoomMessages>>, TError = ErrorType<unknown>>(
- id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof fetchRoomMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: string,
+    params?: FetchRoomMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof fetchRoomMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getFetchRoomMessagesQueryOptions(id,options)
+  const queryOptions = getFetchRoomMessagesQueryOptions(id,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -242,6 +242,38 @@ export async function sendCallPush(
   });
 }
 
+/**
+ * Terminal call events are native data messages only. They let killed Android
+ * clients stop a full-screen ringing notification without creating a new tray
+ * notification or waking the web push call UI.
+ */
+export async function sendCallTerminalPush(
+  userIds: string[],
+  data: {
+    callId: string;
+    status: "ended" | "declined" | "missed" | "cancelled" | "failed";
+    chatRoomId: string | null;
+    media: "audio" | "video";
+  },
+): Promise<void> {
+  await Promise.allSettled(
+    Array.from(new Set(userIds)).map((userId) =>
+      sendFcmCallToUser(userId, {
+        title: "통화 종료",
+        body: "통화가 종료되었습니다.",
+        tag: `call-${data.callId}`,
+        data: {
+          type: `call_${data.status}`,
+          status: data.status,
+          callId: data.callId,
+          chatRoomId: data.chatRoomId ?? "",
+          media: data.media,
+        },
+      }),
+    ),
+  );
+}
+
 /** Build the structured data payload for an incoming-call push. */
 export function incomingCallData(args: {
   callId: string;

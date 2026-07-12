@@ -814,10 +814,16 @@ export const ListRoomsResponse = zod.array(ListRoomsResponseItem)
 /**
  * @summary Create a chat room
  */
+export const createRoomBodyNameMax = 120;
+
+export const createRoomBodyMemberIdsMax = 100;
+
+
+
 export const CreateRoomBody = zod.object({
-  "type": zod.string(),
-  "name": zod.string().nullish(),
-  "memberIds": zod.array(zod.string())
+  "type": zod.enum(['direct', 'group']),
+  "name": zod.string().max(createRoomBodyNameMax).nullish(),
+  "memberIds": zod.array(zod.string()).max(createRoomBodyMemberIdsMax)
 })
 
 
@@ -955,19 +961,35 @@ export const InviteRoomMembersResponse = zod.object({
 
 
 /**
- * @summary List messages in a room (last 50)
+ * @summary List messages in a room using a room sequence cursor
  */
 export const FetchRoomMessagesParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+export const fetchRoomMessagesQueryLimitMax = 100;
+
+
+
+export const FetchRoomMessagesQueryParams = zod.object({
+  "beforeSeq": zod.coerce.number().min(1).optional().describe('Return messages with roomSeq lower than this cursor.'),
+  "limit": zod.coerce.number().min(1).max(fetchRoomMessagesQueryLimitMax).optional().describe('Page size, from 1 through 100 (defaults to 50).')
+})
+
 export const FetchRoomMessagesResponseItem = zod.object({
   "id": zod.string(),
   "roomId": zod.string(),
+  "roomSeq": zod.number(),
   "senderId": zod.string(),
+  "authorKind": zod.string(),
   "type": zod.string(),
   "content": zod.string(),
   "replyToMessageId": zod.string().nullish(),
+  "anotherMeSessionId": zod.string().nullish(),
+  "callId": zod.string().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "clientMessageId": zod.string().nullish(),
   "deletedAt": zod.string().nullish(),
   "createdAt": zod.string(),
   "sender": zod.object({
@@ -1021,10 +1043,18 @@ export const SendMessageParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const sendMessageBodyContentMax = 4096;
+
+export const sendMessageBodyClientMessageIdMax = 128;
+
+
+
 export const SendMessageBody = zod.object({
-  "content": zod.string(),
-  "type": zod.string().optional(),
-  "replyToMessageId": zod.string().nullish()
+  "content": zod.string().max(sendMessageBodyContentMax),
+  "type": zod.enum(['text', 'image', 'file', 'sticker']).optional(),
+  "replyToMessageId": zod.string().uuid().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "clientMessageId": zod.string().min(1).max(sendMessageBodyClientMessageIdMax).nullish()
 })
 
 
@@ -1049,8 +1079,13 @@ export const ForwardMessageParams = zod.object({
   "messageId": zod.coerce.string()
 })
 
+export const forwardMessageBodyClientMessageIdMax = 128;
+
+
+
 export const ForwardMessageBody = zod.object({
-  "targetRoomId": zod.string()
+  "targetRoomId": zod.string(),
+  "clientMessageId": zod.string().min(1).max(forwardMessageBodyClientMessageIdMax).nullish()
 })
 
 
@@ -1193,7 +1228,7 @@ export const ListIncomingCallsResponseItem = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "endedAt": zod.string().nullish(),
   "caller": zod.object({
@@ -1223,7 +1258,7 @@ export const GetCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1249,7 +1284,7 @@ export const AcceptCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1278,7 +1313,7 @@ export const JoinCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1306,7 +1341,7 @@ export const DeclineCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1331,7 +1366,7 @@ export const CancelCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1356,7 +1391,7 @@ export const EndCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -3597,7 +3632,7 @@ export const FailCallResponse = zod.object({
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),

@@ -5,10 +5,21 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { MessageInputMetadata } from './messageInputMetadata';
+import type { MessageInputType } from './messageInputType';
 
 export interface MessageInput {
+  /** @maxLength 4096 */
   content: string;
-  type?: string;
+  type?: MessageInputType;
   /** @nullable */
   replyToMessageId?: string | null;
+  /** @nullable */
+  metadata?: MessageInputMetadata;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     * @nullable
+     */
+  clientMessageId?: string | null;
 }

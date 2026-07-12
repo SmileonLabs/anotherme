@@ -8,7 +8,9 @@ AI가 판정하는 말발 배틀 앱 — 1:1/그룹 채팅, 던전 RPG, 토크�
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `pnpm --filter @workspace/db run push:dev` — sync a disposable development DB schema
+- `pnpm --filter @workspace/db run generate` — create a reviewed forward migration
+- `pnpm --filter @workspace/db run migrate` — apply committed migrations
 - Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
@@ -49,7 +51,7 @@ AI가 판정하는 말발 배틀 앱 — 1:1/그룹 채팅, 던전 RPG, 토크�
 - OpenAI client (`aiClient.ts`) falls back: `AI_INTEGRATIONS_OPENAI_API_KEY` → `OPENAI_API_KEY`. Use `OPENAI_API_KEY` secret directly.
 - Object Storage uses Replit sidecar auth (no GCS credentials needed); bucket ID in `DEFAULT_OBJECT_STORAGE_BUCKET_ID`.
 - Mobile lib helpers (`artifacts/mobile/lib/`) have `.web.ts` platform-specific overrides for browser-incompatible APIs (HEIC conversion, voice calls, web push, call notifications, native push).
-- All DB tables are defined in `lib/db/src/schema/`; run `pnpm --filter @workspace/db run push` after schema changes.
+- All DB tables are defined in `lib/db/src/schema/`. Use `push:dev` only for disposable development databases; generate and commit a migration for every production schema change.
 - Voice calls are dual-platform: PWA/web uses `livekit-client` + Web Push (`voiceCall.web.ts`); native build uses `@livekit/react-native` (`voiceCall.ts`) with `registerGlobals()` + `AudioSession`, plus notifee full-screen incoming UI (`callNotifications.ts`) and `@react-native-firebase/messaging` for FCM token + foreground messages (`nativePush.ts`) and the killed/background handler (`lib/fcmBackground.ts`, registered from the custom `index.js` entry). All native files have `.web.ts` no-op stubs so the PWA keeps building.
 - Native FCM uses `@react-native-firebase/messaging`, NOT `expo-notifications` (which was removed). Two FCM consumers fight over the message — pick one. The custom entry (`index.js` → `main` in `package.json`) imports `lib/fcmBackground` (registers `setBackgroundMessageHandler`) BEFORE `expo-router/entry`; never point `main` back at `expo-router/entry` directly. `@react-native-firebase/app` must be in `app.json` `plugins` AND pnpm-installed or `expo` crashes at config resolution.
 
@@ -82,7 +84,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - `EXPO_PUBLIC_CLERK_PROXY_URL` must only be set in **production** env, not shared. Setting it in shared causes Clerk JS to fail loading in dev (attempts to proxy through `/api/__clerk/npm/...` which returns 404).
 - Expo packages (`expo-clipboard`, `expo-image-picker`) have version warnings but are functional; update when upgrading Expo SDK.
-- After any schema change in `lib/db/src/schema/`, run `pnpm --filter @workspace/db run push` AND restart the API server workflow.
+- After any schema change in `lib/db/src/schema/`, run `push:dev` only for a disposable development database. Generate and review a committed migration before production deployment; API startup does not apply PostgreSQL DDL.
 - After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching route/client code.
 - Do NOT use `console.log` in server code — use `req.log` in route handlers, `logger` elsewhere.
 - Any plugin listed in `app.json` `plugins` must be pnpm-installed in `artifacts/mobile`, or `expo start` (and the mobile workflow) crashes at config resolution with `PluginError: Failed to resolve plugin`. Adding native runtime libs without their config plugins (e.g. LiveKit + `@livekit/react-native-expo-plugin`) is a common cause.

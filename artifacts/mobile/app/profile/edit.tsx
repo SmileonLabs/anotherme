@@ -13,17 +13,21 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useGetMe, useUpdateMe } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
-import { uploadBlob } from "@/lib/uploadImage";
+import { ImageTooLargeError, uploadBlob } from "@/lib/uploadImage";
 import { Avatar } from "@/components/Avatar";
 import { ImageCropModal } from "@/components/ImageCropModal";
 import { useColors } from "@/hooks/useColors";
+import { profileHistoryQueryKey } from "@/hooks/useProfileHistory";
+import { starFeedQueryKey } from "@/hooks/useStarFeed";
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { data: me, refetch } = useGetMe();
@@ -73,8 +77,12 @@ export default function EditProfileScreen() {
       const blob = await (await fetch(result.assets[0].uri)).blob();
       const path = await uploadBlob(blob);
       setImagePath(path);
-    } catch {
-      crossAlert("오류", "이미지를 불러오지 못했습니다");
+    } catch (e) {
+      if (e instanceof ImageTooLargeError) {
+        crossAlert("사진 크기 초과", "사진 크기는 10MB를 초과할 수 없습니다.");
+      } else {
+        crossAlert("오류", "이미지를 불러오지 못했습니다");
+      }
     } finally {
       setUploading(false);
     }
@@ -86,8 +94,12 @@ export default function EditProfileScreen() {
       const path = await uploadBlob(blob);
       setImagePath(path);
       setCropUri(null);
-    } catch {
-      crossAlert("오류", "이미지 업로드에 실패했습니다");
+    } catch (e) {
+      if (e instanceof ImageTooLargeError) {
+        crossAlert("사진 크기 초과", "사진 크기는 10MB를 초과할 수 없습니다.");
+      } else {
+        crossAlert("오류", "이미지 업로드에 실패했습니다");
+      }
     } finally {
       setUploading(false);
     }
@@ -109,6 +121,10 @@ export default function EditProfileScreen() {
         },
       });
       await refetch();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: starFeedQueryKey }),
+        queryClient.invalidateQueries({ queryKey: profileHistoryQueryKey }),
+      ]);
       router.back();
     } catch {
       crossAlert("오류", "저장에 실패했습니다");
@@ -137,9 +153,10 @@ export default function EditProfileScreen() {
             </View>
           </Pressable>
           <Pressable onPress={handlePickAvatar} disabled={uploading} hitSlop={8}>
-            <Text style={[styles.changePhotoText, { color: colors.primary }]}>
-              {uploading ? "업로드 중..." : "사진 변경"}
-            </Text>
+            <Text style={[styles.changePhotoText, { color: colors.primary }]}>{uploading ? "업로드 중..." : "사진 변경"}</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push("/profile/history" as never)} hitSlop={8}>
+            <Text style={[styles.historyLink, { color: colors.mutedForeground }]}>프로필 히스토리 보기</Text>
           </Pressable>
         </View>
 
@@ -217,6 +234,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   changePhotoText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  historyLink: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   form: { paddingHorizontal: 20, gap: 20 },
   label: { fontSize: 13, fontFamily: "Inter_600SemiBold", marginBottom: 8 },
   input: { height: 52, borderRadius: 12, paddingHorizontal: 16, fontSize: 15, fontFamily: "Inter_400Regular", borderWidth: 1 },

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   chatRoomMembersTable,
@@ -19,6 +19,18 @@ import { publishRealtimeEvent } from "../lib/realtime";
 import { handleAnotherMeAfterUserMessage } from "../lib/anotherMe";
 import { enqueueChatKnowledgeCandidateFromMessage } from "../lib/chatKnowledge";
 import {
+  hasMatchingMessagePayload,
+  isValidStickerCode,
+  parseMessagePage,
+  validateClientMessageId,
+  validateUserMessage,
+} from "../lib/chatMessagePolicy";
+import {
+  getDirectRoomPeer,
+  getRoomDeliveryRecipients,
+  lockAndCheckDirectRoomBlock,
+} from "../lib/chatDelivery";
+import {
   advanceMemberReadSeq,
   allocateRoomMessageSeq,
   getMessageReadTarget,
@@ -29,9 +41,6 @@ import {
 
 const router: IRouter = Router();
 
-// Sticker content is a Noto codepoint: lowercase hex groups joined by "_"
-// (e.g. "1f600", "2764_fe0f"). Anything else is rejected.
-const STICKER_CODE_PATTERN = /^[0-9a-f]+(_[0-9a-f]+)*$/;
 const FORWARDABLE_TYPES = new Set(["text", "image", "file", "sticker"]);
 
 type RoomRealtimeType = "message.created" | "message.updated" | "message.read" | "typing.updated" | "room.updated";
@@ -57,7 +66,9 @@ interface MessagePayload {
   content: string;
   replyToMessageId: string | null;
   anotherMeSessionId: string | null;
+  callId: string | null;
   metadata: Record<string, unknown> | null;
+  clientMessageId: string | null;
   deletedAt: string | null;
   createdAt: string;
   readCount: number;
@@ -179,7 +190,9 @@ async function serializeMessages(
         content: deleted ? "" : message.content,
         replyToMessageId: message.replyToMessageId ?? null,
         anotherMeSessionId: message.anotherMeSessionId ?? null,
+        callId: message.callId ?? null,
         metadata: (message.metadata as Record<string, unknown> | null | undefined) ?? null,
+        clientMessageId: message.clientMessageId ?? null,
         deletedAt: message.deletedAt?.toISOString() ?? null,
         createdAt: message.createdAt.toISOString(),
         readCount,
@@ -224,23 +237,15 @@ async function serializeMessage(
   return serialized;
 }
 
-async function getRoomUserIds(roomId: string): Promise<string[]> {
-  const members = await db
-    .select({ userId: chatRoomMembersTable.userId })
-    .from(chatRoomMembersTable)
-    .where(eq(chatRoomMembersTable.roomId, roomId));
-  return members.map((m) => m.userId);
-}
-
 async function publishRoomRealtimeEvent(
   roomId: string,
   actorUserId: string,
   type: RoomRealtimeType,
   data?: Record<string, unknown>,
 ): Promise<void> {
-  const userIds = await getRoomUserIds(roomId);
-  if (!userIds.includes(actorUserId)) return;
-  await publishRealtimeEvent({ type, roomId, actorUserId, userIds, data });
+  const recipients = await getRoomDeliveryRecipients(roomId, actorUserId);
+  if (!recipients.realtimeUserIds.includes(actorUserId)) return;
+  await publishRealtimeEvent({ type, roomId, actorUserId, userIds: recipients.realtimeUserIds, data });
 }
 
 function dispatchMessageRealtimeAndPush(args: {
@@ -254,21 +259,16 @@ function dispatchMessageRealtimeAndPush(args: {
   const { roomId, actorUserId, message, sender, preview, log } = args;
   void (async () => {
     try {
-      const members = await db
-        .select({ userId: chatRoomMembersTable.userId })
-        .from(chatRoomMembersTable)
-        .where(eq(chatRoomMembersTable.roomId, roomId));
-      const userIds = members.map((m) => m.userId);
+      const recipients = await getRoomDeliveryRecipients(roomId, actorUserId);
       await publishRealtimeEvent({
         type: "message.created",
         roomId,
         actorUserId,
-        userIds,
+        userIds: recipients.realtimeUserIds,
         data: { messageId: message.id, messageType: message.type, roomSeq: message.roomSeq },
       });
-      const recipients = userIds.filter((id) => id !== actorUserId);
-      if (recipients.length === 0) return;
-      await sendPushToUsers(recipients, {
+      if (recipients.pushUserIds.length === 0) return;
+      await sendPushToUsers(recipients.pushUserIds, {
         title: sender?.nickname ?? "새 메시지",
         body: preview.length > 80 ? `${preview.slice(0, 80)}...` : preview,
         url: `/chat/${roomId}`,
@@ -305,12 +305,19 @@ router.get("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> =
     return;
   }
 
+  const page = parseMessagePage(req.query as Record<string, unknown>);
+  if (!page.ok) {
+    res.status(400).json({ error: page.error });
+    return;
+  }
+
   const messages = await db
     .select()
     .from(messagesTable)
     .where(
       and(
         eq(messagesTable.roomId, raw),
+        page.beforeSeq === null ? undefined : lt(messagesTable.roomSeq, page.beforeSeq),
         sql`NOT EXISTS (
           SELECT 1
           FROM message_deletions AS md
@@ -319,8 +326,8 @@ router.get("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> =
         )`,
       ),
     )
-    .orderBy(desc(messagesTable.createdAt))
-    .limit(50);
+    .orderBy(desc(messagesTable.roomSeq), desc(messagesTable.createdAt), desc(messagesTable.id))
+    .limit(page.limit);
 
   const memberReadSeqs = await getRoomMemberReadSeqs(raw);
   const result = await serializeMessages(messages, userId, memberReadSeqs);
@@ -342,79 +349,76 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
     return;
   }
 
-  const { content, type = "text", replyToMessageId } = req.body;
-  if (!content) {
-    res.status(400).json({ error: "content required" });
+  const parsed = validateUserMessage(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
-  if (typeof content !== "string" || typeof type !== "string") {
-    res.status(400).json({ error: "invalid message" });
-    return;
-  }
+  const input = parsed.value;
 
-  // Image messages store an internal object path as content. Reject anything
-  // else (e.g. arbitrary external URLs) so clients can't be tricked into
-  // auto-loading attacker-controlled resources.
-  if (type === "image" && !content.startsWith("/objects/")) {
-    res.status(400).json({ error: "invalid image path" });
-    return;
-  }
-
-  // Sticker messages store a Noto codepoint (e.g. "1f600" / "2764_fe0f") as
-  // content. Constrain it to a strict codepoint shape so it can only ever
-  // resolve to the public Noto CDN, never an arbitrary URL.
-  if (type === "sticker" && !STICKER_CODE_PATTERN.test(content)) {
-    res.status(400).json({ error: "invalid sticker" });
-    return;
-  }
-
-  // File messages store JSON metadata ({ path, name, size, mime }) as content.
-  // The path must point at an internal object so clients can't be tricked into
-  // loading attacker-controlled resources.
-  if (type === "file") {
-    let ok = false;
-    try {
-      const meta = JSON.parse(content) as Record<string, unknown>;
-      ok =
-        typeof meta?.path === "string" &&
-        meta.path.startsWith("/objects/") &&
-        typeof meta?.name === "string";
-    } catch {
-      ok = false;
-    }
-    if (!ok) {
-      res.status(400).json({ error: "invalid file" });
-      return;
-    }
-  }
-
-  let replyTo: string | null = null;
-  if (replyToMessageId !== undefined && replyToMessageId !== null) {
-    if (typeof replyToMessageId !== "string") {
-      res.status(400).json({ error: "invalid replyToMessageId" });
-      return;
-    }
+  if (input.replyToMessageId) {
     const [replyMessage] = await db
       .select({ id: messagesTable.id })
       .from(messagesTable)
-      .where(and(eq(messagesTable.id, replyToMessageId), eq(messagesTable.roomId, raw)));
+      .where(and(eq(messagesTable.id, input.replyToMessageId), eq(messagesTable.roomId, raw)));
     if (!replyMessage) {
       res.status(400).json({ error: "reply target not in room" });
       return;
     }
-    replyTo = replyToMessageId;
   }
 
   // For non-text messages the content holds an opaque value (image object path,
   // sticker code, or file metadata), so room previews and push notifications
   // use a label.
-  const preview = previewForMessage(type, content);
+  const preview = previewForMessage(input.type, input.content);
+  const directRoom = await getDirectRoomPeer(raw, userId);
+  if (directRoom.isDirect && !directRoom.peerId) {
+    res.status(409).json({ error: "Invalid direct room membership" });
+    return;
+  }
 
-  const message = await db.transaction(async (tx) => {
+  const createdResult = await db.transaction(async (tx) => {
+    // The client key lock makes a retry safe even before the unique index is
+    // present on every production replica during a rolling migration.
+    if (input.clientMessageId) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`message:${raw}:${userId}:${input.clientMessageId}`}))`);
+      const [existing] = await tx
+        .select()
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.roomId, raw),
+            eq(messagesTable.senderId, userId),
+            eq(messagesTable.clientMessageId, input.clientMessageId),
+          ),
+        );
+      if (existing) {
+        return {
+          message: existing,
+          created: false,
+          idempotencyConflict: !hasMatchingMessagePayload(existing, input),
+          blocked: false,
+        };
+      }
+    }
+
+    if (directRoom.isDirect && await lockAndCheckDirectRoomBlock(tx, userId, directRoom.peerId)) {
+      return { message: null, created: false, idempotencyConflict: false, blocked: true };
+    }
+
     const roomSeq = await allocateRoomMessageSeq(tx, raw);
     const [created] = await tx
       .insert(messagesTable)
-      .values({ roomId: raw, senderId: userId, content, type, replyToMessageId: replyTo, roomSeq })
+      .values({
+        roomId: raw,
+        senderId: userId,
+        content: input.content,
+        type: input.type,
+        replyToMessageId: input.replyToMessageId,
+        metadata: input.metadata,
+        clientMessageId: input.clientMessageId,
+        roomSeq,
+      })
       .returning();
 
     await tx
@@ -431,8 +435,18 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
     // The sender has implicitly read their own message — advance their read marker
     // so it never counts as unread (prevents self-notifications across devices).
     await setMemberReadSeq(tx, raw, userId, { id: created.id, roomSeq });
-    return created;
+    return { message: created, created: true, idempotencyConflict: false, blocked: false };
   });
+
+  if (createdResult.blocked) {
+    res.status(403).json({ error: "Blocked users cannot message each other" });
+    return;
+  }
+  if (createdResult.idempotencyConflict) {
+    res.status(409).json({ error: "clientMessageId was already used for a different message" });
+    return;
+  }
+  const message = createdResult.message!;
 
   const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   const [room] = await db
@@ -446,16 +460,16 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
 
   // In a dungeon room, a player's text message is an in-game action: let the
   // AI Dungeon Master respond (fire-and-forget, serialized per room).
-  if (room?.type === "dungeon" && type === "text") {
+  if (createdResult.created && room?.type === "dungeon" && input.type === "text") {
     void runDungeonTurn(
       raw,
-      { userId, name: sender?.nickname ?? "모험가", text: content },
+      { userId, name: sender?.nickname ?? "모험가", text: input.content },
       req.log,
     ).catch((err) => req.log.error({ err, roomId: raw }, "Dungeon turn failed"));
   }
 
-  if (type === "text") {
-    void scheduleLinkPreview(raw, message.id, content, userId, req.log).catch((err) =>
+  if (createdResult.created && input.type === "text") {
+    void scheduleLinkPreview(raw, message.id, input.content, userId, req.log).catch((err) =>
       req.log.error({ err, roomId: raw, messageId: message.id }, "Failed to schedule link preview"),
     );
 
@@ -464,25 +478,27 @@ router.post("/rooms/:id/messages", requireAuth, async (req, res): Promise<void> 
       roomId: raw,
       roomType: room?.type,
       senderUserId: userId,
-      content,
+      content: input.content,
       log: req.log,
     });
   }
 
-  if (room?.type === "direct" && type === "text") {
-    void handleAnotherMeAfterUserMessage({ roomId: raw, senderUserId: userId, content, log: req.log }).catch((err) =>
+  if (createdResult.created && room?.type === "direct" && input.type === "text") {
+    void handleAnotherMeAfterUserMessage({ roomId: raw, senderUserId: userId, content: input.content, log: req.log }).catch((err) =>
       req.log.error({ err, roomId: raw, messageId: message.id }, "Another Me message hook failed"),
     );
   }
 
-  dispatchMessageRealtimeAndPush({
-    roomId: raw,
-    actorUserId: userId,
-    message,
-    sender,
-    preview,
-    log: req.log,
-  });
+  if (createdResult.created) {
+    dispatchMessageRealtimeAndPush({
+      roomId: raw,
+      actorUserId: userId,
+      message,
+      sender,
+      preview,
+      log: req.log,
+    });
+  }
 });
 
 router.post("/rooms/:id/messages/:messageId/delete", requireAuth, async (req, res): Promise<void> => {
@@ -626,10 +642,15 @@ router.post("/rooms/:id/messages/:messageId/forward", requireAuth, async (req, r
   const userId = req.dbUser!.id;
   const sourceRoomId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
-  const { targetRoomId } = req.body ?? {};
+  const { targetRoomId, clientMessageId: rawClientMessageId } = req.body ?? {};
 
   if (typeof targetRoomId !== "string") {
     res.status(400).json({ error: "targetRoomId required" });
+    return;
+  }
+  const clientMessageId = validateClientMessageId(rawClientMessageId);
+  if (clientMessageId === undefined) {
+    res.status(400).json({ error: "invalid clientMessageId" });
     return;
   }
 
@@ -665,12 +686,63 @@ router.post("/rooms/:id/messages/:messageId/forward", requireAuth, async (req, r
     return;
   }
 
-  const preview = previewForMessage(source.type, source.content);
-  const message = await db.transaction(async (tx) => {
+  const forwarded = validateUserMessage({
+    content: source.content,
+    type: source.type,
+    replyToMessageId: null,
+    metadata: null,
+    clientMessageId,
+  });
+  if (!forwarded.ok) {
+    res.status(400).json({ error: "Message cannot be forwarded" });
+    return;
+  }
+
+  const preview = previewForMessage(forwarded.value.type, forwarded.value.content);
+  const directRoom = await getDirectRoomPeer(targetRoomId, userId);
+  if (directRoom.isDirect && !directRoom.peerId) {
+    res.status(409).json({ error: "Invalid direct room membership" });
+    return;
+  }
+
+  const createdResult = await db.transaction(async (tx) => {
+    if (forwarded.value.clientMessageId) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`message:${targetRoomId}:${userId}:${forwarded.value.clientMessageId}`}))`);
+      const [existing] = await tx
+        .select()
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.roomId, targetRoomId),
+            eq(messagesTable.senderId, userId),
+            eq(messagesTable.clientMessageId, forwarded.value.clientMessageId),
+          ),
+        );
+      if (existing) {
+        return {
+          message: existing,
+          created: false,
+          idempotencyConflict: !hasMatchingMessagePayload(existing, forwarded.value),
+          blocked: false,
+        };
+      }
+    }
+
+    if (directRoom.isDirect && await lockAndCheckDirectRoomBlock(tx, userId, directRoom.peerId)) {
+      return { message: null, created: false, idempotencyConflict: false, blocked: true };
+    }
+
     const roomSeq = await allocateRoomMessageSeq(tx, targetRoomId);
     const [created] = await tx
       .insert(messagesTable)
-      .values({ roomId: targetRoomId, senderId: userId, content: source.content, type: source.type, roomSeq })
+      .values({
+        roomId: targetRoomId,
+        senderId: userId,
+        content: forwarded.value.content,
+        type: forwarded.value.type,
+        clientMessageId: forwarded.value.clientMessageId,
+        roomSeq,
+      })
       .returning();
     await tx
       .update(chatRoomsTable)
@@ -681,27 +753,39 @@ router.post("/rooms/:id/messages/:messageId/forward", requireAuth, async (req, r
       .set({ hiddenAt: null })
       .where(eq(chatRoomMembersTable.roomId, targetRoomId));
     await setMemberReadSeq(tx, targetRoomId, userId, { id: created.id, roomSeq });
-    return created;
+    return { message: created, created: true, idempotencyConflict: false, blocked: false };
   });
+
+  if (createdResult.blocked) {
+    res.status(403).json({ error: "Blocked users cannot message each other" });
+    return;
+  }
+  if (createdResult.idempotencyConflict) {
+    res.status(409).json({ error: "clientMessageId was already used for a different message" });
+    return;
+  }
+  const message = createdResult.message!;
 
   const [sender] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   const memberReadSeqs = await getRoomMemberReadSeqs(targetRoomId);
   const payload = await serializeMessage(message, userId, memberReadSeqs);
   res.status(201).json(payload);
 
-  if (source.type === "text") {
-    void scheduleLinkPreview(targetRoomId, message.id, source.content, userId, req.log).catch((err) =>
+  if (createdResult.created && forwarded.value.type === "text") {
+    void scheduleLinkPreview(targetRoomId, message.id, forwarded.value.content, userId, req.log).catch((err) =>
       req.log.error({ err, roomId: targetRoomId, messageId: message.id }, "Failed to schedule forwarded link preview"),
     );
   }
-  dispatchMessageRealtimeAndPush({
-    roomId: targetRoomId,
-    actorUserId: userId,
-    message,
-    sender,
-    preview,
-    log: req.log,
-  });
+  if (createdResult.created) {
+    dispatchMessageRealtimeAndPush({
+      roomId: targetRoomId,
+      actorUserId: userId,
+      message,
+      sender,
+      preview,
+      log: req.log,
+    });
+  }
 });
 
 router.post("/rooms/:id/messages/:messageId/sticker", requireAuth, async (req, res): Promise<void> => {
@@ -710,7 +794,7 @@ router.post("/rooms/:id/messages/:messageId/sticker", requireAuth, async (req, r
   const messageId = Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId;
   const { code } = req.body ?? {};
 
-  if (typeof code !== "string" || !STICKER_CODE_PATTERN.test(code)) {
+  if (typeof code !== "string" || !isValidStickerCode(code)) {
     res.status(400).json({ error: "invalid sticker" });
     return;
   }

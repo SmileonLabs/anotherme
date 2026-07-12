@@ -19,6 +19,28 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import LogoBlack from "../../assets/images/logo_black.svg";
 import LogoWhite from "../../assets/images/logo_white.svg";
 
+function authErrorMessage(error: unknown): string {
+  if (error && typeof error === "object") {
+    const err = error as {
+      message?: string;
+      longMessage?: string;
+      long_message?: string;
+      errors?: Array<{ message?: string; longMessage?: string; long_message?: string }>;
+    };
+    const first = err.errors?.[0];
+    return (
+      first?.longMessage ??
+      first?.long_message ??
+      first?.message ??
+      err.longMessage ??
+      err.long_message ??
+      err.message ??
+      "로그인 요청에 실패했어요. 잠시 후 다시 시도해 주세요."
+    );
+  }
+  return "로그인 요청에 실패했어요. 잠시 후 다시 시도해 주세요.";
+}
+
 export default function SignInScreen() {
   const { signIn, errors, fetchStatus } = useSignIn();
   const router = useRouter();
@@ -29,47 +51,69 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleSignIn = async () => {
-    const { error } = await signIn.password({ emailAddress: email, password });
-    if (error) return;
-
-    if (signIn.status === "complete") {
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) return;
-          const url = decorateUrl("/");
-          if (url.startsWith("http")) {
-            if (typeof window !== "undefined") window.location.href = url;
-          } else {
-            router.replace(url as Href);
-          }
-        },
-      });
-    } else if (signIn.status === "needs_client_trust") {
-      const emailCodeFactor = signIn.supportedSecondFactors?.find(
-        (f) => f.strategy === "email_code",
-      );
-      if (emailCodeFactor) {
-        await signIn.mfa.sendEmailCode();
+    setFormError(null);
+    try {
+      const { error } = await signIn.password({ identifier: email.trim(), password });
+      if (error) {
+        setFormError(authErrorMessage(error));
+        return;
       }
+
+      if (signIn.status === "complete") {
+        await signIn.finalize({
+          navigate: ({ session, decorateUrl }) => {
+            if (session?.currentTask) return;
+            const url = decorateUrl("/");
+            if (url.startsWith("http")) {
+              if (typeof window !== "undefined") window.location.href = url;
+            } else {
+              router.replace(url as Href);
+            }
+          },
+        });
+        return;
+      }
+
+      if (signIn.status === "needs_client_trust") {
+        const emailCodeFactor = signIn.supportedSecondFactors?.find(
+          (f) => f.strategy === "email_code",
+        );
+        if (emailCodeFactor) {
+          await signIn.mfa.sendEmailCode();
+          return;
+        }
+      }
+
+      setFormError(`로그인을 완료하지 못했어요. 현재 상태: ${signIn.status ?? "unknown"}`);
+    } catch (err) {
+      setFormError(authErrorMessage(err));
     }
   };
 
   const handleVerify = async () => {
-    await signIn.mfa.verifyEmailCode({ code });
-    if (signIn.status === "complete") {
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) return;
-          const url = decorateUrl("/");
-          if (url.startsWith("http")) {
-            if (typeof window !== "undefined") window.location.href = url;
-          } else {
-            router.replace(url as Href);
-          }
-        },
-      });
+    setFormError(null);
+    try {
+      await signIn.mfa.verifyEmailCode({ code });
+      if (signIn.status === "complete") {
+        await signIn.finalize({
+          navigate: ({ session, decorateUrl }) => {
+            if (session?.currentTask) return;
+            const url = decorateUrl("/");
+            if (url.startsWith("http")) {
+              if (typeof window !== "undefined") window.location.href = url;
+            } else {
+              router.replace(url as Href);
+            }
+          },
+        });
+      } else {
+        setFormError(`인증을 완료하지 못했어요. 현재 상태: ${signIn.status ?? "unknown"}`);
+      }
+    } catch (err) {
+      setFormError(authErrorMessage(err));
     }
   };
 
@@ -94,6 +138,9 @@ export default function SignInScreen() {
           />
           {errors?.fields?.code ? (
             <Text style={[styles.error, { color: colors.destructive }]}>{errors.fields.code.message}</Text>
+          ) : null}
+          {formError ? (
+            <Text style={[styles.error, { color: colors.destructive }]}>{formError}</Text>
           ) : null}
           <Pressable
             style={({ pressed }) => [styles.button, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
@@ -142,16 +189,16 @@ export default function SignInScreen() {
 
         <View style={styles.form}>
           <View>
-            <Text style={[styles.label, { color: colors.foreground }]}>이메일</Text>
+            <Text style={[styles.label, { color: colors.foreground }]}>이메일 또는 아이디</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.input, color: colors.foreground, borderColor: colors.border }]}
               value={email}
               onChangeText={setEmail}
-              placeholder="이메일 주소"
+              placeholder="이메일 주소 또는 아이디"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="email-address"
               autoCapitalize="none"
-              autoComplete="email"
+              autoComplete="username"
             />
             {errors?.fields?.identifier ? (
               <Text style={[styles.error, { color: colors.destructive }]}>{errors.fields.identifier.message}</Text>
@@ -173,6 +220,10 @@ export default function SignInScreen() {
             ) : null}
           </View>
 
+          {formError ? (
+            <Text style={[styles.error, { color: colors.destructive }]}>{formError}</Text>
+          ) : null}
+
           <Link href="/(auth)/forgot-password" asChild>
             <Pressable>
               <Text style={[styles.forgot, { color: colors.primary }]}>비밀번호를 잊으셨나요?</Text>
@@ -182,10 +233,10 @@ export default function SignInScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.button,
-              { backgroundColor: colors.primary, opacity: !email || !password || fetchStatus === "fetching" || pressed ? 0.7 : 1 },
+              { backgroundColor: colors.primary, opacity: !email.trim() || !password || fetchStatus === "fetching" || pressed ? 0.7 : 1 },
             ]}
             onPress={handleSignIn}
-            disabled={!email || !password || fetchStatus === "fetching"}
+            disabled={!email.trim() || !password || fetchStatus === "fetching"}
           >
             {fetchStatus === "fetching" ? (
               <ActivityIndicator color="#fff" />

@@ -10,7 +10,14 @@ import { crossAlert } from "@/lib/crossAlert";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
-import { LIFE_QUEST_THEMES, themeMeta, type LifeQuestThemeKey } from "@/constants/lifeQuest";
+import {
+  LIFE_QUEST_THEMES,
+  PROMOTED_LIFE_QUEST_THEMES,
+  themeMeta,
+  type LifeQuestThemeKey,
+} from "@/constants/lifeQuest";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
 
 export default function LifeQuestLobbyScreen() {
   const router = useRouter();
@@ -19,19 +26,32 @@ export default function LifeQuestLobbyScreen() {
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
 
-  const { data: active, refetch, isRefetching } = useGetActiveLifeQuest();
+  const { mode, equippedStar, starUnlocked, setMode, isChanging } = usePlayMode();
+  const missionReady = starUnlocked && !!equippedStar && mode === "star";
+  const { state: torimia, requirements, refetch: refetchTorimia, openTorimia, isOpening } = useTorimia();
+  const { data: active, refetch, isRefetching } = useGetActiveLifeQuest({
+    query: { enabled: missionReady, queryKey: ["activeLifeQuest", equippedStar?.id ?? "none"] },
+  });
   const createQuest = useCreateLifeQuest();
   const [starting, setStarting] = useState<string | null>(null);
 
   useFocusEffect(
     React.useCallback(() => {
-      refetch();
-    }, [refetch]),
+      refetchTorimia();
+      if (missionReady) refetch();
+    }, [missionReady, refetch, refetchTorimia]),
   );
 
   const activeQuest = active?.quest ?? null;
+  const promoted = !!torimia?.promoted || equippedStar?.stage === "promoted";
+  const missionLabel = promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const themeOptions = promoted ? PROMOTED_LIFE_QUEST_THEMES : LIFE_QUEST_THEMES;
 
   const start = async (theme: LifeQuestThemeKey | null) => {
+    if (!missionReady) {
+      crossAlert("STAR 모드 필요", `${missionLabel}은 STAR 모드에서만 진행할 수 있어요.`);
+      return;
+    }
     if (createQuest.isPending) return;
     setStarting(theme ?? "random");
     try {
@@ -40,7 +60,7 @@ export default function LifeQuestLobbyScreen() {
       });
       router.push({ pathname: "/dungeon/[id]", params: { id: quest.id } });
     } catch {
-      crossAlert("오류", "라이프 퀘스트를 생성하지 못했어요. 잠시 후 다시 시도해주세요.");
+      crossAlert("오류", `${missionLabel}을 생성하지 못했어요. 잠시 후 다시 시도해주세요.`);
     } finally {
       setStarting(null);
     }
@@ -51,7 +71,7 @@ export default function LifeQuestLobbyScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.brand, { color: colors.foreground }]}>라이프 퀘스트</Text>
+        <Text style={[styles.brand, { color: colors.foreground }]}>{missionLabel}</Text>
       </View>
 
       <CustomScrollView
@@ -62,10 +82,42 @@ export default function LifeQuestLobbyScreen() {
         }
       >
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-          현실 같은 상황 속 선택으로 또 다른 나를 성장시켜요. 정답은 없고, 모든 선택이 나를 만들어요.
+          {promoted
+            ? "공식 STAR로 무대와 팬클럽 활동을 확장해요. 팬들과 함께 세계관과 기록을 쌓아갑니다."
+            : "연습생 STAR로 꿈을 키우고 토르미아의 문을 준비해요. 문이 열리면 공식 STAR 활동과 팬클럽이 열립니다."}
         </Text>
 
-        {activeQuest ? (
+        {!missionReady ? (
+          <MissionGate
+            colors={colors}
+            starUnlocked={starUnlocked}
+            hasStar={!!equippedStar}
+            mode={mode}
+            missionLabel={missionLabel}
+            isChanging={isChanging}
+            onSwitchStar={() => setMode("star")}
+          />
+        ) : (
+          <TorimiaPanel
+            colors={colors}
+            starName={equippedStar?.displayName ?? "STAR"}
+            promoted={promoted}
+            canOpen={!!torimia?.canOpen}
+            requirements={requirements}
+            isOpening={isOpening}
+            onOpen={async () => {
+              try {
+                await openTorimia();
+                await refetchTorimia();
+                crossAlert("토르미아 개방", "토르미아의 문이 열렸어요. 이제 공식 STAR로 승급했어요.");
+              } catch {
+                crossAlert("아직 부족해요", "토르미아 조건을 모두 채운 뒤 다시 시도해 주세요.");
+              }
+            }}
+          />
+        )}
+
+        {missionReady && activeQuest ? (
           <Pressable
             onPress={() =>
               router.push({ pathname: "/dungeon/[id]", params: { id: activeQuest.id } })
@@ -79,10 +131,10 @@ export default function LifeQuestLobbyScreen() {
               style={styles.ctaCard}
             >
               <View style={[styles.ctaIcon, { backgroundColor: isDark ? "#3A2618" : "#FFF0E1" }]}>
-                <Feather name={themeMeta(activeQuest.theme).icon} size={24} color="#FB923C" />
+                <Feather name={themeMeta(activeQuest.theme, promoted).icon} size={24} color="#FB923C" />
               </View>
               <View style={styles.ctaBody}>
-                <Text style={[styles.ctaLabel, { color: colors.mutedForeground }]}>이어서 하기</Text>
+                <Text style={[styles.ctaLabel, { color: colors.mutedForeground }]}>{missionLabel} 이어서 하기</Text>
                 <Text style={[styles.ctaTitle, { color: colors.foreground }]} numberOfLines={1}>
                   {activeQuest.title}
                 </Text>
@@ -98,10 +150,10 @@ export default function LifeQuestLobbyScreen() {
 
         <Pressable
           onPress={() => start(null)}
-          disabled={busy}
+          disabled={busy || !missionReady}
           style={({ pressed }) => [
             styles.randomBtn,
-            { backgroundColor: colors.primary, opacity: pressed || busy ? 0.85 : 1 },
+            { backgroundColor: colors.primary, opacity: pressed || busy || !missionReady ? 0.55 : 1 },
           ]}
         >
           {starting === "random" ? (
@@ -109,26 +161,26 @@ export default function LifeQuestLobbyScreen() {
           ) : (
             <>
               <Feather name="shuffle" size={18} color="#fff" />
-              <Text style={styles.randomBtnText}>랜덤 퀘스트 시작</Text>
+              <Text style={styles.randomBtnText}>랜덤 {missionLabel} 시작</Text>
             </>
           )}
         </Pressable>
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>테마 선택</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{missionLabel} 테마</Text>
         <View style={styles.grid}>
-          {LIFE_QUEST_THEMES.map((t) => {
+          {themeOptions.map((t) => {
             const loading = starting === t.key;
             return (
               <Pressable
                 key={t.key}
                 onPress={() => start(t.key)}
-                disabled={busy}
+                disabled={busy || !missionReady}
                 style={({ pressed }) => [
                   styles.themeCard,
                   {
                     backgroundColor: colors.card,
                     borderColor: colors.border,
-                    opacity: pressed || (busy && !loading) ? 0.6 : 1,
+                    opacity: pressed || !missionReady || (busy && !loading) ? 0.6 : 1,
                   },
                 ]}
               >
@@ -152,6 +204,121 @@ export default function LifeQuestLobbyScreen() {
   );
 }
 
+function MissionGate({
+  colors,
+  starUnlocked,
+  hasStar,
+  mode,
+  missionLabel,
+  isChanging,
+  onSwitchStar,
+}: {
+  colors: ReturnType<typeof useColors>;
+  starUnlocked: boolean;
+  hasStar: boolean;
+  mode: "fan" | "star";
+  missionLabel: string;
+  isChanging: boolean;
+  onSwitchStar: () => void;
+}) {
+  const title = !starUnlocked || !hasStar ? "STAR NFT 장착이 필요해요" : "STAR 모드로 전환해 주세요";
+  const body = !starUnlocked || !hasStar
+    ? "미션은 STAR 캐릭터가 자신의 꿈을 키우는 공간이에요. 마이페이지에서 지갑 인증과 NFT 장착을 먼저 완료해 주세요."
+    : `현재 FAN 모드입니다. ${missionLabel}은 STAR 모드에서만 진행할 수 있어요.`;
+
+  return (
+    <View style={[styles.gateCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.gateIcon, { backgroundColor: colors.primary + "18" }]}>
+        <Feather name="lock" size={22} color={colors.primary} />
+      </View>
+      <Text style={[styles.gateTitle, { color: colors.foreground }]}>{title}</Text>
+      <Text style={[styles.gateBody, { color: colors.mutedForeground }]}>{body}</Text>
+      {starUnlocked && hasStar && mode !== "star" ? (
+        <Pressable
+          onPress={onSwitchStar}
+          disabled={isChanging}
+          style={[styles.gateButton, { backgroundColor: colors.primary, opacity: isChanging ? 0.7 : 1 }]}
+        >
+          {isChanging ? <ActivityIndicator color="#fff" /> : <Text style={styles.gateButtonText}>STAR 모드로 전환</Text>}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function TorimiaPanel({
+  colors,
+  starName,
+  promoted,
+  canOpen,
+  requirements,
+  isOpening,
+  onOpen,
+}: {
+  colors: ReturnType<typeof useColors>;
+  starName: string;
+  promoted: boolean;
+  canOpen: boolean;
+  requirements: TorimiaRequirement[];
+  isOpening: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <View style={[styles.torimiaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.torimiaHeader}>
+        <View style={[styles.torimiaIcon, { backgroundColor: "#8B5CF622" }]}>
+          <Feather name={promoted ? "star" : "sunrise"} size={22} color="#8B5CF6" />
+        </View>
+        <View style={styles.torimiaTitleWrap}>
+          <Text style={[styles.torimiaLabel, { color: colors.mutedForeground }]}>토르미아 시스템</Text>
+          <Text style={[styles.torimiaTitle, { color: colors.foreground }]}>
+            {promoted ? `${starName} 공식 STAR 승급 완료` : `${starName}는 연습생 STAR예요`}
+          </Text>
+        </View>
+      </View>
+      <Text style={[styles.torimiaBody, { color: colors.mutedForeground }]}>
+        {promoted
+          ? "팬클럽 생성과 공식 STAR 미션이 열렸어요. 이제 팬들과 함께 성장할 수 있습니다."
+          : "연습생 STAR 미션을 완료하고 스탯을 키우면 토르미아의 문이 열립니다. 문이 열리면 공식 STAR로 승급해요."}
+      </Text>
+      {requirements.length > 0 ? (
+        <View style={styles.requirementList}>
+          {requirements.map((req) => (
+            <View key={req.key} style={styles.requirementRow}>
+              <Feather
+                name={req.met ? "check-circle" : "circle"}
+                size={16}
+                color={req.met ? "#10B981" : colors.mutedForeground}
+              />
+              <Text style={[styles.requirementText, { color: colors.foreground }]}>
+                {req.label} {Math.min(req.current, req.target)} / {req.target}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {!promoted ? (
+        <Pressable
+          onPress={onOpen}
+          disabled={!canOpen || isOpening}
+          style={[
+            styles.torimiaButton,
+            { backgroundColor: canOpen ? "#8B5CF6" : colors.border, opacity: isOpening ? 0.75 : 1 },
+          ]}
+        >
+          {isOpening ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={[styles.torimiaButtonText, { color: canOpen ? "#fff" : colors.mutedForeground }]}>
+              토르미아 문 열기
+            </Text>
+          )}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
@@ -163,6 +330,44 @@ const styles = StyleSheet.create({
   },
   brand: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, marginTop: 4, marginBottom: 14 },
+  gateCard: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 14,
+  },
+  gateIcon: { width: 50, height: 50, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  gateTitle: { fontSize: 17, fontFamily: "Inter_700Bold", textAlign: "center" },
+  gateBody: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, textAlign: "center" },
+  gateButton: {
+    minHeight: 46,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  gateButtonText: { color: "#fff", fontSize: 14, fontFamily: "Inter_700Bold" },
+  torimiaCard: {
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    gap: 12,
+    marginBottom: 14,
+  },
+  torimiaHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  torimiaIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  torimiaTitleWrap: { flex: 1, gap: 2 },
+  torimiaLabel: { fontSize: 11, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 },
+  torimiaTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  torimiaBody: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  requirementList: { gap: 8 },
+  requirementRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  requirementText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  torimiaButton: { minHeight: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  torimiaButtonText: { fontSize: 14, fontFamily: "Inter_700Bold" },
   ctaCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 18, padding: 16, marginBottom: 14 },
   ctaIcon: { width: 52, height: 52, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   ctaBody: { flex: 1, gap: 2 },

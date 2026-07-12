@@ -1,5 +1,7 @@
 import * as DocumentPicker from "expo-document-picker";
+import { Platform } from "react-native";
 import { requestUploadUrl } from "@workspace/api-client-react";
+import { putBlob, uploadBlobViaApi, type UploadOptions } from "./uploadImage";
 
 export interface UploadedFile {
   /** Canonical object path to persist (`/objects/<id>`). */
@@ -22,12 +24,37 @@ export class FileTooLargeError extends Error {
   }
 }
 
+export async function uploadFileBlob(
+  blob: Blob,
+  name = `file-${Date.now()}`,
+  mimeType = blob.type || "application/octet-stream",
+  options: UploadOptions = {},
+): Promise<UploadedFile> {
+  const size = blob.size ?? 0;
+  if (size > MAX_FILE_BYTES) throw new FileTooLargeError();
+
+  if (Platform.OS === "web") {
+    const objectPath = await uploadBlobViaApi(blob, name, mimeType, options);
+    return { objectPath, name, size, mimeType };
+  }
+
+  const { uploadURL, objectPath } = await requestUploadUrl({
+    name,
+    size: size || 1,
+    contentType: mimeType,
+  });
+
+  await putBlob(uploadURL, blob, mimeType, options);
+
+  return { objectPath, name, size, mimeType };
+}
+
 /**
  * Open the system document picker, upload the chosen file straight to object
  * storage via a presigned URL, and return its canonical object path plus the
  * original filename/size for display. Returns `null` when the user cancels.
  */
-export async function pickAndUploadFile(): Promise<UploadedFile | null> {
+export async function pickAndUploadFile(options: UploadOptions = {}): Promise<UploadedFile | null> {
   const result = await DocumentPicker.getDocumentAsync({
     type: "*/*",
     copyToCacheDirectory: true,
@@ -42,19 +69,5 @@ export async function pickAndUploadFile(): Promise<UploadedFile | null> {
 
   const mimeType = asset.mimeType || blob.type || "application/octet-stream";
   const name = asset.name || `file-${Date.now()}`;
-
-  const { uploadURL, objectPath } = await requestUploadUrl({
-    name,
-    size: size || 1,
-    contentType: mimeType,
-  });
-
-  const put = await fetch(uploadURL, {
-    method: "PUT",
-    body: blob,
-    headers: { "Content-Type": mimeType },
-  });
-  if (!put.ok) throw new Error(`upload-failed-${put.status}`);
-
-  return { objectPath, name, size, mimeType };
+  return uploadFileBlob(blob, name, mimeType, options);
 }

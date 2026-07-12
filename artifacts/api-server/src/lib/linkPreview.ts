@@ -1,11 +1,8 @@
 import net from "node:net";
 import { eq } from "drizzle-orm";
-import {
-  chatRoomMembersTable,
-  db,
-  messageLinkPreviewsTable,
-} from "@workspace/db";
+import { db, messageLinkPreviewsTable } from "@workspace/db";
 import { publishRealtimeEvent } from "./realtime";
+import { getRoomDeliveryRecipients } from "./chatDelivery";
 
 const URL_RE = /https?:\/\/[^\s<>'"]+/i;
 const MAX_TITLE = 140;
@@ -99,15 +96,12 @@ async function publishMessageUpdated(
   log?: LoggerLike,
 ): Promise<void> {
   try {
-    const members = await db
-      .select({ userId: chatRoomMembersTable.userId })
-      .from(chatRoomMembersTable)
-      .where(eq(chatRoomMembersTable.roomId, roomId));
+    const recipients = await getRoomDeliveryRecipients(roomId, actorUserId);
     await publishRealtimeEvent({
       type: "message.updated",
       roomId,
       actorUserId,
-      userIds: members.map((m) => m.userId),
+      userIds: recipients.realtimeUserIds,
       data: { messageId },
     });
   } catch (err) {

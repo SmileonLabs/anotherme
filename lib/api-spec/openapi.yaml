@@ -1132,7 +1132,7 @@ paths:
     get:
       operationId: fetchRoomMessages
       tags: [messages]
-      summary: List messages in a room (last 50)
+      summary: List messages in a room using a room sequence cursor
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1140,6 +1140,19 @@ paths:
           required: true
           schema:
             type: string
+        - name: beforeSeq
+          in: query
+          description: Return messages with roomSeq lower than this cursor.
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          description: Page size, from 1 through 100 (defaults to 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         "200":
           description: Messages
@@ -5289,10 +5302,13 @@ components:
       properties:
         type:
           type: string
+          enum: [direct, group]
         name:
           type: ["string", "null"]
+          maxLength: 120
         memberIds:
           type: array
+          maxItems: 100
           items:
             type: string
 
@@ -5307,19 +5323,32 @@ components:
 
     Message:
       type: object
-      required: [id, roomId, senderId, type, content, createdAt]
+      required: [id, roomId, roomSeq, senderId, authorKind, type, content, createdAt]
       properties:
         id:
           type: string
         roomId:
           type: string
+        roomSeq:
+          type: integer
         senderId:
+          type: string
+        authorKind:
           type: string
         type:
           type: string
         content:
           type: string
         replyToMessageId:
+          type: ["string", "null"]
+        anotherMeSessionId:
+          type: ["string", "null"]
+        callId:
+          type: ["string", "null"]
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: {}
+        clientMessageId:
           type: ["string", "null"]
         deletedAt:
           type: ["string", "null"]
@@ -5398,10 +5427,21 @@ components:
       properties:
         content:
           type: string
+          maxLength: 4096
         type:
           type: string
+          enum: [text, image, file, sticker]
         replyToMessageId:
           type: ["string", "null"]
+          format: uuid
+        metadata:
+          type: ["object", "null"]
+          maxProperties: 20
+          additionalProperties: {}
+        clientMessageId:
+          type: ["string", "null"]
+          minLength: 1
+          maxLength: 128
 
     DeleteMessageInput:
       type: object
@@ -5424,6 +5464,10 @@ components:
       properties:
         targetRoomId:
           type: string
+        clientMessageId:
+          type: ["string", "null"]
+          minLength: 1
+          maxLength: 128
 
     StickerBadgeInput:
       type: object
@@ -5986,7 +6030,6 @@ components:
         [
           ringing,
           active,
-          accepted,
           declined,
           missed,
           cancelled,

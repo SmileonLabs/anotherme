@@ -41,7 +41,7 @@ export default function ClanWarsScreen() {
             style={[styles.createBtn, { backgroundColor: colors.primary }]}
           >
             <Feather name="plus" size={16} color="#fff" />
-            <Text style={styles.createText}>가문전 만들기</Text>
+            <Text style={styles.createText}>팬클럽전 만들기</Text>
           </Pressable>
         ) : null}
 
@@ -52,7 +52,7 @@ export default function ClanWarsScreen() {
         ) : isError ? (
           <View style={styles.center}>
             <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-              가문전 목록을 불러오지 못했어요.
+              팬클럽전 목록을 불러오지 못했어요.
             </Text>
             <Pressable
               onPress={() => refetch()}
@@ -66,8 +66,8 @@ export default function ClanWarsScreen() {
             <Feather name="zap" size={20} color={colors.mutedForeground} />
             <Text style={[styles.muted, { color: colors.mutedForeground }]}>
               {canCreate
-                ? "아직 가문전이 없어요.\n다른 가문에 첫 도전장을 던져보세요."
-                : "아직 가문전이 없어요.\n가문장·원로가 도전을 열 수 있어요."}
+                ? "아직 팬클럽전이 없어요.\n다른 팬클럽에 첫 도전장을 던져보세요."
+                : "아직 팬클럽전이 없어요.\n팬클럽장·원로가 도전을 열 수 있어요."}
             </Text>
             {canCreate ? (
               <Pressable
@@ -78,7 +78,7 @@ export default function ClanWarsScreen() {
                 ]}
               >
                 <Feather name="zap" size={14} color={colors.background} />
-                <Text style={[styles.emptyCtaText, { color: colors.background }]}>가문전 열기</Text>
+                <Text style={[styles.emptyCtaText, { color: colors.background }]}>팬클럽전 열기</Text>
               </Pressable>
             ) : null}
           </View>
@@ -86,7 +86,7 @@ export default function ClanWarsScreen() {
           <>
             <Section title="공개 도전" wars={open} myClanId={myClanId} colors={colors} router={router} />
             <Section title="진행 중" wars={ongoing} myClanId={myClanId} colors={colors} router={router} />
-            <Section title="지난 가문전" wars={done} myClanId={myClanId} colors={colors} router={router} />
+            <Section title="지난 팬클럽전" wars={done} myClanId={myClanId} colors={colors} router={router} />
           </>
         )}
       </CustomScrollView>
@@ -155,7 +155,7 @@ function WarCard({
         {war.topic}
       </Text>
       <Text style={[styles.cardClans, { color: colors.mutedForeground }]} numberOfLines={1}>
-        {war.challengerClanName ?? "도전 가문"}
+        {war.challengerClanName ?? "도전 팬클럽"}
         <Text style={{ color: colors.primary }}> vs </Text>
         {war.opponentClanName ?? "상대 모집 중"}
       </Text>
