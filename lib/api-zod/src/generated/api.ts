@@ -1450,6 +1450,26 @@ export const RequestUploadUrlResponse = zod.object({
 
 
 /**
+ * @summary Issue a short-lived authorized URL for a private object
+ */
+export const requestMediaUrlBodyObjectPathMin = 10;
+export const requestMediaUrlBodyObjectPathMax = 1024;
+
+
+export const requestMediaUrlBodyObjectPathRegExp = new RegExp('^\/objects');
+
+
+export const RequestMediaUrlBody = zod.object({
+  "objectPath": zod.string().min(requestMediaUrlBodyObjectPathMin).max(requestMediaUrlBodyObjectPathMax).regex(requestMediaUrlBodyObjectPathRegExp)
+})
+
+export const RequestMediaUrlResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * Requires a valid short-lived media ticket in the `ticket` query parameter.
  * @summary Serve an object entity from PRIVATE_OBJECT_DIR
  */
 export const GetStorageObjectParams = zod.object({

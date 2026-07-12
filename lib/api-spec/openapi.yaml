@@ -1635,11 +1635,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/media-url:
+    post:
+      tags: [Storage]
+      operationId: requestMediaUrl
+      summary: Issue a short-lived authorized URL for a private object
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaUrlRequest"
+      responses:
+        "200":
+          description: Short-lived media URL issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaUrlResponse"
+        "400": { description: Invalid request. }
+        "401": { description: Authentication required. }
+        "404": { description: Object not found or inaccessible. }
+        "429": { description: Too many requests. }
+        "503": { description: Media access is temporarily unavailable. }
+
   /storage/objects/{path}:
     get:
       tags: [Storage]
       operationId: getStorageObject
       summary: Serve an object entity from PRIVATE_OBJECT_DIR
+      description: Requires a valid short-lived media ticket in the `ticket` query parameter.
       parameters:
         - name: path
           in: path
@@ -4829,6 +4855,21 @@ components:
           type: string
         metadata:
           $ref: "#/components/schemas/UploadUrlRequest"
+    MediaUrlRequest:
+      type: object
+      required: [objectPath]
+      properties:
+        objectPath:
+          type: string
+          minLength: 10
+          maxLength: 1024
+          pattern: ^/objects/
+    MediaUrlResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
     ErrorEnvelope:
       type: object
       required: [error]

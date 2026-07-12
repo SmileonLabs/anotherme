@@ -151,6 +151,8 @@ export * from './listClanWarsStatus';
 export * from './listPresenceUsersParams';
 export * from './listPvtTransactionsParams';
 export * from './listStarFeedPostsParams';
+export * from './mediaUrlRequest';
+export * from './mediaUrlResponse';
 export * from './message';
 export * from './messageInput';
 export * from './messageInputMetadata';

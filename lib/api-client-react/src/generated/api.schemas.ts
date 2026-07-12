@@ -965,6 +965,19 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export interface MediaUrlRequest {
+  /**
+     * @minLength 10
+     * @maxLength 1024
+     * @pattern ^/objects/
+     */
+  objectPath: string;
+}
+
+export interface MediaUrlResponse {
+  url: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

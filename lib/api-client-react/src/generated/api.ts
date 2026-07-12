@@ -102,6 +102,8 @@ import type {
   ListPresenceUsersParams,
   ListPvtTransactionsParams,
   ListStarFeedPostsParams,
+  MediaUrlRequest,
+  MediaUrlResponse,
   Message,
   MessageInput,
   MuteInput,
@@ -5005,6 +5007,77 @@ export const useRequestUploadUrl = <TError = ErrorType<ErrorEnvelope>,
       return useMutation(getRequestUploadUrlMutationOptions(options));
     }
 
+export const getRequestMediaUrlUrl = () => {
+
+
+
+
+  return `/api/storage/media-url`
+}
+
+/**
+ * @summary Issue a short-lived authorized URL for a private object
+ */
+export const requestMediaUrl = async (mediaUrlRequest: MediaUrlRequest, options?: RequestInit): Promise<MediaUrlResponse> => {
+
+  return customFetch<MediaUrlResponse>(getRequestMediaUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      mediaUrlRequest,)
+  }
+);}
+
+
+
+
+export const getRequestMediaUrlMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMediaUrl>>, TError,{data: BodyType<MediaUrlRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestMediaUrl>>, TError,{data: BodyType<MediaUrlRequest>}, TContext> => {
+
+const mutationKey = ['requestMediaUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestMediaUrl>>, {data: BodyType<MediaUrlRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestMediaUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestMediaUrlMutationResult = NonNullable<Awaited<ReturnType<typeof requestMediaUrl>>>
+    export type RequestMediaUrlMutationBody = BodyType<MediaUrlRequest>
+    export type RequestMediaUrlMutationError = ErrorType<void>
+
+    /**
+ * @summary Issue a short-lived authorized URL for a private object
+ */
+export const useRequestMediaUrl = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMediaUrl>>, TError,{data: BodyType<MediaUrlRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestMediaUrl>>,
+        TError,
+        {data: BodyType<MediaUrlRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestMediaUrlMutationOptions(options));
+    }
+
 export const getGetStorageObjectUrl = (path: string,) => {
 
 
@@ -5014,6 +5087,7 @@ export const getGetStorageObjectUrl = (path: string,) => {
 }
 
 /**
+ * Requires a valid short-lived media ticket in the `ticket` query parameter.
  * @summary Serve an object entity from PRIVATE_OBJECT_DIR
  */
 export const getStorageObject = async (path: string, options?: RequestInit): Promise<Blob> => {
