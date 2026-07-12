@@ -22,12 +22,16 @@ function ClassicTabLayout() {
   const tabIcon = (
     ios: string,
     feather: keyof typeof Feather.glyphMap,
-  ) => ({ color }: { color: string }) =>
-    isIOS ? (
-      <SymbolView name={ios as any} tintColor={color} size={24} />
-    ) : (
-      <Feather name={feather} size={22} color={color} />
-    );
+  ) => ({ color, focused }: { color: string; focused: boolean }) => (
+    <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
+      {focused ? <View pointerEvents="none" style={styles.tabIconGlow} /> : null}
+      {isIOS ? (
+        <SymbolView name={ios as any} tintColor={color} size={24} />
+      ) : (
+        <Feather name={feather} size={22} color={color} />
+      )}
+    </View>
+  );
 
   return (
     <Tabs
@@ -112,3 +116,30 @@ export default function TabLayout() {
 
   return <ClassicTabLayout />;
 }
+
+const styles = StyleSheet.create({
+  tabIconWrap: {
+    width: 42,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabIconWrapActive: {
+    backgroundColor: "rgba(116, 45, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(190, 116, 255, 0.72)",
+    shadowColor: "#A64DFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  tabIconGlow: {
+    position: "absolute",
+    width: 30,
+    height: 24,
+    borderRadius: 15,
+    backgroundColor: "rgba(171, 75, 255, 0.34)",
+  },
+});
