@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import { mediaUri } from "@/lib/apiBase";
+import { useMediaUri } from "@/hooks/useMediaUri";
 
 interface AvatarProps {
   uri?: string | null;
@@ -34,10 +34,11 @@ function defaultAvatarFor(name: string) {
 }
 
 export function Avatar({ uri, name, size = 44 }: AvatarProps) {
-  if (uri) {
+  const resolvedUri = useMediaUri(uri);
+  if (resolvedUri) {
     return (
       <Image
-        source={{ uri: mediaUri(uri) }}
+        source={{ uri: resolvedUri }}
         style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
         contentFit="cover"
       />

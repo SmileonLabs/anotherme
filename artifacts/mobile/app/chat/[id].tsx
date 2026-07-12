@@ -854,7 +854,7 @@ export default function ChatScreen() {
             senderAvatar={(item.sender as any)?.profileImageUrl}
             time={formatMsgTime(item.createdAt)}
             type={item.type}
-            imageUri={item.type === "image" ? mediaUri(item.content) : undefined}
+            imageUri={item.type === "image" ? item.content : undefined}
             showSender={showSender}
             readLabel={readLabel}
             onJoinCall={handleJoinCall}

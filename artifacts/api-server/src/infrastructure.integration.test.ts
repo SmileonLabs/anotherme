@@ -6,6 +6,7 @@ const dependencies = runInfrastructureTests
       ...(await import("@workspace/db")),
       ...(await import("./lib/redis")),
       ...(await import("./lib/rateLimit")),
+      ...(await import("./lib/mediaTicket")),
       ...(await import("./routes/storage")),
     }
   : null;
@@ -16,7 +17,7 @@ describe("migrated infrastructure", () => {
     return;
   }
 
-  const { pool, closeRedisClients, redisReady, rateLimit, canReadPrivateObject } = dependencies!;
+  const { pool, closeRedisClients, redisReady, rateLimit, canReadPrivateObject, issueMediaTicket, validateMediaTicket } = dependencies!;
 
   afterAll(async () => {
     await closeRedisClients();
@@ -66,6 +67,13 @@ describe("migrated infrastructure", () => {
     expect(blocked.statusCode).toBe(429);
   });
 
+  it("binds reusable short-lived media tickets to one object path", async () => {
+    const objectPath = "/objects/uploads/ticket-test";
+    const ticket = await issueMediaTicket("00000000-0000-4000-8000-00000000a001", objectPath);
+    await expect(validateMediaTicket(ticket, objectPath)).resolves.toBe(true);
+    await expect(validateMediaTicket(ticket, `${objectPath}-other`)).resolves.toBe(false);
+  });
+
   it("allows private chat objects only to room members", async () => {
     const ownerId = "00000000-0000-4000-8000-00000000a001";
     const memberId = "00000000-0000-4000-8000-00000000a002";
@@ -85,6 +93,8 @@ describe("migrated infrastructure", () => {
       await expect(canReadPrivateObject(ownerId, objectPath)).resolves.toBe(true);
       await expect(canReadPrivateObject(memberId, objectPath)).resolves.toBe(true);
       await expect(canReadPrivateObject(outsiderId, objectPath)).resolves.toBe(false);
+      await pool.query("UPDATE messages SET deleted_at = now() WHERE room_id = $1", [roomId]);
+      await expect(canReadPrivateObject(ownerId, objectPath)).resolves.toBe(false);
     } finally {
       await pool.query("DELETE FROM chat_rooms WHERE id = $1", [roomId]);
       await pool.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[ownerId, memberId, outsiderId]]);

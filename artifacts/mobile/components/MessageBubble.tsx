@@ -17,7 +17,7 @@ import type {
 import { Avatar } from "./Avatar";
 import { StickerImage } from "./StickerImage";
 import { useColors } from "@/hooks/useColors";
-import { mediaUri } from "@/lib/apiBase";
+import { resolveMediaUri, useMediaUri } from "@/hooks/useMediaUri";
 import { parseFileContent, formatFileSize } from "@/lib/fileMessage";
 
 const IMAGE_WIDTH = 220;
@@ -107,6 +107,7 @@ function MessageBubbleComponent({
   onPressReply,
 }: MessageBubbleProps) {
   const colors = useColors();
+  const authorizedImageUri = useMediaUri(imageUri);
   const isDeleted = !!deletedAt;
   const isImage = !isDeleted && type === "image" && !!imageUri;
   const isSticker = !isDeleted && type === "sticker";
@@ -218,17 +219,17 @@ function MessageBubbleComponent({
   }
 
   const openImage = () => {
-    if (!imageUri) return;
+    if (!authorizedImageUri) return;
     if (Platform.OS === "web") {
-      window.open(imageUri, "_blank");
+      window.open(authorizedImageUri, "_blank");
     } else {
-      Linking.openURL(imageUri).catch(() => {});
+      Linking.openURL(authorizedImageUri).catch(() => {});
     }
   };
 
   const openFile = async () => {
     if (!fileMeta) return;
-    const uri = mediaUri(fileMeta.path);
+    const uri = await resolveMediaUri(fileMeta.path);
     if (Platform.OS === "web") {
       const a = document.createElement("a");
       a.href = uri;
@@ -407,7 +408,7 @@ function MessageBubbleComponent({
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
       <Image
-        source={{ uri: imageUri }}
+        source={{ uri: authorizedImageUri }}
         style={[
           styles.image,
           {

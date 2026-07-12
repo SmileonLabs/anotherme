@@ -6,10 +6,11 @@ import {
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { requireAuth } from "../lib/auth";
-import { and, eq, like, or } from "drizzle-orm";
+import { and, eq, isNull, like, or } from "drizzle-orm";
 import { chatRoomMembersTable, db, messagesTable, usersTable } from "@workspace/db";
 import { rateLimit } from "../lib/rateLimit";
 import { hasReadableObjectReference } from "../lib/objectAccessPolicy";
+import { issueMediaTicket, validateMediaTicket } from "../lib/mediaTicket";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -33,9 +34,12 @@ export async function canReadPrivateObject(userId: string, objectPath: string): 
       ),
     )
     .where(
-      or(
-        and(eq(messagesTable.type, "image"), eq(messagesTable.content, objectPath)),
-        and(eq(messagesTable.type, "file"), like(messagesTable.content, `%${objectPath}%`)),
+      and(
+        isNull(messagesTable.deletedAt),
+        or(
+          and(eq(messagesTable.type, "image"), eq(messagesTable.content, objectPath)),
+          and(eq(messagesTable.type, "file"), like(messagesTable.content, `%${objectPath}%`)),
+        ),
       ),
     )
     .limit(20);
@@ -188,12 +192,30 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  * These are served from a separate path from /public-objects and can optionally
  * be protected with authentication or ACL checks based on the use case.
  */
-router.get("/storage/objects/*path", requireAuth, async (req: Request, res: Response) => {
+router.post("/storage/media-url", requireAuth, rateLimit({ name: "media-url", limit: 120, windowSeconds: 60 }), async (req: Request, res: Response) => {
+  const objectPath = typeof req.body?.objectPath === "string" ? req.body.objectPath : "";
+  if (objectPath.length > 1_024 || !objectPath.startsWith("/objects/") || !(await canReadPrivateObject(req.dbUser!.id, objectPath))) {
+    res.status(404).json({ error: "Object not found" });
+    return;
+  }
+  try {
+    const ticket = await issueMediaTicket(req.dbUser!.id, objectPath);
+    const suffix = objectPath.slice("/objects/".length);
+    res.set("Cache-Control", "no-store");
+    res.json({ url: `/api/storage/objects/${suffix}?ticket=${encodeURIComponent(ticket)}` });
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to issue media ticket");
+    res.status(503).json({ error: "Media access is temporarily unavailable" });
+  }
+});
+
+router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
-    if (!(await canReadPrivateObject(req.dbUser!.id, objectPath))) {
+    const ticket = typeof req.query.ticket === "string" ? req.query.ticket : "";
+    if (!(await validateMediaTicket(ticket, objectPath))) {
       res.status(404).json({ error: "Object not found" });
       return;
     }
