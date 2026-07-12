@@ -1,7 +1,5 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Redirect, Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
 import React from "react";
@@ -11,33 +9,6 @@ import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 import { useUnreadMessageCount } from "@/hooks/useUnreadMessageCount";
-
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>홈</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="feed">
-        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
-        <Label>피드</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="chats">
-        <Icon sf={{ default: "bubble.left.and.bubble.right", selected: "bubble.left.and.bubble.right.fill" }} />
-        <Label>채팅</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="quests">
-        <Icon sf={{ default: "target", selected: "target" }} />
-        <Label>퀘스트</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="persona">
-        <Icon sf={{ default: "person", selected: "person.fill" }} />
-        <Label>마이</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
 
 function ClassicTabLayout() {
   const colors = useColors();
@@ -64,12 +35,12 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        tabBarLabelStyle: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+        tabBarLabelStyle: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : colors.background,
+          backgroundColor: isIOS ? "transparent" : "#070711",
           borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: colors.border,
+          borderTopColor: "rgba(157, 99, 255, 0.32)",
           elevation: 0,
           ...(isWeb ? { height: 84 + pwaBottom, paddingBottom: pwaBottom } : {}),
         },
@@ -92,8 +63,12 @@ function ClassicTabLayout() {
         options={{ title: "홈", tabBarIcon: tabIcon("house", "home") }}
       />
       <Tabs.Screen
+        name="search"
+        options={{ title: "검색", tabBarIcon: tabIcon("magnifyingglass", "search") }}
+      />
+      <Tabs.Screen
         name="feed"
-        options={{ title: "피드", tabBarIcon: tabIcon("sparkles", "star") }}
+        options={{ title: "피드", tabBarIcon: tabIcon("sparkles", "grid") }}
       />
       <Tabs.Screen
         name="chats"
@@ -119,7 +94,7 @@ function ClassicTabLayout() {
       />
       <Tabs.Screen
         name="quests"
-        options={{ title: "퀘스트", tabBarIcon: tabIcon("target", "target") }}
+        options={{ title: "미션", tabBarIcon: tabIcon("target", "star") }}
       />
       <Tabs.Screen
         name="persona"
@@ -135,8 +110,5 @@ export default function TabLayout() {
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
   return <ClassicTabLayout />;
 }

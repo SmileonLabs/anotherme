@@ -14,6 +14,7 @@ import {
 import { Avatar } from "@/components/Avatar";
 import { PersonaCard } from "@/components/PersonaCard";
 import { StarLockCard } from "@/components/StarLockCard";
+import { NeonBackdrop } from "@/components/NeonUI";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { usePlayMode } from "@/hooks/usePlayMode";
@@ -223,7 +224,7 @@ export default function MyPageScreen() {
   const visibleRecentEvents = eventsExpanded ? recentEvents : recentEvents.slice(0, 1);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.muted }]}>
+    <NeonBackdrop style={styles.container}>
       <View style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}>
         <Text style={[styles.screenTitle, { color: colors.foreground }]}>마이페이지</Text>
         <View style={styles.headerActions}>
@@ -644,7 +645,7 @@ export default function MyPageScreen() {
           </>
         )}
       </CustomScrollView>
-    </View>
+    </NeonBackdrop>
   );
 }
 

@@ -16,6 +16,7 @@ import { useGetMe, useListRooms } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { BibiOfficialEntry } from "@/components/BibiOfficialEntry";
 import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
+import { NeonBackdrop } from "@/components/NeonUI";
 import { EmptyState } from "@/components/EmptyState";
 import { ModeSwitch } from "@/components/ModeSwitch";
 import { useColors } from "@/hooks/useColors";
@@ -96,7 +97,7 @@ export default function ChatsScreen() {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <NeonBackdrop style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.titleStack}>
@@ -208,7 +209,7 @@ export default function ChatsScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.roomItem,
-                { backgroundColor: colors.background, opacity: pressed ? 0.6 : 1 },
+                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
               ]}
               onPress={() =>
                 router.push(
@@ -282,7 +283,7 @@ export default function ChatsScreen() {
           <Feather name="edit-2" size={22} color="#fff" />
         </LinearGradient>
       </Pressable>
-    </View>
+    </NeonBackdrop>
   );
 }
 
@@ -315,14 +316,17 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   rewardHeader: { paddingHorizontal: 16, paddingTop: 4 },
-  listContent: { paddingBottom: 120 },
+  listContent: { paddingHorizontal: 12, paddingBottom: 120 },
   emptyContainer: { flexGrow: 1, minHeight: 400 },
   roomItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    marginVertical: 5,
   },
   groupAvatar: {
     width: 54,
@@ -354,7 +358,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: { fontSize: 11, fontFamily: "Inter_700Bold", color: "#fff" },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 82 },
+  separator: { height: 0 },
   fab: {
     position: "absolute",
     right: 20,

@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getGetMyAchievementsQueryKey,
@@ -24,6 +25,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
+import { NeonBackdrop } from "@/components/NeonUI";
 import { playModeQueryKey } from "@/hooks/usePlayMode";
 
 type TabKey = "daily" | "weekly" | "achievements";
@@ -95,15 +97,36 @@ export default function QuestsScreen() {
     tab === "achievements" ? refetchAchievements : refetchQuests;
   const isRefetching =
     tab === "achievements" ? achRefetching : questsRefetching;
+  const missionTarget = dailyQuests.reduce((sum, quest) => sum + Math.max(quest.target, 1), 0);
+  const missionProgress = dailyQuests.reduce((sum, quest) => sum + Math.min(quest.progress, quest.target), 0);
+  const torimiaProgress = missionTarget > 0 ? Math.min(100, Math.round((missionProgress / missionTarget) * 100)) : 0;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.muted }]}>
+    <NeonBackdrop style={styles.container}>
       <View
         style={[
           styles.header,
           { paddingTop: insets.top + 8, backgroundColor: colors.muted },
         ]}
       >
+        <LinearGradient
+          colors={["#17102F", "#09071C", "#11132D"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.missionHero}
+        >
+          <View style={styles.missionHeroCopy}>
+            <Text style={styles.missionEyebrow}>TORIMIA GATE</Text>
+            <Text style={styles.missionHeroTitle}>토로미아 문 열기 미션</Text>
+            <Text style={styles.missionHeroBody}>오늘의 활동으로 STAR를 모아 새로운 세계를 개방하세요.</Text>
+            <Text style={styles.missionPercent}>{torimiaProgress}%</Text>
+            <View style={styles.missionTrack}><View style={[styles.missionFill, { width: `${torimiaProgress}%` }]} /></View>
+          </View>
+          <View style={styles.missionPortal}>
+            <Feather name="star" size={36} color="#EEDCFF" />
+          </View>
+        </LinearGradient>
+
         <View style={styles.headerBtn} />
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>데일리 미션</Text>
         <View style={styles.headerBtn} />
@@ -220,7 +243,7 @@ export default function QuestsScreen() {
           })()
         )}
       </CustomScrollView>
-    </View>
+    </NeonBackdrop>
   );
 }
 
@@ -483,6 +506,15 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold", paddingBottom: 10 },
   tabUnderline: { height: 2, width: "100%", borderRadius: 1 },
   scroll: { padding: 16, gap: 12 },
+  missionHero: { minHeight: 220, borderRadius: 22, borderWidth: 1, borderColor: "rgba(157,99,255,0.55)", padding: 20, flexDirection: "row", overflow: "hidden" },
+  missionHeroCopy: { flex: 1, justifyContent: "center", zIndex: 1 },
+  missionEyebrow: { color: "#35E6E0", fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 1.4 },
+  missionHeroTitle: { color: "#F7F5FF", fontFamily: "Inter_700Bold", fontSize: 22, marginTop: 8 },
+  missionHeroBody: { color: "#A9A3BA", fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 19, marginTop: 8, maxWidth: 240 },
+  missionPercent: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 14 },
+  missionTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.1)", overflow: "hidden", marginTop: 6 },
+  missionFill: { height: "100%", borderRadius: 4, backgroundColor: "#7B35FF" },
+  missionPortal: { position: "absolute", right: -22, top: 18, width: 150, height: 184, borderRadius: 75, borderWidth: 6, borderColor: "rgba(128,55,255,0.72)", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(74,31,170,0.22)" },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
   center: { paddingVertical: 80, alignItems: "center", gap: 14 },
   errorText: { fontSize: 14, fontFamily: "Inter_400Regular" },

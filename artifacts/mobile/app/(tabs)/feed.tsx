@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CustomScrollView } from "@/components/CustomScroll";
+import { NeonBackdrop } from "@/components/NeonUI";
 import { ModeSwitch } from "@/components/ModeSwitch";
 import { useColors } from "@/hooks/useColors";
 import { usePlayMode } from "@/hooks/usePlayMode";
@@ -480,7 +481,7 @@ export default function FeedScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <NeonBackdrop style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.titleBlock}>
           <Text style={[styles.kicker, { color: colors.primary }]}>
@@ -693,7 +694,7 @@ export default function FeedScreen() {
           ))
         )}
       </CustomScrollView>
-    </View>
+    </NeonBackdrop>
   );
 }
 

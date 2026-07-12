@@ -26,6 +26,8 @@ import {
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
+import { NeonBackdrop } from "@/components/NeonUI";
+import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { dailyTalkRewardStatusQueryKey } from "@/hooks/useDailyTalkReward";
 import { usePlayMode } from "@/hooks/usePlayMode";
@@ -421,10 +423,11 @@ export default function HomeScreen() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <NeonBackdrop style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
+          <Text style={styles.brand}>Another Me</Text>
           <Text
             style={[styles.greeting, { color: colors.foreground }]}
             numberOfLines={1}
@@ -1004,7 +1007,7 @@ export default function HomeScreen() {
           </View>
         ) : null}
       </CustomScrollView>
-    </View>
+    </NeonBackdrop>
   );
 }
 
@@ -1016,8 +1019,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(157, 99, 255, 0.18)",
   },
   headerLeft: { flex: 1, paddingRight: 12 },
+  brand: { color: neon.cyan, fontFamily: "Inter_700Bold", fontSize: 14, marginBottom: 4, letterSpacing: 0.3 },
   greeting: { fontSize: 18, fontFamily: "Inter_700Bold" },
   greetingSub: { fontSize: 13, fontFamily: "Inter_500Medium", marginTop: 2 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
