@@ -25,7 +25,6 @@ import {
   type Quest,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
-import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
@@ -33,6 +32,7 @@ import { dailyTalkRewardStatusQueryKey } from "@/hooks/useDailyTalkReward";
 import { usePlayMode } from "@/hooks/usePlayMode";
 import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
 import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
+import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 const FAN_CHARACTER_IMAGE = require("../../assets/images/fan.png");
@@ -222,6 +222,7 @@ export default function HomeScreen() {
     setMode,
   } = usePlayMode();
   const { posts: feedPosts, refetch: refetchFeed } = useStarFeed();
+  const openBibiOfficialRoom = useOpenBibiOfficialRoom();
   const { data: myClan, refetch: refetchClan } = useGetMyClan();
   const { data: clanRanking, refetch: refetchClanRank } = useGetClanRankings({
     type: "overall",
@@ -415,6 +416,41 @@ export default function HomeScreen() {
     }
     router.push("/(tabs)/feed" as never);
   };
+  const handleOpenBibiChat = async () => {
+    try {
+      const result = await openBibiOfficialRoom.mutateAsync();
+      router.push({ pathname: "/chat/[id]", params: { id: result.room.id } });
+    } catch {
+      router.push("/(tabs)/chats" as never);
+    }
+  };
+  const todayMissions = [
+    {
+      key: "first-chat",
+      title: "오늘 첫 대화",
+      description: "비비와 인사하고\n대화를 나눠요",
+      icon: "message-circle" as const,
+      color: "#8B5CF6",
+      onPress: () => void handleOpenBibiChat(),
+    },
+    {
+      key: "fan-cheer",
+      title: "팬 응원하기",
+      description: "비비에게 응원의\n메시지를 보내요",
+      icon: "heart" as const,
+      color: "#F04CCB",
+      onPress: () => router.push("/(tabs)/feed" as never),
+    },
+    {
+      key: "growth-material",
+      title: "성장 재료 수집",
+      description: "토크배틀로 성장\n재료를 모아요",
+      icon: "target" as const,
+      color: "#35E6E0",
+      onPress: () => router.push("/battle/create" as never),
+    },
+  ];
+  const showLegacyHomeSections: boolean = false;
   const rankSummaries = [
     { scope: "persona" as const, result: personaRankingData },
     { scope: "fan" as const, result: fanRankingData },
@@ -480,13 +516,6 @@ export default function HomeScreen() {
           />
         }
       >
-        <DailyTalkRewardCard
-          onClaim={() => router.push("/daily-talk-reward/generate" as never)}
-          onOpenDraft={(id) => router.push(`/daily-talk-reward/${id}` as never)}
-          onOpenWallet={() => router.push("/pvt/wallet" as never)}
-          onOpenHistory={() => router.push("/daily-talk-reward/history" as never)}
-        />
-
         {/* FAN / STAR growth card */}
         <View style={styles.playCard}>
           <ExpoImage
@@ -593,126 +622,79 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: colors.foreground }]}>내 성장 위치</Text>
-            <Pressable
-              hitSlop={8}
-              onPress={() => router.push("/profile/ranking")}
-              style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
-            >
-              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>전체 랭킹</Text>
-              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
-            </Pressable>
-          </View>
-          <View style={styles.rankSummaryGrid}>
-            {rankSummaries.map(({ scope, result }) => {
-              const meta = RANK_SCOPE_META[scope];
-              return (
-                <View key={scope} style={[styles.rankSummaryCell, { borderColor: colors.border }]}>
-                  <View style={styles.rankSummaryTop}>
-                    <Feather name={meta.icon} size={14} color={meta.color} />
-                    <Text style={[styles.rankSummaryLabel, { color: colors.mutedForeground }]}>{meta.label}</Text>
-                  </View>
-                  <Text style={[styles.rankSummaryValue, { color: colors.foreground }]}>{rankLabel(result)}</Text>
-                  <Text style={[styles.rankSummaryScore, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {result?.myRank ? `${formatCompactNumber(result.myRank.score)}점` : "활동 필요"}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
         {/* Daily quests */}
-        <View style={[styles.card, { backgroundColor: colors.card }]}>
+        <View style={styles.missionSection}>
           <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-              오늘의 성장 퀘스트
-            </Text>
+            <Text style={styles.missionSectionTitle}>오늘의 미션</Text>
             <Pressable
               hitSlop={8}
               onPress={() => router.push("/quests")}
               style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
             >
-              <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
-                모두 보기
-              </Text>
-              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+              <Text style={styles.missionMoreText}>모두 보기</Text>
+              <Feather name="chevron-right" size={14} color="#A9A3BA" />
             </Pressable>
           </View>
-
-          {dailyQuests.length === 0 ? (
-            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
-              오늘의 퀘스트를 불러오는 중이에요.
-            </Text>
-          ) : (
-            <View style={styles.questRow}>
-              {dailyQuests.map((q) => {
-                const c = questColor(q);
-                const ratio = Math.min(
-                  100,
-                  Math.round((q.progress / (q.target || 1)) * 100),
-                );
-                return (
-                  <View key={q.key} style={styles.questCell}>
-                    <View style={[styles.questIcon, { backgroundColor: `${c}22` }]}>
-                      <Feather name={questIcon(q)} size={18} color={c} />
-                    </View>
-                    <Text
-                      style={[styles.questTitle, { color: colors.foreground }]}
-                      numberOfLines={2}
-                    >
-                      {q.title}
-                    </Text>
-                    <View
-                      style={[
-                        styles.questTrack,
-                        { backgroundColor: colors.border },
-                      ]}
-                    >
-                      <View
-                        style={{
-                          width: `${ratio}%`,
-                          height: "100%",
-                          borderRadius: 3,
-                          backgroundColor: q.completed ? "#34D399" : c,
-                        }}
-                      />
-                    </View>
-                    <Text style={[styles.questProgress, { color: colors.mutedForeground }]}>
-                      {q.progress} / {q.target}
-                    </Text>
-                    <Text style={[styles.questReward, { color: c }]}>+{q.rewardExp} FAN XP</Text>
+          <View style={styles.questRow}>
+            {todayMissions.map((mission, index) => {
+              const quest = dailyQuests[index];
+              const progress = quest?.progress ?? 0;
+              const target = quest?.target ?? (index === 2 ? 3 : 1);
+              const ratio = Math.min(100, Math.round((progress / Math.max(target, 1)) * 100));
+              return (
+                <Pressable
+                  key={mission.key}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${mission.title} 바로가기`}
+                  onPress={mission.onPress}
+                  style={({ pressed }) => [styles.missionCard, { borderColor: `${mission.color}66`, opacity: pressed ? 0.78 : 1 }]}
+                >
+                  <View style={[styles.missionIconGlow, { backgroundColor: `${mission.color}20` }]}>
+                    <Feather name={mission.icon} size={28} color={mission.color} />
                   </View>
-                );
-              })}
-            </View>
-          )}
-
-          <Pressable onPress={() => router.push("/quests")}>
-            {({ pressed }) => (
-              <LinearGradient
-                colors={BONUS_GRADIENT}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.bonusBanner, { opacity: pressed ? 0.85 : 1 }]}
-              >
-                <Feather name="gift" size={15} color="#FBE6A6" />
-                <Text style={styles.bonusText}>
-                  {allDailyDone
-                    ? "오늘 퀘스트를 모두 완료했어요! 보상을 받아보세요"
-                    : "퀘스트를 완료하고 성장 보상을 받아보세요"}
-                </Text>
-                <Feather name="chevron-right" size={15} color="#EDE7FF" />
-              </LinearGradient>
-            )}
-          </Pressable>
+                  <Text style={styles.missionTitle}>{mission.title}</Text>
+                  <Text style={styles.missionDescription}>{mission.description}</Text>
+                  <View style={styles.missionTrack}>
+                    <View style={[styles.missionFill, { width: `${ratio}%`, backgroundColor: mission.color }]} />
+                  </View>
+                  <Text style={styles.missionProgress}>{progress} / {target}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="토로미아 문으로 가기"
+          onPress={() => router.push("/(tabs)/dungeon" as never)}
+          style={({ pressed }) => [styles.torimiaBanner, { opacity: pressed ? 0.84 : 1 }]}
+        >
+          <LinearGradient
+            colors={["#150827", "#090518", "#12113A"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.torimiaPortal}>
+            <View style={styles.torimiaPortalInner}>
+              <Feather name="star" size={24} color="#D9C2FF" />
+            </View>
+          </View>
+          <View style={styles.torimiaCopy}>
+            <Text style={styles.torimiaTitle}>토로미아로 가는 첫 걸음</Text>
+            <Text style={styles.torimiaBody}>성장을 완료한 비비는{`\n`}토로미아 세계로 진입할 수 있어요.</Text>
+            <View style={styles.torimiaButton}>
+              <Text style={styles.torimiaButtonText}>토로미아 문으로 가기</Text>
+              <Feather name="chevron-right" size={16} color="#EADFFF" />
+            </View>
+          </View>
+        </Pressable>
 
         <HomeNavigationGrid />
 
         {/* Recent Another Me sync changes */}
+        {showLegacyHomeSections && (
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>
@@ -763,8 +745,10 @@ export default function HomeScreen() {
             </>
           )}
         </View>
+        )}
 
         {/* STAR status */}
+        {showLegacyHomeSections && (
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>STAR 진행 상태</Text>
@@ -821,8 +805,10 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
+        )}
 
         {/* Feed spotlight */}
+        {showLegacyHomeSections && (
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, { color: colors.foreground }]}>공개 성장 기록</Text>
@@ -858,6 +844,7 @@ export default function HomeScreen() {
             </Pressable>
           )}
         </View>
+        )}
 
         {/* My clan */}
         {clan ? (
@@ -1201,7 +1188,61 @@ const styles = StyleSheet.create({
   },
 
   // Quests
+  missionSection: {
+    gap: 2,
+  },
+  missionSectionTitle: {
+    flex: 1,
+    color: "#F7F5FF",
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  missionMoreText: { color: "#A9A3BA", fontSize: 13, fontFamily: "Inter_500Medium" },
   questRow: { flexDirection: "row", gap: 10 },
+  missionCard: {
+    flex: 1,
+    minHeight: 212,
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 14,
+    backgroundColor: "rgba(11, 9, 28, 0.92)",
+    overflow: "hidden",
+  },
+  missionIconGlow: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  missionTitle: {
+    color: "#F7F5FF",
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+    textAlign: "center",
+  },
+  missionDescription: {
+    minHeight: 44,
+    color: "#A9A3BA",
+    fontSize: 10.5,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    lineHeight: 16,
+    marginTop: 7,
+  },
+  missionTrack: {
+    width: "100%",
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  missionFill: { height: "100%", borderRadius: 3 },
+  missionProgress: { color: "#A9A3BA", fontSize: 11, fontFamily: "Inter_500Medium", marginTop: 7 },
   questCell: { flex: 1, alignItems: "center" },
   questIcon: {
     width: 42,
@@ -1249,6 +1290,64 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontFamily: "Inter_600SemiBold",
   },
+
+  // Torimia gateway banner
+  torimiaBanner: {
+    minHeight: 190,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(157,99,255,0.52)",
+    overflow: "hidden",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 18,
+  },
+  torimiaPortal: {
+    width: "42%",
+    maxWidth: 160,
+    height: 154,
+    borderTopLeftRadius: 76,
+    borderTopRightRadius: 76,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    borderWidth: 5,
+    borderColor: "rgba(124,58,237,0.88)",
+    padding: 8,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  torimiaPortalInner: {
+    flex: 1,
+    borderTopLeftRadius: 62,
+    borderTopRightRadius: 62,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(216,180,254,0.6)",
+    backgroundColor: "rgba(88,28,135,0.2)",
+  },
+  torimiaCopy: { flex: 1, minWidth: 0, marginLeft: 16 },
+  torimiaTitle: { color: "#D884FF", fontSize: 18, fontFamily: "Inter_800ExtraBold", lineHeight: 24 },
+  torimiaBody: { color: "#A9A3BA", fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18, marginTop: 8 },
+  torimiaButton: {
+    minHeight: 40,
+    alignSelf: "stretch",
+    marginTop: 14,
+    paddingHorizontal: 13,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(97,34,170,0.38)",
+    borderWidth: 1,
+    borderColor: "rgba(157,99,255,0.55)",
+  },
+  torimiaButtonText: { color: "#EADFFF", fontSize: 11.5, fontFamily: "Inter_700Bold" },
 
   // Nav grid
   navGrid: {
