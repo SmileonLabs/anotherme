@@ -223,6 +223,10 @@ export default function QuestsScreen() {
                     colors={colors}
                     claiming={claimingKey === `quest:${q.key}`}
                     onClaim={() => claimQuest({ questKey: q.key })}
+                    onOpen={() => {
+                      const destination = questDestination(q);
+                      if (destination) router.push(destination as never);
+                    }}
                   />
                 ))}
               </>
@@ -277,73 +281,91 @@ function questIcon(quest: Quest): keyof typeof Feather.glyphMap {
   return "zap";
 }
 
+function questDestination(quest: Quest): string | null {
+  const source = `${quest.key} ${quest.title} ${quest.description}`.toLocaleLowerCase();
+  if (source.includes("배틀") || source.includes("battle")) return "/(tabs)/battle";
+  if (source.includes("star 미션") || source.includes("dungeon")) return "/(tabs)/dungeon";
+  if (source.includes("팬클럽") || source.includes("clan")) return "/clan";
+  if (source.includes("분석") || source.includes("analysis")) return "/settings/ontology";
+  if (source.includes("대화") || source.includes("chat") || source.includes("talk")) return "/(tabs)/chats";
+  if (source.includes("게시") || source.includes("post") || source.includes("feed") || source.includes("응원")) return "/(tabs)/feed";
+  return null;
+}
+
 function QuestRow({
   quest,
   colors,
   claiming,
   onClaim,
+  onOpen,
 }: {
   quest: Quest;
   colors: ReturnType<typeof useColors>;
   claiming: boolean;
   onClaim: () => void;
+  onOpen: () => void;
 }) {
   const ratio = Math.min(100, Math.round((quest.progress / (quest.target || 1)) * 100));
   return (
-    <LinearGradient
-      colors={["rgba(11,11,27,0.99)", "rgba(5,6,18,0.99)"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.card}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${quest.title} 콘텐츠로 이동`}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.cardPressable, pressed && { opacity: 0.78 }]}
     >
-      <View style={styles.cardTop}>
-        <View style={styles.questIconWrap}>
-          <Feather name={questIcon(quest)} size={34} color="#B24CFF" />
-          <View pointerEvents="none" style={styles.questIconGlow} />
-        </View>
-        <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
-            {quest.title}
-          </Text>
-          <Text style={[styles.cardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>
-            {quest.description}
-          </Text>
-        </View>
-        <RewardBadge
-          exp={quest.rewardExp}
-          colors={colors}
-          claimed={quest.rewardClaimed}
-        />
-      </View>
-
-      <View
-        style={styles.progressTrack}
+      <LinearGradient
+        colors={["rgba(11,11,27,0.99)", "rgba(5,6,18,0.99)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.card}
       >
-        <View
-          style={{
-            width: `${ratio}%`,
-            height: "100%",
-            borderRadius: 4,
-            backgroundColor: quest.completed ? "#35E6E0" : "#5918FF",
-          }}
-        />
-      </View>
-
-      <View style={styles.cardBottom}>
-        <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
-          {Math.min(quest.progress, quest.target)} / {quest.target}
-        </Text>
-        {quest.completed || quest.rewardClaimed ? (
-          <ClaimButton
-            completed={quest.completed}
-            claimed={quest.rewardClaimed}
-            claiming={claiming}
+        <View style={styles.cardTop}>
+          <View style={styles.questIconWrap}>
+            <Feather name={questIcon(quest)} size={34} color="#B24CFF" />
+            <View pointerEvents="none" style={styles.questIconGlow} />
+          </View>
+          <View style={styles.cardInfo}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
+              {quest.title}
+            </Text>
+            <Text style={[styles.cardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>
+              {quest.description}
+            </Text>
+          </View>
+          <RewardBadge
+            exp={quest.rewardExp}
             colors={colors}
-            onClaim={onClaim}
+            claimed={quest.rewardClaimed}
           />
-        ) : null}
-      </View>
-    </LinearGradient>
+        </View>
+
+        <View style={styles.progressTrack}>
+          <View
+            style={{
+              width: `${ratio}%`,
+              height: "100%",
+              borderRadius: 4,
+              backgroundColor: quest.completed ? "#35E6E0" : "#5918FF",
+            }}
+          />
+        </View>
+
+        <View style={styles.cardBottom}>
+          <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
+            {Math.min(quest.progress, quest.target)} / {quest.target}
+          </Text>
+          {quest.completed || quest.rewardClaimed ? (
+            <ClaimButton
+              completed={quest.completed}
+              claimed={quest.rewardClaimed}
+              claiming={claiming}
+              colors={colors}
+              onClaim={onClaim}
+            />
+          ) : null}
+        </View>
+      </LinearGradient>
+    </Pressable>
   );
 }
 
@@ -466,7 +488,10 @@ function ClaimButton({
   const disabled = !completed || claiming;
   return (
     <Pressable
-      onPress={onClaim}
+      onPress={(event) => {
+        event.stopPropagation();
+        onClaim();
+      }}
       disabled={disabled}
       style={({ pressed }) => [
         styles.claimBtn,
@@ -534,6 +559,7 @@ const styles = StyleSheet.create({
   retryText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
   emptyWrap: { paddingVertical: 80 },
   card: { minHeight: 140, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(61,56,113,0.48)", padding: 18, gap: 12, overflow: "hidden" },
+  cardPressable: { borderRadius: 15 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 15 },
   cardInfo: { flex: 1, gap: 3 },
   cardTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },

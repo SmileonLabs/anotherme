@@ -61,18 +61,13 @@ function relativeTime(value: string) {
   return `${Math.floor(hours / 24)}일 전`;
 }
 
-function postVisualSource(post: StarFeedPost): ImageSource {
+function postVisualSource(post: StarFeedPost): ImageSource | null {
   const explicit =
     metadataString(post.metadata, "imageUrl") ??
     metadataString(post.metadata, "thumbnailUrl") ??
     metadataString(post.metadata, "coverImageUrl") ??
     metadataString(post.metadata, "newProfileImageUrl");
-  if (explicit) return { uri: mediaUri(explicit) };
-  if (post.kind === "event" || post.kind === "official" || post.kind === "growth") {
-    return require("../../assets/images/torimia-portal-scene.png");
-  }
-  if (post.kind === "star") return require("../../assets/images/star_bg.png");
-  return require("../../assets/images/fan_bg.png");
+  return explicit ? { uri: mediaUri(explicit) } : null;
 }
 
 function StoryItem({ author, index }: { author: StarFeedAuthor; index: number }) {
@@ -117,6 +112,7 @@ function FeedPostCard({
   const keywordTags = metadataStringArray(post.metadata, "keywords").slice(0, 2);
   const tags = keywordTags.length ? keywordTags : meta.tags;
   const canComment = commentDraft.trim().length > 0 && !isCommenting;
+  const visualSource = postVisualSource(post);
 
   return (
     <LinearGradient
@@ -147,10 +143,12 @@ function FeedPostCard({
             {tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}
           </View>
         </View>
-        <View style={styles.visualWrap}>
-          <Image source={postVisualSource(post)} style={styles.feedVisual} contentFit="cover" />
-          {post.kind === "event" ? <View style={styles.playButton}><Feather name="play" size={18} color="#FFFFFF" /></View> : null}
-        </View>
+        {visualSource ? (
+          <View style={styles.visualWrap}>
+            <Image source={visualSource} style={styles.feedVisual} contentFit="cover" />
+            {post.kind === "event" ? <View style={styles.playButton}><Feather name="play" size={18} color="#FFFFFF" /></View> : null}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.actionRow}>

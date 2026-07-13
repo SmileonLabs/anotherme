@@ -37,6 +37,14 @@ function relativeTime(value: string) {
   return `${Math.floor(hours / 24)}일 전`;
 }
 
+function postImageUri(post: StarFeedPost) {
+  const metadata = post.metadata ?? {};
+  const value = ["imageUrl", "thumbnailUrl", "coverImageUrl", "newProfileImageUrl"]
+    .map((key) => metadata[key])
+    .find((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return value ? mediaUri(value) : null;
+}
+
 function SearchSection({
   icon,
   title,
@@ -70,7 +78,7 @@ function SearchSection({
 
 function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => void }) {
   const tags = POST_TAGS[post.kind];
-  const imageUri = post.author.profileImageUrl ? mediaUri(post.author.profileImageUrl) : null;
+  const imageUri = postImageUri(post);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.postPressable, pressed && styles.pressed]}>
@@ -93,15 +101,24 @@ function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => voi
             {tags.map((tag) => <Text key={tag} style={styles.tag}># {tag}</Text>)}
           </View>
         </View>
-        <View style={styles.postVisual}>
-          {imageUri ? <Image source={{ uri: imageUri }} style={styles.postImage} contentFit="cover" /> : <Feather name="image" size={20} color={neon.purple} />}
-          <View style={styles.postCounts}>
+        {imageUri ? (
+          <View style={styles.postVisual}>
+            <Image source={{ uri: imageUri }} style={styles.postImage} contentFit="cover" />
+            <View style={styles.postCounts}>
+              <Feather name="heart" size={12} color={neon.muted} />
+              <Text style={styles.postCount}>{post.reactionCount}</Text>
+              <Feather name="message-circle" size={12} color={neon.muted} />
+              <Text style={styles.postCount}>{post.commentCount}</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.postCountsOnly}>
             <Feather name="heart" size={12} color={neon.muted} />
             <Text style={styles.postCount}>{post.reactionCount}</Text>
             <Feather name="message-circle" size={12} color={neon.muted} />
             <Text style={styles.postCount}>{post.commentCount}</Text>
           </View>
-        </View>
+        )}
         <Feather name="more-horizontal" size={16} color={neon.text} style={styles.moreIcon} />
       </LinearGradient>
     </Pressable>
@@ -301,6 +318,7 @@ const styles = StyleSheet.create({
   postVisual: { width: 119, alignSelf: "stretch", justifyContent: "space-between", paddingTop: 2 },
   postImage: { width: "100%", height: 61, borderRadius: 9, backgroundColor: "#111020" },
   postCounts: { height: 18, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
+  postCountsOnly: { position: "absolute", right: 8, bottom: 7, height: 18, flexDirection: "row", alignItems: "center", gap: 4 },
   postCount: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 9, marginRight: 7 },
   moreIcon: { position: "absolute", right: 9, top: 7 },
   empty: { color: neon.muted, textAlign: "center", paddingVertical: 28 },

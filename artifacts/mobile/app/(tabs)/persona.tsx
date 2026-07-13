@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image, type ImageSource } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -765,11 +765,14 @@ function MyDashboard({
     { icon: "message-circle" as const, label: "공감력", value: stats?.empathy ?? 0, color: "#54E8DF" },
     { icon: "book-open" as const, label: "스토리", value: stats?.story ?? 0, color: "#D679FF" },
   ];
-  const inventory = [
-    avatarUri ? { uri: mediaUri(avatarUri) } : require("../../assets/images/icon.png"),
-    equippedStar?.imageUrl ? { uri: mediaUri(equippedStar.imageUrl) } : require("../../assets/images/home-star-scene.png"),
+  const inventory: ImageSource[] = [];
+  if (avatarUri) inventory.push({ uri: mediaUri(avatarUri) });
+  inventory.push(
+    equippedStar?.imageUrl
+      ? { uri: mediaUri(equippedStar.imageUrl) }
+      : require("../../assets/images/star-character-cutout.png"),
     require("../../assets/images/fan.png"),
-  ];
+  );
 
   return (
     <View style={styles.dashboardContent}>
