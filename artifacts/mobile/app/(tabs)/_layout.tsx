@@ -1,4 +1,5 @@
 import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, Tabs } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
@@ -36,17 +37,29 @@ function ClassicTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarActiveTintColor: "#B96CFF",
+        tabBarInactiveTintColor: "#8D8999",
         headerShown: false,
-        tabBarLabelStyle: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+        tabBarLabelStyle: {
+          fontFamily: "Inter_600SemiBold",
+          fontSize: 10,
+          lineHeight: 14,
+          marginTop: 1,
+        },
+        tabBarItemStyle: { paddingTop: 5 },
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : "#070711",
-          borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: "rgba(157, 99, 255, 0.32)",
+          height: 82 + (isWeb ? pwaBottom : 0),
+          paddingTop: 5,
+          paddingBottom: isWeb ? Math.max(6, pwaBottom) : 6,
+          backgroundColor: isIOS ? "transparent" : "#05040D",
+          borderTopWidth: 1,
+          borderTopColor: "rgba(139, 92, 246, 0.24)",
           elevation: 0,
-          ...(isWeb ? { height: 84 + pwaBottom, paddingBottom: pwaBottom } : {}),
+          shadowColor: "#7C3AED",
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.12,
+          shadowRadius: 14,
         },
         tabBarBackground: () =>
           isIOS ? (
@@ -56,9 +69,14 @@ function ClassicTabLayout() {
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View
-              style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}
-            />
+            <LinearGradient
+              colors={["rgba(16,12,34,0.99)", "rgba(5,4,13,1)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            >
+              <View pointerEvents="none" style={styles.tabBarTopGlow} />
+            </LinearGradient>
           ) : null,
       }}
     >
@@ -119,27 +137,35 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabIconWrap: {
-    width: 42,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
   tabIconWrapActive: {
-    backgroundColor: "rgba(116, 45, 255, 0.2)",
+    backgroundColor: "rgba(116, 45, 255, 0.16)",
     borderWidth: 1,
-    borderColor: "rgba(190, 116, 255, 0.72)",
+    borderColor: "rgba(195, 125, 255, 0.76)",
     shadowColor: "#A64DFF",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.95,
-    shadowRadius: 10,
+    shadowRadius: 12,
     elevation: 10,
   },
   tabIconGlow: {
     position: "absolute",
-    width: 30,
-    height: 24,
-    borderRadius: 15,
-    backgroundColor: "rgba(171, 75, 255, 0.34)",
+    width: 36,
+    height: 30,
+    borderRadius: 18,
+    backgroundColor: "rgba(171, 75, 255, 0.27)",
+  },
+  tabBarTopGlow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 1,
+    backgroundColor: "rgba(183, 117, 255, 0.38)",
   },
 });

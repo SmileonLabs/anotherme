@@ -40,6 +40,15 @@ const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
 const STAR_CARD_BG_IMAGE = require("../../assets/images/star_bg.png");
 const HOME_STAR_SCENE_IMAGE = require("../../assets/images/home-star-scene.png");
 const TORIMIA_PORTAL_SCENE_IMAGE = require("../../assets/images/torimia-portal-scene.png");
+const MISSION_STAR_POINTS = [
+  { left: "12%" as const, top: "22%" as const, size: 1.5, opacity: 0.72 },
+  { left: "29%" as const, top: "12%" as const, size: 1, opacity: 0.42 },
+  { left: "47%" as const, top: "31%" as const, size: 1.4, opacity: 0.58 },
+  { left: "68%" as const, top: "18%" as const, size: 1, opacity: 0.48 },
+  { left: "84%" as const, top: "37%" as const, size: 1.5, opacity: 0.7 },
+  { left: "18%" as const, top: "57%" as const, size: 1, opacity: 0.36 },
+  { left: "75%" as const, top: "68%" as const, size: 1.2, opacity: 0.44 },
+] as const;
 
 const HOME_NAV_ITEMS: Array<{
   key: string;
@@ -433,7 +442,8 @@ export default function HomeScreen() {
       description: "비비와 인사하고\n대화를 나눠요",
       icon: "message-circle" as const,
       color: "#8B5CF6",
-      onPress: () => void handleOpenBibiChat(),
+      gradient: ["rgba(34,12,78,0.82)", "rgba(8,5,25,0.98)", "rgba(5,4,18,1)"] as const,
+      onPress: () => router.push("/(tabs)/battle" as never),
     },
     {
       key: "fan-cheer",
@@ -441,6 +451,7 @@ export default function HomeScreen() {
       description: "비비에게 응원의\n메시지를 보내요",
       icon: "heart" as const,
       color: "#F04CCB",
+      gradient: ["rgba(85,8,73,0.66)", "rgba(13,5,28,0.98)", "rgba(5,4,18,1)"] as const,
       onPress: () => router.push("/(tabs)/feed" as never),
     },
     {
@@ -449,7 +460,8 @@ export default function HomeScreen() {
       description: "토크배틀로 성장\n재료를 모아요",
       icon: "target" as const,
       color: "#35E6E0",
-      onPress: () => router.push("/battle/create" as never),
+      gradient: ["rgba(0,66,83,0.68)", "rgba(4,15,35,0.98)", "rgba(5,4,18,1)"] as const,
+      onPress: () => router.push("/(tabs)/quests" as never),
     },
   ];
   const showLegacyHomeSections: boolean = false;
@@ -638,12 +650,20 @@ export default function HomeScreen() {
           <View style={styles.cardHeader}>
             <Text style={styles.missionSectionTitle}>오늘의 미션</Text>
             <Pressable
-              hitSlop={8}
-              onPress={() => router.push("/quests")}
-              style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="비비와의 대화 바로가기"
+              onPress={() => void handleOpenBibiChat()}
+              style={({ pressed }) => [styles.bibiChatShortcut, { opacity: pressed ? 0.72 : 1 }]}
             >
-              <Text style={styles.missionMoreText}>모두 보기</Text>
-              <Feather name="chevron-right" size={14} color="#A9A3BA" />
+              <LinearGradient
+                colors={["rgba(18,17,49,0.98)", "rgba(8,7,25,0.98)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.bibiChatShortcutInner}
+              >
+                <Feather name="message-circle" size={16} color="#B8A8FF" />
+                <Text style={styles.bibiChatShortcutText}>비비와의 대화</Text>
+              </LinearGradient>
             </Pressable>
           </View>
           <View style={styles.questRow}>
@@ -660,8 +680,33 @@ export default function HomeScreen() {
                   onPress={mission.onPress}
                   style={({ pressed }) => [styles.missionCard, { borderColor: `${mission.color}66`, opacity: pressed ? 0.78 : 1 }]}
                 >
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={mission.gradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0.82, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                    {MISSION_STAR_POINTS.map((star, starIndex) => (
+                      <View
+                        key={starIndex}
+                        style={[
+                          styles.missionStar,
+                          {
+                            left: star.left,
+                            top: star.top,
+                            width: star.size,
+                            height: star.size,
+                            opacity: star.opacity,
+                            backgroundColor: mission.color,
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
                   <View style={[styles.missionIconGlow, { backgroundColor: `${mission.color}20` }]}>
-                    <Feather name={mission.icon} size={28} color={mission.color} />
+                    <Feather name={mission.icon} size={21} color={mission.color} />
                   </View>
                   <Text style={styles.missionTitle}>{mission.title}</Text>
                   <Text style={styles.missionDescription}>{mission.description}</Text>
@@ -690,7 +735,7 @@ export default function HomeScreen() {
           <ExpoImage
             source={TORIMIA_PORTAL_SCENE_IMAGE}
             style={styles.torimiaPortalScene}
-            contentFit="cover"
+            contentFit="contain"
             contentPosition="left center"
           />
           <View style={styles.torimiaCopy}>
@@ -702,8 +747,6 @@ export default function HomeScreen() {
             </View>
           </View>
         </Pressable>
-
-        <HomeNavigationGrid />
 
         {/* Recent Another Me sync changes */}
         {showLegacyHomeSections && (
@@ -1209,61 +1252,82 @@ const styles = StyleSheet.create({
   },
   missionSectionTitle: {
     flex: 1,
-    color: "#F7F5FF",
-    fontSize: 18,
+    color: "#C9C2D8",
+    fontSize: 13,
     fontFamily: "Inter_700Bold",
   },
   missionMoreText: { color: "#A9A3BA", fontSize: 13, fontFamily: "Inter_500Medium" },
-  questRow: { flexDirection: "row", gap: 10 },
+  bibiChatShortcut: {
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(141,113,255,0.26)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+  },
+  bibiChatShortcutInner: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bibiChatShortcutText: { color: "#CEC7E4", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  questRow: { flexDirection: "row", gap: 8 },
   missionCard: {
     flex: 1,
-    minHeight: 212,
+    minHeight: 148,
     alignItems: "center",
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 14,
-    backgroundColor: "rgba(8, 5, 25, 0.96)",
+    borderRadius: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    backgroundColor: "#080519",
     overflow: "hidden",
     shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 4,
   },
+  missionStar: { position: "absolute", borderRadius: 4 },
   missionIconGlow: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginBottom: 7,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.06)",
   },
   missionTitle: {
     color: "#F7F5FF",
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: "Inter_700Bold",
     textAlign: "center",
   },
   missionDescription: {
-    minHeight: 44,
+    minHeight: 30,
     color: "#A9A3BA",
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
-    lineHeight: 16,
-    marginTop: 7,
+    lineHeight: 13,
+    marginTop: 4,
   },
   missionTrack: {
     width: "100%",
-    height: 6,
-    borderRadius: 3,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: "rgba(255,255,255,0.07)",
     overflow: "hidden",
-    marginTop: 10,
+    marginTop: 6,
   },
   missionFill: { height: "100%", borderRadius: 3 },
-  missionProgress: { color: "#A9A3BA", fontSize: 11, fontFamily: "Inter_500Medium", marginTop: 7 },
+  missionProgress: { color: "#A9A3BA", fontSize: 10, fontFamily: "Inter_500Medium", marginTop: 4 },
   questCell: { flex: 1, alignItems: "center" },
   questIcon: {
     width: 42,
@@ -1324,7 +1388,11 @@ const styles = StyleSheet.create({
     padding: 0,
     backgroundColor: "#070512",
   },
-  torimiaPortalScene: { width: "46%", alignSelf: "stretch" },
+  torimiaPortalScene: {
+    width: "46%",
+    alignSelf: "stretch",
+    backgroundColor: "#05030F",
+  },
   torimiaPortal: {
     width: "42%",
     maxWidth: 160,
