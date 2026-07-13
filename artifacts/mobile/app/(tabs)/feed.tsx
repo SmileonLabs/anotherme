@@ -1,76 +1,45 @@
 import { Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Image, type ImageSource } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Avatar } from "@/components/Avatar";
 import { CustomScrollView } from "@/components/CustomScroll";
 import { NeonBackdrop } from "@/components/NeonUI";
-import { ModeSwitch } from "@/components/ModeSwitch";
+import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { usePlayMode } from "@/hooks/usePlayMode";
 import {
   useStarFeed,
+  type StarFeedAuthor,
   type StarFeedPost,
   type StarFeedPostKind,
   type StarFeedWritableKind,
 } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
 
-type FeatherName = React.ComponentProps<typeof Feather>["name"];
 type ColorTokens = ReturnType<typeof useColors>;
 
-const KIND_META: Record<
-  StarFeedPostKind,
-  { label: string; icon: FeatherName }
-> = {
-  official: { label: "OFFICIAL", icon: "star" },
-  event: { label: "EVENT", icon: "calendar" },
-  fan: { label: "FAN 응원", icon: "heart" },
-  star: { label: "공식 STAR", icon: "zap" },
-  growth: { label: "GROWTH", icon: "trending-up" },
-  profile_update: { label: "PROFILE", icon: "user" },
-  talk_diary: { label: "TALK DIARY", icon: "book-open" },
+const KIND_META: Record<StarFeedPostKind, { label: string; tags: string[] }> = {
+  official: { label: "STAR", tags: ["공식", "Another Me"] },
+  event: { label: "STAR", tags: ["이벤트", "미션"] },
+  fan: { label: "FAN", tags: ["응원해요", "비비"] },
+  star: { label: "STAR", tags: ["STAR", "성장"] },
+  growth: { label: "STAR", tags: ["성장", "기록"] },
+  profile_update: { label: "FAN", tags: ["프로필", "새소식"] },
+  talk_diary: { label: "FAN", tags: ["대화일기", "오늘"] },
 };
 
-function metadataString(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): string | null {
+function metadataString(metadata: Record<string, unknown> | null | undefined, key: string) {
   const value = metadata?.[key];
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function metadataBoolean(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): boolean {
-  return metadata?.[key] === true;
-}
-
-function metadataNumber(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): number | null {
+function metadataStringArray(metadata: Record<string, unknown> | null | undefined, key: string) {
   const value = metadata?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function metadataStringArray(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): string[] {
-  const value = metadata?.[key];
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function errorMessage(err: unknown, fallback: string) {
@@ -81,14 +50,47 @@ function errorMessage(err: unknown, fallback: string) {
   return fallback;
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${month}.${day} ${hour}:${minute}`;
+function relativeTime(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "방금 전";
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return "방금 전";
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  return `${Math.floor(hours / 24)}일 전`;
+}
+
+function postVisualSource(post: StarFeedPost): ImageSource {
+  const explicit =
+    metadataString(post.metadata, "imageUrl") ??
+    metadataString(post.metadata, "thumbnailUrl") ??
+    metadataString(post.metadata, "coverImageUrl") ??
+    metadataString(post.metadata, "newProfileImageUrl");
+  if (explicit) return { uri: mediaUri(explicit) };
+  if (post.kind === "event" || post.kind === "official" || post.kind === "growth") {
+    return require("../../assets/images/torimia-portal-scene.png");
+  }
+  if (post.kind === "star") return require("../../assets/images/star_bg.png");
+  return require("../../assets/images/fan_bg.png");
+}
+
+function StoryItem({ author, index }: { author: StarFeedAuthor; index: number }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.storyItem, pressed && styles.pressed]}>
+      <LinearGradient colors={["#F044D0", "#7B35FF", "#24D6E8"]} style={styles.storyRing}>
+        <View style={styles.storyAvatarInset}>
+          <Avatar uri={author.profileImageUrl} name={author.nickname} size={50} />
+        </View>
+        {index === 0 ? <View style={styles.storyPlus}><Feather name="plus" size={12} color="#FFFFFF" /></View> : null}
+      </LinearGradient>
+      <View style={styles.storyNameRow}>
+        <Text style={styles.storyName} numberOfLines={1}>{index === 0 ? "내 스토리" : author.nickname}</Text>
+        {index === 1 ? <View style={styles.verified}><Feather name="check" size={7} color="#FFFFFF" /></View> : null}
+      </View>
+      {index > 0 ? <Text style={styles.storyRole}>{index < 3 ? "STAR" : "FAN"}</Text> : null}
+    </Pressable>
+  );
 }
 
 function FeedPostCard({
@@ -110,299 +112,93 @@ function FeedPostCard({
   onCommentDraft: (postId: string, value: string) => void;
   onSubmitComment: (postId: string) => void;
 }) {
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const meta = KIND_META[post.kind];
+  const keywordTags = metadataStringArray(post.metadata, "keywords").slice(0, 2);
+  const tags = keywordTags.length ? keywordTags : meta.tags;
   const canComment = commentDraft.trim().length > 0 && !isCommenting;
-  const isProfileUpdate = post.kind === "profile_update";
-  const isTalkDiary = post.kind === "talk_diary";
-  const profileImageChanged = metadataBoolean(
-    post.metadata,
-    "profileImageChanged",
-  );
-  const statusMessageChanged = metadataBoolean(
-    post.metadata,
-    "statusMessageChanged",
-  );
-  const profileImageUrl =
-    metadataString(post.metadata, "newProfileImageUrl") ??
-    post.author.profileImageUrl;
-  const statusMessage = metadataString(post.metadata, "newStatusMessage");
-  const talkMood = metadataString(post.metadata, "mood");
-  const talkKeywords = metadataStringArray(post.metadata, "keywords");
-  const talkQualityScore = metadataNumber(post.metadata, "qualityScore");
-  const talkPvtAmount = metadataNumber(post.metadata, "pvtAmount");
 
   return (
-    <View
-      style={[
-        styles.feedCard,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
+    <LinearGradient
+      colors={["rgba(10,10,26,0.99)", "rgba(4,6,18,0.99)"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.feedCard}
     >
-      <View style={styles.feedTopRow}>
-        <View style={[styles.feedIcon, { backgroundColor: colors.accent }]}>
-          <Feather name={meta.icon} size={19} color={colors.primary} />
-        </View>
-        <View style={styles.feedTitleBlock}>
-          <View style={styles.feedMetaRow}>
-            <Text style={[styles.feedType, { color: colors.primary }]}>
-              {meta.label}
-            </Text>
-            <Text style={[styles.feedDate, { color: colors.mutedForeground }]}>
-              {formatDate(post.createdAt)}
-            </Text>
+      <View pointerEvents="none" style={styles.cardGlow} />
+      <View style={styles.feedHeader}>
+        <View style={styles.avatarRing}><Avatar uri={post.author.profileImageUrl} name={post.author.nickname} size={44} /></View>
+        <View style={styles.feedIdentity}>
+          <View style={styles.authorRow}>
+            <Text style={styles.feedAuthor} numberOfLines={1}>{post.author.nickname}</Text>
+            <View style={styles.verified}><Feather name="check" size={7} color="#FFFFFF" /></View>
+            <Text style={styles.feedRole}>{meta.label}</Text>
           </View>
-          <Text style={[styles.feedAuthor, { color: colors.mutedForeground }]}>
-            {post.author.nickname}
-          </Text>
+          <Text style={styles.feedTime}>{relativeTime(post.createdAt)}</Text>
         </View>
+        <Feather name="more-vertical" size={18} color="#9C98A6" />
       </View>
 
-      <Text style={[styles.feedTitle, { color: colors.foreground }]}>
-        {post.title}
-      </Text>
-      {isProfileUpdate ? (
-        <View
-          style={[
-            styles.profileUpdateCard,
-            { backgroundColor: colors.muted, borderColor: colors.border },
-          ]}
-        >
-          {profileImageChanged ? (
-            <View style={styles.profileUpdateImageBlock}>
-              <View
-                style={[
-                  styles.profileImagePreview,
-                  { backgroundColor: colors.card },
-                ]}
-              >
-                {profileImageUrl ? (
-                  <Image
-                    source={{ uri: mediaUri(profileImageUrl) }}
-                    style={styles.profileImagePreviewImage}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={styles.profileImagePlaceholder}>
-                    <Feather
-                      name="image"
-                      size={24}
-                      color={colors.mutedForeground}
-                    />
-                  </View>
-                )}
-              </View>
-              <View style={styles.profileUpdateBody}>
-                <Text
-                  style={[
-                    styles.profileUpdateLabel,
-                    { color: colors.foreground },
-                  ]}
-                >
-                  프로필 사진
-                </Text>
-                <Text
-                  style={[
-                    styles.profileUpdateDesc,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  새 사진으로 변경했어요.
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          {statusMessageChanged ? (
-            <View
-              style={[
-                styles.statusMessageBox,
-                { backgroundColor: colors.card },
-              ]}
-            >
-              <Feather name="message-square" size={15} color={colors.primary} />
-              <Text
-                style={[styles.statusMessageText, { color: colors.foreground }]}
-              >
-                {statusMessage || "상태 메시지를 비웠습니다."}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      ) : isTalkDiary ? (
-        <View
-          style={[
-            styles.talkDiaryCard,
-            { backgroundColor: colors.muted, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.talkDiaryTopRow}>
-            <View
-              style={[styles.talkDiaryIcon, { backgroundColor: colors.card }]}
-            >
-              <Feather name="book-open" size={18} color={colors.primary} />
-            </View>
-            <View style={styles.talkDiaryTitleBlock}>
-              <Text style={[styles.talkDiaryLabel, { color: colors.primary }]}>
-                오늘의 대화 일기
-              </Text>
-              {talkMood ? (
-                <Text
-                  style={[
-                    styles.talkDiaryMood,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  오늘의 감정 · {talkMood}
-                </Text>
-              ) : null}
-            </View>
+      <View style={styles.feedMain}>
+        <View style={styles.feedCopy}>
+          <Text style={styles.feedTitle} numberOfLines={2}>{post.title}</Text>
+          <Text style={styles.feedBody} numberOfLines={3}>{post.body}</Text>
+          <View style={styles.tagRow}>
+            {tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}
           </View>
-          <Text style={[styles.talkDiaryBody, { color: colors.foreground }]}>
-            {post.body}
-          </Text>
-          {talkKeywords.length > 0 ? (
-            <View style={styles.talkKeywordRow}>
-              {talkKeywords.map((keyword) => (
-                <View
-                  key={keyword}
-                  style={[
-                    styles.talkKeywordPill,
-                    { backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text
-                    style={[styles.talkKeywordText, { color: colors.primary }]}
-                  >
-                    {keyword}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          {talkQualityScore !== null || talkPvtAmount !== null ? (
-            <View
-              style={[styles.talkRewardRow, { backgroundColor: colors.card }]}
-            >
-              {talkQualityScore !== null ? (
-                <Text
-                  style={[styles.talkRewardText, { color: colors.foreground }]}
-                >
-                  대화 품질 {talkQualityScore}점
-                </Text>
-              ) : null}
-              {talkPvtAmount !== null ? (
-                <Text
-                  style={[styles.talkRewardText, { color: colors.primary }]}
-                >
-                  {talkPvtAmount} PVT 획득
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
         </View>
-      ) : (
-        <Text style={[styles.feedText, { color: colors.mutedForeground }]}>
-          {post.body}
-        </Text>
-      )}
+        <View style={styles.visualWrap}>
+          <Image source={postVisualSource(post)} style={styles.feedVisual} contentFit="cover" />
+          {post.kind === "event" ? <View style={styles.playButton}><Feather name="play" size={18} color="#FFFFFF" /></View> : null}
+        </View>
+      </View>
 
       <View style={styles.actionRow}>
         <Pressable
           disabled={post.reactedByMe || isCheering}
           onPress={() => onCheer(post.id)}
-          style={({ pressed }) => [
-            styles.actionButton,
-            {
-              backgroundColor: post.reactedByMe
-                ? colors.primary
-                : colors.secondary,
-              opacity: pressed ? 0.75 : post.reactedByMe ? 0.9 : 1,
-            },
-          ]}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
         >
-          <Feather
-            name="heart"
-            size={15}
-            color={post.reactedByMe ? colors.primaryForeground : colors.primary}
-          />
-          <Text
-            style={[
-              styles.actionText,
-              {
-                color: post.reactedByMe
-                  ? colors.primaryForeground
-                  : colors.primary,
-              },
-            ]}
-          >
-            응원 {post.reactionCount}
-          </Text>
+          <Feather name="heart" size={20} color={post.reactedByMe ? neon.magenta : "#B847FF"} />
+          <Text style={styles.actionCount}>{post.reactionCount}</Text>
         </Pressable>
-        <View
-          style={[styles.commentCountPill, { backgroundColor: colors.muted }]}
-        >
-          <Feather
-            name="message-circle"
-            size={15}
-            color={colors.mutedForeground}
-          />
-          <Text
-            style={[styles.commentCountText, { color: colors.mutedForeground }]}
-          >
-            댓글 {post.commentCount}
-          </Text>
-        </View>
+        <Pressable onPress={() => setCommentsOpen((open) => !open)} style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+          <Feather name="message-circle" size={19} color="#B9B4C3" />
+          <Text style={styles.actionCount}>{post.commentCount}</Text>
+        </Pressable>
+        <Pressable style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]} accessibilityLabel="공유">
+          <Feather name="share-2" size={18} color="#B9B4C3" />
+        </Pressable>
       </View>
 
-      {post.recentComments.length > 0 ? (
-        <View style={[styles.commentsBox, { backgroundColor: colors.muted }]}>
+      {commentsOpen ? (
+        <View style={styles.commentsPanel}>
           {post.recentComments.map((comment) => (
             <View key={comment.id} style={styles.commentRow}>
-              <Text
-                style={[styles.commentAuthor, { color: colors.foreground }]}
-              >
-                {comment.author.nickname}
-              </Text>
-              <Text
-                style={[styles.commentBody, { color: colors.mutedForeground }]}
-              >
-                {comment.body}
-              </Text>
+              <Text style={styles.commentAuthor}>{comment.author.nickname}</Text>
+              <Text style={styles.commentBody}>{comment.body}</Text>
             </View>
           ))}
+          <View style={styles.commentInputRow}>
+            <TextInput
+              value={commentDraft}
+              onChangeText={(value) => onCommentDraft(post.id, value)}
+              placeholder="댓글로 응원하기"
+              placeholderTextColor={colors.mutedForeground}
+              style={styles.commentInput}
+              maxLength={240}
+            />
+            <Pressable
+              disabled={!canComment}
+              onPress={() => onSubmitComment(post.id)}
+              style={[styles.commentSubmit, { opacity: canComment ? 1 : 0.42 }]}
+            >
+              <Feather name="send" size={15} color="#FFFFFF" />
+            </Pressable>
+          </View>
         </View>
       ) : null}
-
-      <View style={styles.commentInputRow}>
-        <TextInput
-          value={commentDraft}
-          onChangeText={(value) => onCommentDraft(post.id, value)}
-          placeholder="댓글로 응원하기"
-          placeholderTextColor={colors.mutedForeground}
-          style={[
-            styles.commentInput,
-            {
-              backgroundColor: colors.input,
-              color: colors.foreground,
-              borderColor: colors.border,
-            },
-          ]}
-          maxLength={240}
-        />
-        <Pressable
-          disabled={!canComment}
-          onPress={() => onSubmitComment(post.id)}
-          style={({ pressed }) => [
-            styles.commentSubmit,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed ? 0.75 : canComment ? 1 : 0.45,
-            },
-          ]}
-        >
-          <Feather name="send" size={16} color={colors.primaryForeground} />
-        </Pressable>
-      </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -424,19 +220,23 @@ export default function FeedScreen() {
   } = useStarFeed();
   const [draft, setDraft] = useState("");
   const [postKind, setPostKind] = useState<StarFeedWritableKind>("fan");
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>(
-    {},
-  );
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [feedFilter, setFeedFilter] = useState<"recommended" | "following">("recommended");
 
   const officialStarReady = equippedStar?.stage === "promoted";
-  const activePostKind: StarFeedWritableKind = officialStarReady
-    ? postKind
-    : "fan";
-  const composerTitle =
-    activePostKind === "star" ? "공식 STAR 기록" : "FAN 응원글";
+  const activePostKind: StarFeedWritableKind = officialStarReady ? postKind : "fan";
   const canPost = draft.trim().length > 0 && !isCreatingPost;
   const starName = equippedStar?.displayName ?? "STAR";
+  const storyAuthors = useMemo(() => {
+    const unique = new Map<string, StarFeedAuthor>();
+    posts.forEach((post) => {
+      const key = post.author.id ?? post.author.nickname;
+      if (!unique.has(key)) unique.set(key, post.author);
+    });
+    return [...unique.values()].slice(0, 7);
+  }, [posts]);
 
   async function submitPost() {
     const body = draft.trim();
@@ -445,15 +245,9 @@ export default function FeedScreen() {
     try {
       await createPost({ kind: activePostKind, body });
       setDraft("");
+      setComposerOpen(false);
     } catch (err) {
-      setFeedback(
-        errorMessage(
-          err,
-          activePostKind === "star"
-            ? "공식 STAR 기록을 올리지 못했어요. 잠시 후 다시 시도해 주세요."
-            : "응원글을 올리지 못했어요. 잠시 후 다시 시도해 주세요.",
-        ),
-      );
+      setFeedback(errorMessage(err, "게시글을 올리지 못했어요. 잠시 후 다시 시도해 주세요."));
     }
   }
 
@@ -463,10 +257,6 @@ export default function FeedScreen() {
     } catch {
       setFeedback("응원 반응을 남기지 못했어요.");
     }
-  }
-
-  function updateCommentDraft(postId: string, value: string) {
-    setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
   }
 
   async function submitComment(postId: string) {
@@ -482,216 +272,93 @@ export default function FeedScreen() {
 
   return (
     <NeonBackdrop style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.titleBlock}>
-          <Text style={[styles.kicker, { color: colors.primary }]}>
-            STAR SNS
-          </Text>
-          <Text style={[styles.title, { color: colors.foreground }]}>피드</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+        <View style={styles.feedTabs}>
+          {(["recommended", "following"] as const).map((item) => {
+            const active = feedFilter === item;
+            return (
+              <Pressable key={item} onPress={() => setFeedFilter(item)} style={styles.feedTabPressable}>
+                {active ? (
+                  <LinearGradient colors={["#481378", "#1B0737"]} style={styles.feedTabActive}>
+                    <Text style={styles.feedTabActiveText}>{item === "recommended" ? "추천 ·" : "팔로잉"}</Text>
+                  </LinearGradient>
+                ) : <Text style={styles.feedTabText}>{item === "recommended" ? "추천" : "팔로잉"}</Text>}
+              </Pressable>
+            );
+          })}
         </View>
-        <ModeSwitch />
+        <Pressable onPress={() => setComposerOpen((open) => !open)} style={({ pressed }) => [styles.writeButton, pressed && styles.pressed]}>
+          <Feather name={composerOpen ? "x" : "plus"} size={19} color="#B84CFF" />
+          <Text style={styles.writeButtonText}>{composerOpen ? "닫기" : "글쓰기"}</Text>
+        </Pressable>
       </View>
 
-      <CustomScrollView
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingBottom: insets.bottom + 100,
-        }}
-      >
-        <View
-          style={[
-            styles.composer,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.composerHeader}>
-            <View
-              style={[styles.composerIcon, { backgroundColor: colors.accent }]}
-            >
-              <Feather
-                name={activePostKind === "star" ? "zap" : "edit-3"}
-                size={18}
-                color={colors.primary}
-              />
+      <CustomScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}>
+        {composerOpen ? (
+          <LinearGradient colors={["#141025", "#090816"]} style={styles.composer}>
+            <View style={styles.composerHeader}>
+              <View style={styles.composerIcon}><Feather name="edit-3" size={17} color="#A64DFF" /></View>
+              <View style={styles.composerTitleBlock}>
+                <Text style={styles.composerTitle}>{activePostKind === "star" ? "공식 STAR 기록" : "FAN 응원글"}</Text>
+                <Text style={styles.composerSub}>{starUnlocked ? `${starName}에게 전할 이야기를 남겨주세요.` : "STAR 잠금 상태에서도 응원글을 남길 수 있어요."}</Text>
+              </View>
             </View>
-            <View style={styles.composerTitleBlock}>
-              <Text
-                style={[styles.composerTitle, { color: colors.foreground }]}
-              >
-                {composerTitle}
-              </Text>
-              <Text
-                style={[styles.composerSub, { color: colors.mutedForeground }]}
-              >
-                {activePostKind === "star"
-                  ? `${starName}의 공식 활동과 팬클럽 소식을 STAR 이름으로 기록해요.`
-                  : starUnlocked
-                    ? equippedStar
-                      ? officialStarReady
-                        ? "FAN 응원글 또는 공식 STAR 기록 중 하나를 선택해 남길 수 있어요."
-                        : `${starName}는 아직 연습생 STAR예요. 토르미아 개방 후 공식 STAR 기록을 남길 수 있어요.`
-                      : "마이페이지에서 STAR NFT를 장착하면 캐릭터 성장 기록이 열려요."
-                    : "STAR 잠금 상태여도 피드 보기, 응원, 댓글은 가능해요."}
-              </Text>
+            <View style={styles.kindSwitch}>
+              {(["fan", "star"] as StarFeedWritableKind[]).map((kind) => {
+                const active = activePostKind === kind;
+                const disabled = kind === "star" && !officialStarReady;
+                return (
+                  <Pressable key={kind} disabled={disabled} onPress={() => setPostKind(kind)} style={[styles.kindButton, active && styles.kindButtonActive, disabled && styles.kindButtonDisabled]}>
+                    {disabled ? <Feather name="lock" size={11} color="#676173" /> : null}
+                    <Text style={[styles.kindButtonText, active && styles.kindButtonTextActive]}>{kind === "fan" ? "FAN 응원글" : "공식 STAR 기록"}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          </View>
-          <View
-            style={[
-              styles.kindSwitch,
-              { backgroundColor: colors.muted, borderColor: colors.border },
-            ]}
-          >
-            {(["fan", "star"] as StarFeedWritableKind[]).map((kind) => {
-              const active = activePostKind === kind;
-              const disabled = kind === "star" && !officialStarReady;
-              return (
-                <Pressable
-                  key={kind}
-                  disabled={disabled}
-                  onPress={() => setPostKind(kind)}
-                  style={[
-                    styles.kindButton,
-                    {
-                      backgroundColor: active
-                        ? colors.foreground
-                        : "transparent",
-                      opacity: disabled ? 0.45 : 1,
-                    },
-                  ]}
-                >
-                  {disabled ? (
-                    <Feather
-                      name="lock"
-                      size={12}
-                      color={colors.mutedForeground}
-                    />
-                  ) : null}
-                  <Text
-                    style={[
-                      styles.kindButtonText,
-                      {
-                        color: active
-                          ? colors.background
-                          : colors.mutedForeground,
-                      },
-                    ]}
-                  >
-                    {kind === "star" ? "공식 STAR 기록" : "FAN 응원글"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={
-              activePostKind === "star"
-                ? `오늘 ${starName}의 공식 STAR 활동을 기록해 주세요.`
-                : `오늘 ${starName}에게 보내는 응원을 적어주세요.`
-            }
-            placeholderTextColor={colors.mutedForeground}
-            multiline
-            maxLength={500}
-            style={[
-              styles.composerInput,
-              {
-                backgroundColor: colors.input,
-                borderColor: colors.border,
-                color: colors.foreground,
-              },
-            ]}
-          />
-          {feedback ? (
-            <Text style={[styles.feedback, { color: colors.destructive }]}>
-              {feedback}
-            </Text>
-          ) : null}
-          <Pressable
-            disabled={!canPost}
-            onPress={submitPost}
-            style={({ pressed }) => [
-              styles.postButton,
-              {
-                backgroundColor: colors.primary,
-                opacity: pressed ? 0.75 : canPost ? 1 : 0.45,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.postButtonText,
-                { color: colors.primaryForeground },
-              ]}
-            >
-              {isCreatingPost
-                ? "올리는 중"
-                : activePostKind === "star"
-                  ? "공식 기록 올리기"
-                  : "응원글 올리기"}
-            </Text>
-          </Pressable>
-        </View>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={`오늘 ${starName}에게 보내는 이야기를 적어주세요.`}
+              placeholderTextColor="#817A8C"
+              multiline
+              maxLength={500}
+              style={styles.composerInput}
+            />
+            {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+            <Pressable disabled={!canPost} onPress={() => void submitPost()} style={[styles.postButton, { opacity: canPost ? 1 : 0.42 }]}>
+              <Text style={styles.postButtonText}>{isCreatingPost ? "올리는 중" : "게시하기"}</Text>
+            </Pressable>
+          </LinearGradient>
+        ) : null}
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-            {starName} 월드 타임라인
-          </Text>
-          <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>
-            FAN은 보고 응원하고, 공식 STAR는 성장 기록을 남깁니다.
-          </Text>
-        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stories}>
+          {storyAuthors.map((author, index) => <StoryItem key={author.id ?? `${author.nickname}-${index}`} author={author} index={index} />)}
+        </ScrollView>
+
+        {feedback && !composerOpen ? <Text style={styles.feedbackBanner}>{feedback}</Text> : null}
 
         {isLoading ? (
-          <View style={styles.stateBox}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
-              피드를 불러오는 중이에요.
-            </Text>
-          </View>
+          <View style={styles.stateBox}><ActivityIndicator color={neon.purple} /><Text style={styles.stateText}>피드를 불러오는 중이에요.</Text></View>
         ) : error ? (
-          <Pressable
-            onPress={() => void refetch()}
-            style={[
-              styles.stateBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.stateTitle, { color: colors.foreground }]}>
-              피드를 불러오지 못했어요
-            </Text>
-            <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
-              눌러서 다시 시도해 주세요.
-            </Text>
-          </Pressable>
+          <Pressable onPress={() => void refetch()} style={styles.stateBox}><Text style={styles.stateTitle}>피드를 불러오지 못했어요</Text><Text style={styles.stateText}>눌러서 다시 시도해 주세요.</Text></Pressable>
         ) : posts.length === 0 ? (
-          <View
-            style={[
-              styles.stateBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.stateTitle, { color: colors.foreground }]}>
-              아직 피드가 비어 있어요
-            </Text>
-            <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
-              첫 FAN 응원글을 남겨보세요.
-            </Text>
-          </View>
+          <View style={styles.stateBox}><Text style={styles.stateTitle}>아직 피드가 비어 있어요</Text><Text style={styles.stateText}>첫 FAN 응원글을 남겨보세요.</Text></View>
         ) : (
-          posts.map((post) => (
-            <FeedPostCard
-              key={post.id}
-              post={post}
-              colors={colors}
-              commentDraft={commentDrafts[post.id] ?? ""}
-              isCheering={isCheering}
-              isCommenting={isCommenting}
-              onCheer={(postId) => void cheer(postId)}
-              onCommentDraft={updateCommentDraft}
-              onSubmitComment={(postId) => void submitComment(postId)}
-            />
-          ))
+          <View style={styles.feedList}>
+            {posts.map((post) => (
+              <FeedPostCard
+                key={post.id}
+                post={post}
+                colors={colors}
+                commentDraft={commentDrafts[post.id] ?? ""}
+                isCheering={isCheering}
+                isCommenting={isCommenting}
+                onCheer={(postId) => void cheer(postId)}
+                onCommentDraft={(postId, value) => setCommentDrafts((prev) => ({ ...prev, [postId]: value }))}
+                onSubmitComment={(postId) => void submitComment(postId)}
+              />
+            ))}
+          </View>
         )}
       </CustomScrollView>
     </NeonBackdrop>
@@ -700,219 +367,73 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  titleBlock: { gap: 2 },
-  kicker: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 1.2 },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.7 },
-  composer: {
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-    marginTop: 10,
-    padding: 16,
-  },
-  composerHeader: { flexDirection: "row", gap: 12 },
-  composerIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  composerTitleBlock: { flex: 1, gap: 3 },
-  composerTitle: { fontFamily: "Inter_700Bold", fontSize: 16 },
-  composerSub: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 17 },
-  kindSwitch: {
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    padding: 3,
-  },
-  kindButton: {
-    alignItems: "center",
-    borderRadius: 999,
-    flex: 1,
-    flexDirection: "row",
-    gap: 5,
-    justifyContent: "center",
-    minHeight: 34,
-    paddingHorizontal: 10,
-  },
-  kindButtonText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  composerInput: {
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    lineHeight: 20,
-    minHeight: 96,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    textAlignVertical: "top",
-  },
-  feedback: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  postButton: { alignItems: "center", borderRadius: 14, paddingVertical: 12 },
-  postButtonText: { fontFamily: "Inter_700Bold", fontSize: 14 },
-  sectionHeader: { gap: 4, marginTop: 22, marginBottom: 12 },
-  sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 18 },
-  sectionSub: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18 },
-  stateBox: {
-    alignItems: "center",
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-    marginBottom: 12,
-    padding: 20,
-  },
-  stateTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
-  stateText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    textAlign: "center",
-  },
-  feedCard: {
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-    marginBottom: 12,
-    padding: 16,
-  },
-  feedTopRow: { alignItems: "center", flexDirection: "row", gap: 12 },
-  feedIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  feedTitleBlock: { flex: 1, gap: 2 },
-  feedMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  feedType: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 0.8 },
-  feedDate: { fontFamily: "Inter_400Regular", fontSize: 11 },
-  feedAuthor: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  feedTitle: { fontFamily: "Inter_700Bold", fontSize: 17, letterSpacing: -0.2 },
-  feedText: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 21 },
-  profileUpdateCard: {
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-    padding: 14,
-  },
-  profileUpdateImageBlock: { gap: 10 },
-  profileImagePreview: {
-    borderRadius: 16,
-    height: 220,
-    overflow: "hidden",
-    width: "100%",
-  },
-  profileImagePreviewImage: { height: "100%", width: "100%" },
-  profileImagePlaceholder: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-  },
-  profileUpdateBody: { flex: 1, gap: 2 },
-  profileUpdateLabel: { fontFamily: "Inter_700Bold", fontSize: 14 },
-  profileUpdateDesc: { fontFamily: "Inter_400Regular", fontSize: 12 },
-  talkDiaryCard: {
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-    padding: 14,
-  },
-  talkDiaryTopRow: { alignItems: "center", flexDirection: "row", gap: 10 },
-  talkDiaryIcon: {
-    alignItems: "center",
-    borderRadius: 14,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  talkDiaryTitleBlock: { flex: 1, gap: 2 },
-  talkDiaryLabel: { fontFamily: "Inter_700Bold", fontSize: 13 },
-  talkDiaryMood: { fontFamily: "Inter_500Medium", fontSize: 12 },
-  talkDiaryBody: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  talkKeywordRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  talkKeywordPill: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  talkKeywordText: { fontFamily: "Inter_700Bold", fontSize: 11 },
-  talkRewardRow: {
-    borderRadius: 14,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    padding: 10,
-  },
-  talkRewardText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  statusMessageBox: {
-    alignItems: "flex-start",
-    borderRadius: 14,
-    flexDirection: "row",
-    gap: 8,
-    padding: 12,
-  },
-  statusMessageText: {
-    flex: 1,
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  actionRow: { flexDirection: "row", gap: 8 },
-  actionButton: {
-    alignItems: "center",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  actionText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  commentCountPill: {
-    alignItems: "center",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  commentCountText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  commentsBox: { borderRadius: 14, gap: 8, padding: 12 },
-  commentRow: { gap: 2 },
-  commentAuthor: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  commentBody: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18 },
-  commentInputRow: { alignItems: "center", flexDirection: "row", gap: 8 },
-  commentInput: {
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    minHeight: 42,
-    paddingHorizontal: 14,
-  },
-  commentSubmit: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
+  header: { minHeight: 55, paddingHorizontal: 13, paddingBottom: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  feedTabs: { width: 193, height: 39, padding: 3, borderRadius: 22, borderWidth: 1, borderColor: "rgba(123,53,255,0.26)", backgroundColor: "rgba(6,6,18,0.9)", flexDirection: "row" },
+  feedTabPressable: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 19, overflow: "hidden" },
+  feedTabActive: { width: "100%", height: "100%", borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(182,75,255,0.62)", shadowColor: "#A64DFF", shadowOpacity: 0.7, shadowRadius: 8 },
+  feedTabActiveText: { color: "#F4E9FF", fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  feedTabText: { color: "#9A94A6", fontFamily: "Inter_500Medium", fontSize: 12 },
+  writeButton: { height: 39, paddingHorizontal: 16, borderRadius: 22, borderWidth: 1, borderColor: "rgba(92,69,157,0.26)", backgroundColor: "rgba(13,13,30,0.94)", flexDirection: "row", alignItems: "center", gap: 8 },
+  writeButtonText: { color: "#D8D2E0", fontFamily: "Inter_500Medium", fontSize: 12 },
+  content: { paddingHorizontal: 7, gap: 8 },
+  stories: { gap: 10, paddingHorizontal: 4, paddingVertical: 7 },
+  storyItem: { width: 61, alignItems: "center" },
+  storyRing: { width: 58, height: 58, borderRadius: 29, padding: 2, alignItems: "center", justifyContent: "center" },
+  storyAvatarInset: { width: 54, height: 54, borderRadius: 27, backgroundColor: "#05040D", padding: 2, alignItems: "center", justifyContent: "center" },
+  storyPlus: { position: "absolute", right: -2, bottom: 1, width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#8A39FF", borderWidth: 2, borderColor: "#05040D" },
+  storyNameRow: { maxWidth: 61, flexDirection: "row", alignItems: "center", gap: 3, marginTop: 6 },
+  storyName: { color: "#C4BFCA", fontFamily: "Inter_400Regular", fontSize: 9, maxWidth: 52 },
+  storyRole: { color: "#C047FF", fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 2 },
+  verified: { width: 11, height: 11, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#7B35FF" },
+  composer: { borderRadius: 18, borderWidth: 1, borderColor: "rgba(133,75,210,0.34)", padding: 14, gap: 11, overflow: "hidden" },
+  composerHeader: { flexDirection: "row", gap: 10, alignItems: "center" },
+  composerIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(98,35,174,0.32)" },
+  composerTitleBlock: { flex: 1 },
+  composerTitle: { color: neon.text, fontFamily: "Inter_700Bold", fontSize: 14 },
+  composerSub: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 3 },
+  kindSwitch: { height: 38, borderRadius: 20, borderWidth: 1, borderColor: "rgba(130,75,194,0.36)", padding: 3, flexDirection: "row" },
+  kindButton: { flex: 1, borderRadius: 17, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 5 },
+  kindButtonActive: { backgroundColor: "#F4F0FF" },
+  kindButtonDisabled: { opacity: 0.48 },
+  kindButtonText: { color: "#7D7689", fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  kindButtonTextActive: { color: "#080611" },
+  composerInput: { minHeight: 82, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: "rgba(125,70,180,0.32)", backgroundColor: "rgba(7,7,18,0.82)", color: neon.text, fontFamily: "Inter_400Regular", fontSize: 13, textAlignVertical: "top" },
+  feedback: { color: "#FF7770", fontFamily: "Inter_500Medium", fontSize: 11 },
+  postButton: { height: 40, borderRadius: 14, backgroundColor: "#6F3EAA", alignItems: "center", justifyContent: "center" },
+  postButtonText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 12 },
+  feedList: { gap: 8 },
+  feedCard: { borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(61,56,113,0.42)", padding: 11, overflow: "hidden" },
+  cardGlow: { position: "absolute", right: -80, top: -90, width: 230, height: 190, borderRadius: 120, backgroundColor: "rgba(43,34,126,0.10)" },
+  feedHeader: { height: 46, flexDirection: "row", alignItems: "center", gap: 9 },
+  avatarRing: { width: 48, height: 48, padding: 2, borderRadius: 24, borderWidth: 1, borderColor: "#A63CFF", alignItems: "center", justifyContent: "center" },
+  feedIdentity: { flex: 1 },
+  authorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  feedAuthor: { color: "#E6E2EB", fontFamily: "Inter_500Medium", fontSize: 12, maxWidth: "58%" },
+  feedRole: { color: "#C143FF", fontFamily: "Inter_500Medium", fontSize: 9 },
+  feedTime: { color: "#777181", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 3 },
+  feedMain: { flexDirection: "row", gap: 10, marginTop: 8 },
+  feedCopy: { flex: 1, minWidth: 0, paddingVertical: 2 },
+  feedTitle: { color: "#F0EDF4", fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 17 },
+  feedBody: { color: "#C0BAC6", fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16, marginTop: 5 },
+  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 7 },
+  tag: { color: "#9563B9", fontFamily: "Inter_400Regular", fontSize: 9 },
+  visualWrap: { width: "48%", height: 112, borderRadius: 10, overflow: "hidden", backgroundColor: "#100D23", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(123,53,255,0.24)" },
+  feedVisual: { width: "100%", height: "100%" },
+  playButton: { position: "absolute", left: 10, bottom: 10, width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(5,4,13,0.78)", borderWidth: 1, borderColor: "rgba(83,224,232,0.65)", alignItems: "center", justifyContent: "center" },
+  actionRow: { height: 30, flexDirection: "row", alignItems: "center", marginTop: 7, paddingLeft: 2 },
+  actionButton: { flexDirection: "row", alignItems: "center", gap: 7, paddingRight: 23 },
+  actionCount: { color: "#AAA5B2", fontFamily: "Inter_400Regular", fontSize: 10 },
+  shareButton: { marginLeft: 2 },
+  commentsPanel: { marginTop: 8, paddingTop: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(112,70,161,0.22)", gap: 7 },
+  commentRow: { flexDirection: "row", gap: 7 },
+  commentAuthor: { color: neon.text, fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  commentBody: { flex: 1, color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 10 },
+  commentInputRow: { height: 37, flexDirection: "row", gap: 7 },
+  commentInput: { flex: 1, borderRadius: 19, borderWidth: 1, borderColor: "rgba(122,64,168,0.35)", backgroundColor: "#0B0A16", color: neon.text, paddingHorizontal: 12, fontFamily: "Inter_400Regular", fontSize: 11 },
+  commentSubmit: { width: 37, height: 37, borderRadius: 19, backgroundColor: "#6A3DA8", alignItems: "center", justifyContent: "center" },
+  feedbackBanner: { color: "#FF7770", backgroundColor: "rgba(80,20,32,0.35)", borderRadius: 10, padding: 10, fontFamily: "Inter_500Medium", fontSize: 11 },
+  stateBox: { minHeight: 120, borderRadius: 16, borderWidth: 1, borderColor: "rgba(80,62,124,0.35)", backgroundColor: "rgba(9,9,22,0.94)", alignItems: "center", justifyContent: "center", gap: 8 },
+  stateTitle: { color: neon.text, fontFamily: "Inter_700Bold", fontSize: 14 },
+  stateText: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 11 },
 });

@@ -10,7 +10,9 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getGetMyAchievementsQueryKey,
@@ -48,6 +50,7 @@ export default function QuestsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const [tab, setTab] = React.useState<TabKey>("daily");
 
@@ -103,62 +106,21 @@ export default function QuestsScreen() {
 
   return (
     <NeonBackdrop style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top + 8, backgroundColor: colors.muted },
-        ]}
-      >
-        <LinearGradient
-          colors={["#17102F", "#09071C", "#11132D"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.missionHero}
-        >
-          <View style={styles.missionHeroCopy}>
-            <Text style={styles.missionEyebrow}>TORIMIA GATE</Text>
-            <Text style={styles.missionHeroTitle}>토로미아 문 열기 미션</Text>
-            <Text style={styles.missionHeroBody}>오늘의 활동으로 STAR를 모아 새로운 세계를 개방하세요.</Text>
-            <Text style={styles.missionPercent}>{torimiaProgress}%</Text>
-            <View style={styles.missionTrack}><View style={[styles.missionFill, { width: `${torimiaProgress}%` }]} /></View>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.topBar}>
+          <View style={styles.brandRow}>
+            <Image source={require("../../assets/images/icon.png")} style={styles.brandIcon} contentFit="cover" />
+            <Text style={styles.brandAnother}>Another</Text>
+            <Text style={styles.brandMe}> Me</Text>
+            <Text style={styles.brandSpark}>⁺</Text>
           </View>
-          <View style={styles.missionPortal}>
-            <Feather name="star" size={36} color="#EEDCFF" />
+          <View style={styles.topActions}>
+            <View style={styles.topIcon}><Feather name="bell" size={19} color="#BEB9C7" /><View style={styles.noticeDot} /></View>
+            <View style={styles.topIcon}><Feather name="inbox" size={19} color="#BEB9C7" /></View>
+            <Image source={require("../../assets/images/icon.png")} style={styles.profileIcon} contentFit="cover" />
           </View>
-        </LinearGradient>
-
-        <View style={styles.headerBtn} />
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>데일리 미션</Text>
-        <View style={styles.headerBtn} />
-      </View>
-
-      {/* Tabs */}
-      <View style={[styles.tabBar, { backgroundColor: colors.muted }]}>
-        {TABS.map((t) => {
-          const active = tab === t.key;
-          return (
-            <Pressable
-              key={t.key}
-              onPress={() => setTab(t.key)}
-              style={styles.tabItem}
-            >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  { color: active ? colors.foreground : colors.mutedForeground },
-                ]}
-              >
-                {t.label}
-              </Text>
-              <View
-                style={[
-                  styles.tabUnderline,
-                  { backgroundColor: active ? colors.primary : "transparent" },
-                ]}
-              />
-            </Pressable>
-          );
-        })}
+        </View>
+        <Text style={styles.headerTitle}>미션</Text>
       </View>
 
       <CustomScrollView
@@ -175,6 +137,48 @@ export default function QuestsScreen() {
           />
         }
       >
+        <View style={styles.missionHero}>
+          <Image
+            source={require("../../assets/images/torimia-portal-scene.png")}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            contentPosition="right"
+          />
+          <LinearGradient
+            colors={["rgba(5,4,13,0.98)", "rgba(7,5,20,0.82)", "rgba(7,4,18,0.12)"]}
+            locations={[0, 0.48, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View pointerEvents="none" style={styles.heroGlow} />
+          <View style={styles.missionHeroCopy}>
+            <Text style={styles.missionHeroTitle}>토로미아 문 열기 미션</Text>
+            <Text style={styles.missionHeroBody}>1000스타를 소모하여{`\n`}메타버스로 캐릭터를 전송합니다.</Text>
+            <Text style={styles.missionPercent}>{torimiaProgress}%</Text>
+            <View style={styles.missionTrack}><View style={[styles.missionFill, { width: `${torimiaProgress}%` }]} /></View>
+            <Text style={styles.missionRemain}>토로미아 문 열 자격까지 {Math.max(0, 100 - torimiaProgress)}% 남았어요</Text>
+          </View>
+          <Pressable
+            onPress={() => router.push("/(tabs)/dungeon")}
+            style={({ pressed }) => [styles.gateButton, pressed && { opacity: 0.78 }]}
+          >
+            <Text style={styles.gateButtonText}>문 열기 시도</Text>
+            <Feather name="chevron-right" size={20} color="#FFFFFF" />
+          </Pressable>
+        </View>
+
+        <View style={styles.tabBar}>
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tabItem, active && styles.tabItemActive]}>
+                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         {tab === "achievements" ? (
           achLoading ? (
             <Loading colors={colors} />
@@ -224,11 +228,7 @@ export default function QuestsScreen() {
             }
             return (
               <>
-                <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-                  {tab === "daily"
-                    ? "매일 0시(KST)에 초기화돼요."
-                    : "매주 월요일 0시(KST)에 초기화돼요."}
-                </Text>
+                <Text style={styles.listTitle}>{tab === "daily" ? "데일리 미션" : "주간 미션"}</Text>
                 {list.map((q) => (
                   <QuestRow
                     key={q.key}
@@ -280,6 +280,16 @@ function ErrorBlock({
   );
 }
 
+function questIcon(quest: Quest): keyof typeof Feather.glyphMap {
+  const source = `${quest.key} ${quest.title} ${quest.description}`.toLocaleLowerCase();
+  if (source.includes("대화") || source.includes("chat") || source.includes("talk")) return "message-circle";
+  if (source.includes("게시") || source.includes("post") || source.includes("feed")) return "edit-3";
+  if (source.includes("좋아요") || source.includes("응원") || source.includes("reaction")) return "star";
+  if (source.includes("배틀") || source.includes("battle")) return "mic";
+  if (source.includes("분석") || source.includes("analysis")) return "activity";
+  return "zap";
+}
+
 function QuestRow({
   quest,
   colors,
@@ -293,8 +303,17 @@ function QuestRow({
 }) {
   const ratio = Math.min(100, Math.round((quest.progress / (quest.target || 1)) * 100));
   return (
-    <View style={[styles.card, { backgroundColor: colors.background }]}>
+    <LinearGradient
+      colors={["rgba(11,11,27,0.99)", "rgba(5,6,18,0.99)"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.card}
+    >
       <View style={styles.cardTop}>
+        <View style={styles.questIconWrap}>
+          <Feather name={questIcon(quest)} size={34} color="#B24CFF" />
+          <View pointerEvents="none" style={styles.questIconGlow} />
+        </View>
         <View style={styles.cardInfo}>
           <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
             {quest.title}
@@ -311,17 +330,14 @@ function QuestRow({
       </View>
 
       <View
-        style={[
-          styles.progressTrack,
-          { backgroundColor: colors.muted },
-        ]}
+        style={styles.progressTrack}
       >
         <View
           style={{
             width: `${ratio}%`,
             height: "100%",
             borderRadius: 4,
-            backgroundColor: quest.completed ? "#00B488" : colors.primary,
+            backgroundColor: quest.completed ? "#35E6E0" : "#5918FF",
           }}
         />
       </View>
@@ -330,15 +346,17 @@ function QuestRow({
         <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
           {Math.min(quest.progress, quest.target)} / {quest.target}
         </Text>
-        <ClaimButton
-          completed={quest.completed}
-          claimed={quest.rewardClaimed}
-          claiming={claiming}
-          colors={colors}
-          onClaim={onClaim}
-        />
+        {quest.completed || quest.rewardClaimed ? (
+          <ClaimButton
+            completed={quest.completed}
+            claimed={quest.rewardClaimed}
+            claiming={claiming}
+            colors={colors}
+            onClaim={onClaim}
+          />
+        ) : null}
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -421,8 +439,8 @@ function RewardBadge({
       ]}
     >
       <Feather
-        name="zap"
-        size={11}
+        name="star"
+        size={15}
         color={claimed ? colors.mutedForeground : colors.primary}
       />
       <Text
@@ -431,7 +449,7 @@ function RewardBadge({
           { color: claimed ? colors.mutedForeground : colors.primary },
         ]}
       >
-        +{exp} FAN XP
+        +{exp} STAR
       </Text>
     </View>
   );
@@ -490,42 +508,60 @@ function ClaimButton({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 8,
+    paddingBottom: 10,
   },
-  headerBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
+  topBar: { height: 46, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  brandRow: { flexDirection: "row", alignItems: "center" },
+  brandIcon: { width: 34, height: 34, borderRadius: 17, marginRight: 7 },
+  brandAnother: { color: "#D495FF", fontFamily: "Inter_500Medium", fontSize: 18 },
+  brandMe: { color: "#4EE4DF", fontFamily: "Inter_500Medium", fontSize: 18 },
+  brandSpark: { color: "#4EE4DF", fontFamily: "Inter_700Bold", fontSize: 13, alignSelf: "flex-start", marginTop: 7 },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  topIcon: { width: 31, height: 31, alignItems: "center", justifyContent: "center" },
+  noticeDot: { position: "absolute", right: 4, top: 4, width: 7, height: 7, borderRadius: 4, backgroundColor: "#A64DFF", borderWidth: 1, borderColor: "#05040D" },
+  profileIcon: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: "#A64DFF" },
+  headerTitle: { color: "#F7F5FF", fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center", marginTop: 3 },
   tabBar: {
+    height: 38,
     flexDirection: "row",
-    paddingHorizontal: 16,
+    gap: 5,
+    padding: 3,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(112,62,169,0.30)",
+    backgroundColor: "rgba(8,7,19,0.92)",
   },
-  tabItem: { flex: 1, alignItems: "center", paddingTop: 4 },
-  tabLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold", paddingBottom: 10 },
-  tabUnderline: { height: 2, width: "100%", borderRadius: 1 },
-  scroll: { padding: 16, gap: 12 },
-  missionHero: { minHeight: 220, borderRadius: 22, borderWidth: 1, borderColor: "rgba(157,99,255,0.55)", padding: 20, flexDirection: "row", overflow: "hidden" },
-  missionHeroCopy: { flex: 1, justifyContent: "center", zIndex: 1 },
-  missionEyebrow: { color: "#35E6E0", fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 1.4 },
-  missionHeroTitle: { color: "#F7F5FF", fontFamily: "Inter_700Bold", fontSize: 22, marginTop: 8 },
-  missionHeroBody: { color: "#A9A3BA", fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 19, marginTop: 8, maxWidth: 240 },
-  missionPercent: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 14 },
-  missionTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.1)", overflow: "hidden", marginTop: 6 },
-  missionFill: { height: "100%", borderRadius: 4, backgroundColor: "#7B35FF" },
-  missionPortal: { position: "absolute", right: -22, top: 18, width: 150, height: 184, borderRadius: 75, borderWidth: 6, borderColor: "rgba(128,55,255,0.72)", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(74,31,170,0.22)" },
+  tabItem: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 17 },
+  tabItemActive: { backgroundColor: "rgba(84,32,165,0.36)", borderWidth: 1, borderColor: "rgba(177,76,255,0.42)" },
+  tabLabel: { color: "#777181", fontSize: 11, fontFamily: "Inter_500Medium" },
+  tabLabelActive: { color: "#E8DCFF", fontFamily: "Inter_700Bold" },
+  scroll: { paddingHorizontal: 5, gap: 10 },
+  missionHero: { minHeight: 290, borderRadius: 16, borderWidth: 1, borderColor: "rgba(177,76,255,0.58)", overflow: "hidden", backgroundColor: "#070512" },
+  heroGlow: { position: "absolute", right: 45, top: 26, width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(103,39,255,0.12)" },
+  missionHeroCopy: { width: "54%", paddingLeft: 28, paddingTop: 27, zIndex: 1 },
+  missionHeroTitle: { color: "#F7F5FF", fontFamily: "Inter_700Bold", fontSize: 23, lineHeight: 30 },
+  missionHeroBody: { color: "#A9A3BA", fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 19, marginTop: 14 },
+  missionPercent: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 46, lineHeight: 55, marginTop: 22, textShadowColor: "rgba(178,76,255,0.35)", textShadowRadius: 10 },
+  missionTrack: { width: "100%", height: 10, borderRadius: 5, backgroundColor: "rgba(100,91,133,0.24)", overflow: "hidden", marginTop: 5 },
+  missionFill: { height: "100%", borderRadius: 5, backgroundColor: "#5918FF" },
+  missionRemain: { color: "#8E879A", fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 10 },
+  gateButton: { position: "absolute", right: 14, bottom: 18, width: "38%", height: 48, paddingHorizontal: 16, borderRadius: 25, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#4F12E8", borderWidth: 1, borderColor: "#8A52FF", shadowColor: "#6D28FF", shadowOpacity: 0.55, shadowRadius: 12 },
+  gateButtonText: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  listTitle: { color: "#F0ECF5", fontFamily: "Inter_700Bold", fontSize: 17, marginTop: 7, marginBottom: 2 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
   center: { paddingVertical: 80, alignItems: "center", gap: 14 },
   errorText: { fontSize: 14, fontFamily: "Inter_400Regular" },
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   retryText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
   emptyWrap: { paddingVertical: 80 },
-  card: { borderRadius: 16, padding: 16, gap: 12 },
-  cardTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  card: { minHeight: 140, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(61,56,113,0.48)", padding: 18, gap: 12, overflow: "hidden" },
+  cardTop: { flexDirection: "row", alignItems: "center", gap: 15 },
   cardInfo: { flex: 1, gap: 3 },
-  cardTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  cardDesc: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 18 },
+  cardTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
+  cardDesc: { fontSize: 11, fontFamily: "Inter_400Regular", lineHeight: 17, marginTop: 3 },
+  questIconWrap: { width: 72, height: 62, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(59,20,113,0.25)" },
+  questIconGlow: { position: "absolute", width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(164,59,255,0.14)", shadowColor: "#B24CFF", shadowOpacity: 0.9, shadowRadius: 14 },
   achIcon: {
     width: 38,
     height: 38,
@@ -536,13 +572,15 @@ const styles = StyleSheet.create({
   rewardBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(177,76,255,0.64)",
   },
   rewardText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
+  progressTrack: { height: 8, borderRadius: 4, overflow: "hidden", backgroundColor: "rgba(83,78,111,0.16)" },
   cardBottom: {
     flexDirection: "row",
     alignItems: "center",
