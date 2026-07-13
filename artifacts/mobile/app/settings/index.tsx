@@ -10,48 +10,18 @@ import { useGetMe } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
-import { useThemeMode, type ThemeMode } from "@/hooks/useThemeMode";
-import { gradients, gradientsDark } from "@/constants/colors";
+import { gradientsDark } from "@/constants/colors";
 import { useKnowledgeAdminMe } from "@/hooks/useKnowledge";
-
-const THEME_OPTIONS: { key: ThemeMode; label: string; icon: string }[] = [
-  { key: "light", label: "라이트", icon: "sun" },
-  { key: "dark", label: "다크", icon: "moon" },
-  { key: "system", label: "시스템", icon: "smartphone" },
-];
 
 function ThemeSelector() {
   const colors = useColors();
-  const { mode, setMode } = useThemeMode();
   return (
     <View style={[styles.segment, { backgroundColor: colors.muted }]}>
-      {THEME_OPTIONS.map((opt) => {
-        const active = mode === opt.key;
-        return (
-          <Pressable
-            key={opt.key}
-            onPress={() => setMode(opt.key)}
-            style={[
-              styles.segmentItem,
-              active && { backgroundColor: colors.background },
-            ]}
-          >
-            <Feather
-              name={opt.icon as any}
-              size={16}
-              color={active ? colors.primary : colors.mutedForeground}
-            />
-            <Text
-              style={[
-                styles.segmentLabel,
-                { color: active ? colors.foreground : colors.mutedForeground },
-              ]}
-            >
-              {opt.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+      <View style={[styles.segmentItem, { backgroundColor: colors.background }]}>
+        <Feather name="moon" size={16} color={colors.primary} />
+        <Text style={[styles.segmentLabel, { color: colors.foreground }]}>다크 모드</Text>
+      </View>
+      <Text style={[styles.themeHint, { color: colors.mutedForeground }]}>모든 화면에 적용 중</Text>
     </View>
   );
 }
@@ -127,7 +97,6 @@ export default function SettingsScreen() {
   const { signOut } = useAuth();
   const router = useRouter();
   const colors = useColors();
-  const { scheme } = useThemeMode();
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
   const { data: knowledgeAdmin } = useKnowledgeAdminMe();
@@ -171,7 +140,7 @@ export default function SettingsScreen() {
           style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
         >
           <LinearGradient
-            colors={(scheme === "dark" ? gradientsDark : gradients).soft}
+            colors={gradientsDark.soft}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.profile}
@@ -228,8 +197,13 @@ export default function SettingsScreen() {
           <SettingsRow
             icon="user"
             label="어나더 미"
-            sublabel="내 또 다른 자아의 성장 보기"
-            onPress={() => router.push("/persona")}
+            sublabel="분석 데이터와 온톨로지 근거 보기"
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/persona",
+                params: { view: "ontology" },
+              })
+            }
           />
           <SettingsRow
             icon="message-circle"
@@ -368,10 +342,18 @@ const styles = StyleSheet.create({
   rowSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
   segment: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     marginHorizontal: 16,
     padding: 4,
     borderRadius: 14,
+  },
+  themeHint: {
+    flex: 1,
+    paddingHorizontal: 14,
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    textAlign: "right",
   },
   segmentItem: {
     flex: 1,

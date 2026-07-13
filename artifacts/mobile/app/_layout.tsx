@@ -10,6 +10,7 @@ import { tokenCache } from "@clerk/expo/token-cache";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import { Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -23,7 +24,7 @@ import { PushRegistrar } from "@/components/PushRegistrar";
 import { NativePushRegistrar } from "@/components/NativePushRegistrar";
 import { ForegroundNotifier } from "@/components/ForegroundNotifier";
 import { UnreadBadgeSync } from "@/components/UnreadBadgeSync";
-import { ThemeModeProvider } from "@/hooks/useThemeMode";
+import { ThemeModeContext, ThemeModeProvider, useThemeMode } from "@/hooks/useThemeMode";
 import { useColors } from "@/hooks/useColors";
 import { getApiBase } from "@/lib/apiBase";
 import { useRealtimeInvalidation } from "@/lib/realtime";
@@ -97,8 +98,9 @@ function ApiAuthBridge({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RootLayoutNav() {
+function RootStackNav() {
   const colors = useColors();
+  const { scheme } = useThemeMode();
   const [isIOSStandalonePwa, setIsIOSStandalonePwa] = useState(() => getIsIOSStandalonePwa());
 
   useEffect(() => {
@@ -119,7 +121,12 @@ function RootLayoutNav() {
   const useChatOverlay = Platform.OS === "web" && !isIOSStandalonePwa;
 
   return (
-    <Stack
+    <>
+      <StatusBar
+        style={scheme === "dark" ? "light" : "dark"}
+        backgroundColor={colors.background}
+      />
+      <Stack
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.foreground,
@@ -252,7 +259,26 @@ function RootLayoutNav() {
         name="settings/knowledge-admin"
         options={{ title: "AI 지식 관리자", headerBackTitle: "Back" }}
       />
-    </Stack>
+      </Stack>
+    </>
+  );
+}
+
+function RootLayoutNav() {
+  const { isSignedIn } = useAuth();
+  const themeMode = useThemeMode();
+  const authenticatedTheme = React.useMemo(
+    () =>
+      isSignedIn
+        ? { ...themeMode, mode: "dark" as const, scheme: "dark" as const }
+        : themeMode,
+    [isSignedIn, themeMode],
+  );
+
+  return (
+    <ThemeModeContext.Provider value={authenticatedTheme}>
+      <RootStackNav />
+    </ThemeModeContext.Provider>
   );
 }
 

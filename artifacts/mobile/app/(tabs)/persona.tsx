@@ -173,7 +173,7 @@ const ONTOLOGY_SOURCE_META: Array<{
 
 export default function MyPageScreen() {
   const router = useRouter();
-  const { focus } = useLocalSearchParams();
+  const { focus, view } = useLocalSearchParams<{ focus?: string; view?: string }>();
   const colors = useColors();
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
@@ -222,12 +222,27 @@ export default function MyPageScreen() {
     : (ontologyProfile?.evidenceSummary ?? []).slice(0, 3).map((label) => ({ label, createdAt: ontologyProfile?.updatedAt ?? null }));
   const recentEvents = persona?.recentEvents ?? [];
   const visibleRecentEvents = eventsExpanded ? recentEvents : recentEvents.slice(0, 1);
-  const showLegacyDetails: boolean = false;
+  const showOntologyDetails = view === "ontology";
 
   return (
     <NeonBackdrop style={styles.container}>
-      <View style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}>
-        <Text style={[styles.screenTitle, { color: colors.foreground }]}>마이페이지</Text>
+      <View
+        style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}
+      >
+        {showOntologyDetails ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="뒤로"
+            hitSlop={10}
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.screenBackButton, pressed && { opacity: 0.55 }]}
+          >
+            <Feather name="chevron-left" size={26} color={colors.foreground} />
+          </Pressable>
+        ) : null}
+        <Text style={[styles.screenTitle, { color: colors.foreground }]}>
+          {showOntologyDetails ? "Another Me 분석" : "마이페이지"}
+        </Text>
       </View>
       <CustomScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
         {isLoading ? (
@@ -248,24 +263,26 @@ export default function MyPageScreen() {
           </View>
         ) : (
           <>
-            <MyDashboard
-              nickname={me?.nickname ?? "나"}
-              avatarUri={me?.profileImageUrl}
-              intro={me?.statusMessage ?? "비비와 함께 성장하는 또 다른 나 ✦"}
-              level={fanLevel}
-              xp={fanProfile?.xp ?? 0}
-              stats={fanProfile?.stats}
-              activityCount={recentEvents.length}
-              walletStatus={walletStatus}
-              equippedStar={equippedStar}
-              isAnalyzing={isAnalyzing}
-              onEditProfile={() => router.push("/profile/edit")}
-              onWallet={() => router.push("/pvt/wallet")}
-              onNotifications={() => router.push("/settings/notifications")}
-              onAccount={() => router.push("/settings")}
-              onAnalyze={() => analyze()}
-            />
-            {showLegacyDetails ? (
+            {!showOntologyDetails ? (
+              <MyDashboard
+                nickname={me?.nickname ?? "나"}
+                avatarUri={me?.profileImageUrl}
+                intro={me?.statusMessage ?? "비비와 함께 성장하는 또 다른 나 ✦"}
+                level={fanLevel}
+                xp={fanProfile?.xp ?? 0}
+                stats={fanProfile?.stats}
+                activityCount={recentEvents.length}
+                walletStatus={walletStatus}
+                equippedStar={equippedStar}
+                isAnalyzing={isAnalyzing}
+                onEditProfile={() => router.push("/profile/edit")}
+                onWallet={() => router.push("/pvt/wallet")}
+                onNotifications={() => router.push("/settings/notifications")}
+                onAccount={() => router.push("/settings")}
+                onAnalyze={() => analyze()}
+              />
+            ) : null}
+            {showOntologyDetails ? (
               <>
             {/* Hero: identity + level */}
             <LinearGradient
@@ -1156,6 +1173,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: 12,
+  },
+  screenBackButton: {
+    bottom: 6,
+    left: 14,
+    padding: 6,
+    position: "absolute",
+    zIndex: 2,
   },
   screenTitle: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
   headerBtn: { padding: 6 },
