@@ -38,6 +38,8 @@ const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 const FAN_CHARACTER_IMAGE = require("../../assets/images/fan.png");
 const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
 const STAR_CARD_BG_IMAGE = require("../../assets/images/star_bg.png");
+const HOME_STAR_SCENE_IMAGE = require("../../assets/images/home-star-scene.png");
+const TORIMIA_PORTAL_SCENE_IMAGE = require("../../assets/images/torimia-portal-scene.png");
 
 const HOME_NAV_ITEMS: Array<{
   key: string;
@@ -583,21 +585,30 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.playCharacterCol}>
-              <View style={styles.playOrbitOuter} />
-              <View style={styles.playOrbitInner} />
-              <View style={styles.playCharacterGlow} />
-              {activeImageSource ? (
+              {activePlayMode === "star" ? (
+                <ExpoImage
+                  source={HOME_STAR_SCENE_IMAGE}
+                  style={styles.playStarScene}
+                  contentFit="cover"
+                  contentPosition="center"
+                />
+              ) : activeImageSource ? (
+                <>
+                  <View style={styles.playOrbitOuter} />
+                  <View style={styles.playOrbitInner} />
+                  <View style={styles.playCharacterGlow} />
                 <ExpoImage
                   source={activeImageSource}
-                  style={activePlayMode === "star" ? styles.playStarImage : styles.playFanImage}
+                  style={styles.playFanImage}
                   contentFit="contain"
                 />
+                </>
               ) : (
                 <View style={styles.playFallbackAvatar}>
-                  <Feather name={activePlayMode === "star" ? "star" : "heart"} size={52} color="#E8DDFF" />
+                  <Feather name="heart" size={52} color="#E8DDFF" />
                 </View>
               )}
-              <View style={styles.playPlatform} />
+              {activePlayMode === "fan" ? <View style={styles.playPlatform} /> : null}
             </View>
           </View>
 
@@ -676,11 +687,12 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <View style={styles.torimiaPortal}>
-            <View style={styles.torimiaPortalInner}>
-              <Feather name="star" size={24} color="#D9C2FF" />
-            </View>
-          </View>
+          <ExpoImage
+            source={TORIMIA_PORTAL_SCENE_IMAGE}
+            style={styles.torimiaPortalScene}
+            contentFit="cover"
+            contentPosition="left center"
+          />
           <View style={styles.torimiaCopy}>
             <Text style={styles.torimiaTitle}>토로미아로 가는 첫 걸음</Text>
             <Text style={styles.torimiaBody}>성장을 완료한 비비는{`\n`}토로미아 세계로 진입할 수 있어요.</Text>
@@ -1004,15 +1016,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(157, 99, 255, 0.18)",
   },
   headerLeft: { flex: 1, paddingRight: 12 },
-  brand: { color: neon.cyan, fontFamily: "Inter_700Bold", fontSize: 14, marginBottom: 4, letterSpacing: 0.3 },
-  greeting: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  greetingSub: { fontSize: 13, fontFamily: "Inter_500Medium", marginTop: 2 },
+  brand: { color: neon.cyan, fontFamily: "Inter_800ExtraBold", fontSize: 24, marginBottom: 18, letterSpacing: -0.7, textShadowColor: "rgba(125,211,252,0.38)", textShadowRadius: 12 },
+  greeting: { fontSize: 22, fontFamily: "Inter_500Medium", letterSpacing: -0.5 },
+  greetingSub: { fontSize: 13.5, fontFamily: "Inter_500Medium", marginTop: 7 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   iconBtn: { padding: 6 },
   iconDot: {
@@ -1026,16 +1038,16 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
 
-  scrollContent: { paddingHorizontal: 16, gap: 14 },
+  scrollContent: { paddingHorizontal: 16, gap: 18 },
 
   // FAN / STAR growth card
   playCard: {
-    minHeight: 366,
-    borderRadius: 22,
+    minHeight: 382,
+    borderRadius: 24,
     overflow: "hidden",
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(139,92,246,0.42)",
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(170,78,255,0.58)",
     backgroundColor: "#090717",
   },
   playCardBg: { opacity: 0.9 },
@@ -1063,9 +1075,9 @@ const styles = StyleSheet.create({
   modeSwitchTextActive: { color: "#fff" },
   playStatusWrap: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
   playStatusText: { color: "#B8AFD7", fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  playCardBody: { flex: 1, flexDirection: "row", marginTop: 16 },
-  playInfoCol: { width: "46%", zIndex: 2 },
-  playLevel: { color: "#fff", fontSize: 40, fontFamily: "Inter_800ExtraBold", letterSpacing: -1.2 },
+  playCardBody: { flex: 1, flexDirection: "row", marginTop: 12 },
+  playInfoCol: { width: "43%", zIndex: 3, paddingLeft: 3 },
+  playLevel: { color: "#fff", fontSize: 43, fontFamily: "Inter_800ExtraBold", letterSpacing: -1.6, textShadowColor: "rgba(255,255,255,0.25)", textShadowRadius: 8 },
   playXpTrack: {
     height: 8,
     borderRadius: 6,
@@ -1084,7 +1096,11 @@ const styles = StyleSheet.create({
     minHeight: 230,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+    marginTop: -8,
+    marginRight: -14,
   },
+  playStarScene: { position: "absolute", width: "145%", height: "112%", right: -16, top: -12 },
   playOrbitOuter: {
     position: "absolute",
     width: 188,
@@ -1207,8 +1223,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 14,
-    backgroundColor: "rgba(11, 9, 28, 0.92)",
+    backgroundColor: "rgba(8, 5, 25, 0.96)",
     overflow: "hidden",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 5,
   },
   missionIconGlow: {
     width: 58,
@@ -1293,15 +1314,17 @@ const styles = StyleSheet.create({
 
   // Torimia gateway banner
   torimiaBanner: {
-    minHeight: 190,
+    minHeight: 164,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: "rgba(157,99,255,0.52)",
     overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
-    padding: 18,
+    padding: 0,
+    backgroundColor: "#070512",
   },
+  torimiaPortalScene: { width: "46%", alignSelf: "stretch" },
   torimiaPortal: {
     width: "42%",
     maxWidth: 160,
@@ -1331,7 +1354,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(216,180,254,0.6)",
     backgroundColor: "rgba(88,28,135,0.2)",
   },
-  torimiaCopy: { flex: 1, minWidth: 0, marginLeft: 16 },
+  torimiaCopy: { flex: 1, minWidth: 0, paddingHorizontal: 16, paddingVertical: 16 },
   torimiaTitle: { color: "#D884FF", fontSize: 18, fontFamily: "Inter_800ExtraBold", lineHeight: 24 },
   torimiaBody: { color: "#A9A3BA", fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18, marginTop: 8 },
   torimiaButton: {
