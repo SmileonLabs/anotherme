@@ -3,13 +3,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useGetMe,
   useGetMyPersona,
   useGetMyPersonaCard,
-  useGetMyRewardsSummary,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { PersonaCard } from "@/components/PersonaCard";
@@ -17,11 +17,12 @@ import { StarLockCard } from "@/components/StarLockCard";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
-import { usePlayMode } from "@/hooks/usePlayMode";
+import { usePlayMode, type FanProfileState } from "@/hooks/usePlayMode";
 import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
 import { useWalletVerification, type WalletStatus } from "@/hooks/useWalletVerification";
 import { usePersonaAnalysis } from "@/hooks/usePersonaAnalysis";
 import { gradients, gradientsDark } from "@/constants/colors";
+import { mediaUri } from "@/lib/apiBase";
 
 type StatKey =
   | "logic"
@@ -183,7 +184,6 @@ export default function MyPageScreen() {
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
   const { data: card, isError: isCardError, refetch: refetchCard } = useGetMyPersonaCard();
-  const { data: rewardsSummary } = useGetMyRewardsSummary();
   const { mode, fanProfile, starUnlocked, equippedStar } = usePlayMode();
   const { state: torimia, requirements: torimiaRequirements } = useTorimia();
   const { status: walletStatus } = useWalletVerification();
@@ -222,32 +222,12 @@ export default function MyPageScreen() {
     : (ontologyProfile?.evidenceSummary ?? []).slice(0, 3).map((label) => ({ label, createdAt: ontologyProfile?.updatedAt ?? null }));
   const recentEvents = persona?.recentEvents ?? [];
   const visibleRecentEvents = eventsExpanded ? recentEvents : recentEvents.slice(0, 1);
+  const showLegacyDetails: boolean = false;
 
   return (
     <NeonBackdrop style={styles.container}>
       <View style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}>
         <Text style={[styles.screenTitle, { color: colors.foreground }]}>마이페이지</Text>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityLabel="미션 보상"
-            hitSlop={8}
-            onPress={() => router.push("/quests")}
-            style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Feather name="target" size={22} color={colors.foreground} />
-            {(rewardsSummary?.total ?? 0) > 0 ? (
-              <View style={[styles.headerDot, { borderColor: colors.muted }]} />
-            ) : null}
-          </Pressable>
-          <Pressable
-            accessibilityLabel="팬클럽"
-            hitSlop={8}
-            onPress={() => router.push("/clan")}
-            style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Feather name="shield" size={22} color={colors.foreground} />
-          </Pressable>
-        </View>
       </View>
       <CustomScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
         {isLoading ? (
@@ -268,6 +248,25 @@ export default function MyPageScreen() {
           </View>
         ) : (
           <>
+            <MyDashboard
+              nickname={me?.nickname ?? "나"}
+              avatarUri={me?.profileImageUrl}
+              intro={me?.statusMessage ?? "비비와 함께 성장하는 또 다른 나 ✦"}
+              level={fanLevel}
+              xp={fanProfile?.xp ?? 0}
+              stats={fanProfile?.stats}
+              activityCount={recentEvents.length}
+              walletStatus={walletStatus}
+              equippedStar={equippedStar}
+              isAnalyzing={isAnalyzing}
+              onEditProfile={() => router.push("/profile/edit")}
+              onWallet={() => router.push("/pvt/wallet")}
+              onNotifications={() => router.push("/settings/notifications")}
+              onAccount={() => router.push("/settings")}
+              onAnalyze={() => analyze()}
+            />
+            {showLegacyDetails ? (
+              <>
             {/* Hero: identity + level */}
             <LinearGradient
               colors={(isDark ? gradientsDark : gradients).soft}
@@ -642,10 +641,179 @@ export default function MyPageScreen() {
                 지금 성장하러 가기
               </Text>
             </Pressable>
+              </>
+            ) : null}
           </>
         )}
       </CustomScrollView>
     </NeonBackdrop>
+  );
+}
+
+type EquippedStar = NonNullable<ReturnType<typeof usePlayMode>["equippedStar"]>;
+
+function DashboardStat({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: number;
+  color: string;
+}) {
+  const width = Math.max(4, Math.min(100, value));
+  return (
+    <View style={styles.dashboardStatRow}>
+      <Feather name={icon} size={17} color={color} />
+      <Text style={styles.dashboardStatLabel}>{label}</Text>
+      <View style={styles.dashboardStatTrack}>
+        <LinearGradient colors={["#6F35FF", "#D892FF"]} style={[styles.dashboardStatFill, { width: `${width}%` }]} />
+      </View>
+      <Text style={styles.dashboardStatValue}>{value}</Text>
+    </View>
+  );
+}
+
+function DashboardInfoRow({
+  icon,
+  label,
+  value,
+  onPress,
+  accent,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: string;
+  onPress?: () => void;
+  accent?: boolean;
+}) {
+  const content = (
+    <View style={styles.dashboardInfoRow}>
+      <Feather name={icon} size={16} color="#D6D0DF" />
+      <Text style={styles.dashboardInfoLabel}>{label}</Text>
+      <Text style={[styles.dashboardInfoValue, accent && styles.dashboardInfoAccent]} numberOfLines={1}>{value}</Text>
+      {onPress ? <Feather name="chevron-right" size={16} color="#AFA8B9" /> : null}
+    </View>
+  );
+  return onPress ? <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.62 }}>{content}</Pressable> : content;
+}
+
+function MyDashboard({
+  nickname,
+  avatarUri,
+  intro,
+  level,
+  xp,
+  stats,
+  activityCount,
+  walletStatus,
+  equippedStar,
+  isAnalyzing,
+  onEditProfile,
+  onWallet,
+  onNotifications,
+  onAccount,
+  onAnalyze,
+}: {
+  nickname: string;
+  avatarUri?: string | null;
+  intro: string;
+  level: number;
+  xp: number;
+  stats?: FanProfileState["stats"];
+  activityCount: number;
+  walletStatus?: WalletStatus;
+  equippedStar: EquippedStar | null;
+  isAnalyzing: boolean;
+  onEditProfile: () => void;
+  onWallet: () => void;
+  onNotifications: () => void;
+  onAccount: () => void;
+  onAnalyze: () => void;
+}) {
+  const [inventoryOpen, setInventoryOpen] = React.useState(false);
+  const xpInLevel = Math.max(0, xp % 100);
+  const statItems = [
+    { icon: "heart" as const, label: "친밀도", value: stats?.fanPower ?? 0, color: "#FF62B6" },
+    { icon: "star" as const, label: "팬심", value: stats?.fanPower ?? 0, color: "#FFE23D" },
+    { icon: "volume-2" as const, label: "응원력", value: stats?.supportPower ?? 0, color: "#39D9FF" },
+    { icon: "message-circle" as const, label: "공감력", value: stats?.empathy ?? 0, color: "#54E8DF" },
+    { icon: "book-open" as const, label: "스토리", value: stats?.story ?? 0, color: "#D679FF" },
+  ];
+  const inventory = [
+    avatarUri ? { uri: mediaUri(avatarUri) } : require("../../assets/images/icon.png"),
+    equippedStar?.imageUrl ? { uri: mediaUri(equippedStar.imageUrl) } : require("../../assets/images/home-star-scene.png"),
+    require("../../assets/images/fan.png"),
+  ];
+
+  return (
+    <View style={styles.dashboardContent}>
+      <LinearGradient colors={["#11102B", "#08091B", "#050511"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.dashboardProfileCard}>
+        <View pointerEvents="none" style={styles.dashboardProfileGlow} />
+        <View pointerEvents="none" style={styles.dashboardConstellation}><View style={styles.constellationDot} /><View style={styles.constellationLine} /></View>
+        <LinearGradient colors={["#E052FF", "#6534FF", "#38D9FF"]} style={styles.dashboardAvatarRing}>
+          <View style={styles.dashboardAvatarInset}><Avatar uri={avatarUri} name={nickname} size={112} /></View>
+        </LinearGradient>
+        <View style={styles.dashboardProfileCopy}>
+          <Text style={styles.dashboardNickname}>{nickname}님</Text>
+          <Text style={styles.dashboardHandle}>@anotherme_{nickname.toLocaleLowerCase().replace(/\s+/g, "")}</Text>
+          <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>직업</Text><Text style={styles.dashboardTagValue}>가희</Text></View>
+          <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>이름</Text><Text style={styles.dashboardTagValue}>{equippedStar?.displayName ?? "비비사랑"}</Text></View>
+          <Text style={styles.dashboardIntro} numberOfLines={2}>{intro}</Text>
+          <View style={styles.dashboardSocialRow}>
+            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>게시물</Text><Text style={styles.dashboardSocialValue}>{activityCount}</Text></View>
+            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>팔로워</Text><Text style={styles.dashboardSocialValue}>{stats?.fanPower ?? 0}</Text></View>
+            <View style={[styles.dashboardSocial, styles.dashboardSocialLast]}><Text style={styles.dashboardSocialLabel}>팔로잉</Text><Text style={styles.dashboardSocialValue}>{stats?.supportPower ?? 0}</Text></View>
+          </View>
+        </View>
+      </LinearGradient>
+
+      <LinearGradient colors={["#0F0E26", "#08091B"]} style={styles.dashboardStatsCard}>
+        <View style={styles.dashboardLevelBlock}>
+          <Text style={styles.dashboardSectionTitle}>✦ 내 스탯</Text>
+          <Text style={styles.dashboardLevel}>Lv. {level}</Text>
+          <Text style={styles.dashboardXpText}>{xpInLevel} / 100 STAR</Text>
+          <View style={styles.dashboardXpTrack}><LinearGradient colors={["#7138FF", "#D893FF"]} style={[styles.dashboardXpFill, { width: `${xpInLevel}%` }]} /></View>
+        </View>
+        <View style={styles.dashboardStatsList}>{statItems.map((item) => <DashboardStat key={item.label} {...item} />)}</View>
+      </LinearGradient>
+
+      <View style={styles.dashboardInfoGrid}>
+        <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
+          <Text style={styles.dashboardCardTitle}>기본 정보 ✦</Text>
+          <DashboardInfoRow icon="user" label="닉네임" value={`${nickname}님`} onPress={onEditProfile} />
+          <DashboardInfoRow icon="message-circle" label="소개" value={intro} onPress={onEditProfile} />
+        </LinearGradient>
+        <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
+          <Text style={styles.dashboardCardTitle}>지갑 정보 ✦</Text>
+          <DashboardInfoRow icon="link" label="지갑 연결 상태" value={walletStatus?.walletVerified ? "연결됨" : "미연결"} accent={walletStatus?.walletVerified} />
+          <DashboardInfoRow icon="credit-card" label="지갑 주소" value={formatWalletAddress(walletStatus?.walletAddress)} />
+          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(equippedStar ? 2 : 1)} />
+          <Pressable onPress={onWallet} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}><Text style={styles.dashboardOutlineText}>지갑 관리</Text></Pressable>
+        </LinearGradient>
+      </View>
+
+      <Pressable onPress={() => setInventoryOpen((open) => !open)} style={({ pressed }) => [styles.dashboardInventoryCard, pressed && { opacity: 0.72 }]}>
+        <View style={styles.dashboardInventoryCopy}><Text style={styles.dashboardCardTitle}>내 캐릭터 / 인벤토리 ✦</Text><Text style={styles.dashboardInventorySub}>저장된 내 캐릭터 보기 〉</Text></View>
+        <View style={styles.dashboardInventoryImages}>{inventory.map((source, index) => <Image key={index} source={source} style={styles.dashboardInventoryImage} contentFit="cover" />)}</View>
+        <Feather name={inventoryOpen ? "chevron-up" : "chevron-right"} size={18} color="#D6D0DF" />
+      </Pressable>
+      {inventoryOpen ? <View style={styles.dashboardInventoryDetail}><StarLockCard /></View> : null}
+
+      <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardSettingsCard}>
+        <Text style={styles.dashboardCardTitle}>설정 ✦</Text>
+        <DashboardInfoRow icon="bell" label="알림 설정" value="" onPress={onNotifications} />
+        <DashboardInfoRow icon="user" label="계정 관리" value="" onPress={onAccount} />
+        <Pressable onPress={onAnalyze} disabled={isAnalyzing} style={({ pressed }) => [styles.dashboardSettingRow, pressed && { opacity: 0.62 }]}>
+          <Feather name="cpu" size={16} color="#D6D0DF" />
+          <Text style={styles.dashboardSettingLabel}>{isAnalyzing ? "AI 분석 업데이트 중…" : "AI 분석 업데이트"}</Text>
+          {isAnalyzing ? <ActivityIndicator size="small" color="#B15CFF" /> : <Feather name="chevron-right" size={16} color="#AFA8B9" />}
+        </Pressable>
+        <DashboardInfoRow icon="log-out" label="로그아웃" value="" onPress={onAccount} />
+      </LinearGradient>
+    </View>
   );
 }
 
@@ -985,13 +1153,11 @@ function TorimiaStatusCard({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   screenHeader: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+    justifyContent: "center",
+    paddingBottom: 12,
   },
-  screenTitle: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  screenTitle: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
   headerBtn: { padding: 6 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   headerDot: {
@@ -1255,6 +1421,58 @@ const styles = StyleSheet.create({
   tipsCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden", paddingHorizontal: 16 },
   tipRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
   tipText: { fontSize: 14, fontFamily: "Inter_400Regular", flex: 1 },
+
+  dashboardContent: { paddingHorizontal: 7, gap: 10 },
+  dashboardProfileCard: { minHeight: 232, borderRadius: 15, borderWidth: 1, borderColor: "rgba(177,76,255,0.48)", padding: 20, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+  dashboardProfileGlow: { position: "absolute", left: -40, top: -50, width: 260, height: 260, borderRadius: 130, backgroundColor: "rgba(120,47,255,0.10)" },
+  dashboardConstellation: { position: "absolute", right: 22, top: 30, width: 100, height: 70, opacity: 0.48 },
+  constellationDot: { position: "absolute", right: 7, top: 4, width: 5, height: 5, borderRadius: 3, backgroundColor: "#9E5CFF" },
+  constellationLine: { position: "absolute", right: 8, top: 15, width: 75, height: 1, backgroundColor: "rgba(158,92,255,0.38)", transform: [{ rotate: "-22deg" }] },
+  dashboardAvatarRing: { width: 126, height: 126, borderRadius: 63, padding: 3, alignItems: "center", justifyContent: "center", shadowColor: "#A64DFF", shadowOpacity: 0.72, shadowRadius: 18 },
+  dashboardAvatarInset: { width: 120, height: 120, borderRadius: 60, padding: 4, backgroundColor: "#080716", alignItems: "center", justifyContent: "center" },
+  dashboardProfileCopy: { flex: 1, minWidth: 0, marginLeft: 20 },
+  dashboardNickname: { color: "#F7F4FA", fontFamily: "Inter_700Bold", fontSize: 24 },
+  dashboardHandle: { color: "#9D96A7", fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2, marginBottom: 9 },
+  dashboardTag: { width: 126, height: 25, borderRadius: 12, borderWidth: 1, borderColor: "rgba(196,89,255,0.62)", flexDirection: "row", alignItems: "center", marginBottom: 5, overflow: "hidden" },
+  dashboardTagLabel: { color: "#D7D1DE", width: 51, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(196,89,255,0.45)" },
+  dashboardTagValue: { color: "#EAE6EE", flex: 1, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10 },
+  dashboardIntro: { color: "#C9C3D0", fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16, marginTop: 7, paddingBottom: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(121,80,160,0.25)" },
+  dashboardSocialRow: { flexDirection: "row", marginTop: 8 },
+  dashboardSocial: { flex: 1, alignItems: "center", borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(121,80,160,0.32)" },
+  dashboardSocialLast: { borderRightWidth: 0 },
+  dashboardSocialLabel: { color: "#948D9F", fontFamily: "Inter_400Regular", fontSize: 9 },
+  dashboardSocialValue: { color: "#F1EDF5", fontFamily: "Inter_700Bold", fontSize: 15, marginTop: 3 },
+  dashboardStatsCard: { minHeight: 180, borderRadius: 15, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 17, flexDirection: "row", overflow: "hidden" },
+  dashboardLevelBlock: { width: "36%", paddingRight: 18, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(122,77,169,0.42)", justifyContent: "space-between" },
+  dashboardSectionTitle: { color: "#F0EBF4", fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  dashboardLevel: { color: "#C36FFF", fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 13, textShadowColor: "rgba(169,65,255,0.5)", textShadowRadius: 10 },
+  dashboardXpText: { color: "#D4CEDB", fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 8 },
+  dashboardXpTrack: { height: 8, borderRadius: 4, borderWidth: 1, borderColor: "rgba(133,64,198,0.44)", overflow: "hidden", marginTop: 9 },
+  dashboardXpFill: { height: "100%", borderRadius: 4 },
+  dashboardStatsList: { flex: 1, paddingLeft: 20, justifyContent: "space-between" },
+  dashboardStatRow: { height: 25, flexDirection: "row", alignItems: "center", gap: 8 },
+  dashboardStatLabel: { color: "#D0CAD7", width: 45, fontFamily: "Inter_400Regular", fontSize: 10 },
+  dashboardStatTrack: { flex: 1, height: 7, borderRadius: 4, backgroundColor: "#1A1930", overflow: "hidden" },
+  dashboardStatFill: { height: "100%", borderRadius: 4 },
+  dashboardStatValue: { color: "#D9D4DF", width: 22, textAlign: "right", fontFamily: "Inter_400Regular", fontSize: 10 },
+  dashboardInfoGrid: { flexDirection: "row", gap: 10 },
+  dashboardInfoCard: { flex: 1, minHeight: 164, borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 14, overflow: "hidden" },
+  dashboardCardTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 14, marginBottom: 8 },
+  dashboardInfoRow: { minHeight: 35, flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(82,61,108,0.25)" },
+  dashboardInfoLabel: { color: "#D3CDD9", fontFamily: "Inter_400Regular", fontSize: 10, flexShrink: 0 },
+  dashboardInfoValue: { color: "#948D9E", fontFamily: "Inter_400Regular", fontSize: 9, flex: 1, textAlign: "right" },
+  dashboardInfoAccent: { color: "#C769FF" },
+  dashboardOutlineButton: { height: 29, borderRadius: 9, borderWidth: 1, borderColor: "#A84DFF", alignItems: "center", justifyContent: "center", marginTop: 7 },
+  dashboardOutlineText: { color: "#C76CFF", fontFamily: "Inter_500Medium", fontSize: 10 },
+  dashboardInventoryCard: { minHeight: 89, borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", backgroundColor: "rgba(10,9,25,0.96)", paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 12, overflow: "hidden" },
+  dashboardInventoryCopy: { flex: 1 },
+  dashboardInventorySub: { color: "#8F8999", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 12 },
+  dashboardInventoryImages: { flexDirection: "row", gap: 7 },
+  dashboardInventoryImage: { width: 58, height: 66, borderRadius: 9, borderWidth: 1, borderColor: "rgba(186,79,255,0.56)", backgroundColor: "#121025" },
+  dashboardInventoryDetail: { borderRadius: 14, overflow: "hidden" },
+  dashboardSettingsCard: { borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 14, overflow: "hidden" },
+  dashboardSettingRow: { minHeight: 35, flexDirection: "row", alignItems: "center", gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(82,61,108,0.25)" },
+  dashboardSettingLabel: { color: "#D3CDD9", fontFamily: "Inter_400Regular", fontSize: 10, flex: 1 },
 
   ctaBtn: {
     flexDirection: "row",
