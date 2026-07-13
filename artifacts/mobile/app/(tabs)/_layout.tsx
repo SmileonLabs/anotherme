@@ -6,8 +6,9 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useAuth } from "@clerk/expo";
+import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
-import { useThemeMode } from "@/hooks/useThemeMode";
+import { ThemeModeContext, useThemeMode } from "@/hooks/useThemeMode";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 import { useUnreadMessageCount } from "@/hooks/useUnreadMessageCount";
 
@@ -40,6 +41,7 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: "#B96CFF",
         tabBarInactiveTintColor: "#8D8999",
         headerShown: false,
+        sceneStyle: { backgroundColor: neon.background },
         tabBarLabelStyle: {
           fontFamily: "Inter_600SemiBold",
           fontSize: 10,
@@ -128,11 +130,20 @@ function ClassicTabLayout() {
 
 export default function TabLayout() {
   const { isLoaded, isSignedIn } = useAuth();
+  const themeMode = useThemeMode();
+  const darkTabsTheme = React.useMemo(
+    () => ({ ...themeMode, scheme: "dark" as const }),
+    [themeMode],
+  );
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
-  return <ClassicTabLayout />;
+  return (
+    <ThemeModeContext.Provider value={darkTabsTheme}>
+      <ClassicTabLayout />
+    </ThemeModeContext.Provider>
+  );
 }
 
 const styles = StyleSheet.create({
