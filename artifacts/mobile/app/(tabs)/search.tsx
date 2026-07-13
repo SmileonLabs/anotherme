@@ -79,6 +79,11 @@ function SearchSection({
 function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => void }) {
   const tags = POST_TAGS[post.kind];
   const imageUri = postImageUri(post);
+  const [imageFailed, setImageFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageFailed(false);
+  }, [imageUri]);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.postPressable, pressed && styles.pressed]}>
@@ -101,9 +106,14 @@ function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => voi
             {tags.map((tag) => <Text key={tag} style={styles.tag}># {tag}</Text>)}
           </View>
         </View>
-        {imageUri ? (
+        {imageUri && !imageFailed ? (
           <View style={styles.postVisual}>
-            <Image source={{ uri: imageUri }} style={styles.postImage} contentFit="cover" />
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.postImage}
+              contentFit="cover"
+              onError={() => setImageFailed(true)}
+            />
             <View style={styles.postCounts}>
               <Feather name="heart" size={12} color={neon.muted} />
               <Text style={styles.postCount}>{post.reactionCount}</Text>

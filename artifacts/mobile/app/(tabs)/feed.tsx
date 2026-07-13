@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import { Image, type ImageSource } from "expo-image";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -61,7 +61,7 @@ function relativeTime(value: string) {
   return `${Math.floor(hours / 24)}일 전`;
 }
 
-function postVisualSource(post: StarFeedPost): ImageSource | null {
+function postVisualSource(post: StarFeedPost): { uri: string } | null {
   const explicit =
     metadataString(post.metadata, "imageUrl") ??
     metadataString(post.metadata, "thumbnailUrl") ??
@@ -113,6 +113,11 @@ function FeedPostCard({
   const tags = keywordTags.length ? keywordTags : meta.tags;
   const canComment = commentDraft.trim().length > 0 && !isCommenting;
   const visualSource = postVisualSource(post);
+  const [visualFailed, setVisualFailed] = useState(false);
+
+  useEffect(() => {
+    setVisualFailed(false);
+  }, [visualSource?.uri]);
 
   return (
     <LinearGradient
@@ -143,9 +148,14 @@ function FeedPostCard({
             {tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}
           </View>
         </View>
-        {visualSource ? (
+        {visualSource && !visualFailed ? (
           <View style={styles.visualWrap}>
-            <Image source={visualSource} style={styles.feedVisual} contentFit="cover" />
+            <Image
+              source={visualSource}
+              style={styles.feedVisual}
+              contentFit="cover"
+              onError={() => setVisualFailed(true)}
+            />
             {post.kind === "event" ? <View style={styles.playButton}><Feather name="play" size={18} color="#FFFFFF" /></View> : null}
           </View>
         ) : null}
