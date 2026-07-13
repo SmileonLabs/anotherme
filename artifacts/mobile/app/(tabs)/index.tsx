@@ -456,11 +456,11 @@ export default function HomeScreen() {
     {
       key: "growth-material",
       title: "성장 재료 수집",
-      description: "토크배틀로 성장\n재료를 모아요",
+      description: "STAR 미션으로 성장\n재료를 모아요",
       icon: "target" as const,
       color: "#35E6E0",
       gradient: ["rgba(0,66,83,0.68)", "rgba(4,15,35,0.98)", "rgba(5,4,18,1)"] as const,
-      onPress: () => router.push("/(tabs)/quests" as never),
+      onPress: () => router.push("/(tabs)/dungeon" as never),
     },
   ];
   const showLegacyHomeSections: boolean = false;

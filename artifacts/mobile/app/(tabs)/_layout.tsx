@@ -26,11 +26,15 @@ function ClassicTabLayout() {
     feather: keyof typeof Feather.glyphMap,
   ) => ({ color, focused }: { color: string; focused: boolean }) => (
     <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
-      {focused ? <View pointerEvents="none" style={styles.tabIconGlow} /> : null}
       {isIOS ? (
         <SymbolView name={ios as any} tintColor={color} size={24} />
       ) : (
-        <Feather name={feather} size={22} color={color} />
+        <Feather
+          name={feather}
+          size={22}
+          color={color}
+          style={focused ? styles.tabIconGlyphActive : undefined}
+        />
       )}
     </View>
   );
@@ -156,23 +160,11 @@ const styles = StyleSheet.create({
   },
   tabIconWrapActive: {
     backgroundColor: "transparent",
-    shadowColor: "#A64DFF",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 9,
-    elevation: 8,
   },
-  tabIconGlow: {
-    position: "absolute",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(171, 75, 255, 0.18)",
-    shadowColor: "#B96CFF",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.92,
-    shadowRadius: 7,
-    elevation: 7,
+  tabIconGlyphActive: {
+    textShadowColor: "#C06CFF",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
   },
   tabBarTopGlow: {
     position: "absolute",

@@ -151,8 +151,8 @@ export default function SearchScreen() {
         {!normalized ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="비비 이름 이야기 자세히 보기"
-            onPress={() => router.push("/settings/another-me")}
+            accessibilityLabel="연습생 STAR 미션으로 이동"
+            onPress={() => router.push("/(tabs)/dungeon" as never)}
             style={({ pressed }) => [styles.heroCrop, pressed && styles.pressed]}
           >
             <Image
