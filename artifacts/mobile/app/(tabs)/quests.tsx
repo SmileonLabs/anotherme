@@ -107,19 +107,6 @@ export default function QuestsScreen() {
   return (
     <NeonBackdrop style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.topBar}>
-          <View style={styles.brandRow}>
-            <Image source={require("../../assets/images/icon.png")} style={styles.brandIcon} contentFit="cover" />
-            <Text style={styles.brandAnother}>Another</Text>
-            <Text style={styles.brandMe}> Me</Text>
-            <Text style={styles.brandSpark}>⁺</Text>
-          </View>
-          <View style={styles.topActions}>
-            <View style={styles.topIcon}><Feather name="bell" size={19} color="#BEB9C7" /><View style={styles.noticeDot} /></View>
-            <View style={styles.topIcon}><Feather name="inbox" size={19} color="#BEB9C7" /></View>
-            <Image source={require("../../assets/images/icon.png")} style={styles.profileIcon} contentFit="cover" />
-          </View>
-        </View>
         <Text style={styles.headerTitle}>미션</Text>
       </View>
 
@@ -508,20 +495,11 @@ function ClaimButton({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    paddingHorizontal: 8,
-    paddingBottom: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 12,
   },
-  topBar: { height: 46, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  brandRow: { flexDirection: "row", alignItems: "center" },
-  brandIcon: { width: 34, height: 34, borderRadius: 17, marginRight: 7 },
-  brandAnother: { color: "#D495FF", fontFamily: "Inter_500Medium", fontSize: 18 },
-  brandMe: { color: "#4EE4DF", fontFamily: "Inter_500Medium", fontSize: 18 },
-  brandSpark: { color: "#4EE4DF", fontFamily: "Inter_700Bold", fontSize: 13, alignSelf: "flex-start", marginTop: 7 },
-  topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
-  topIcon: { width: 31, height: 31, alignItems: "center", justifyContent: "center" },
-  noticeDot: { position: "absolute", right: 4, top: 4, width: 7, height: 7, borderRadius: 4, backgroundColor: "#A64DFF", borderWidth: 1, borderColor: "#05040D" },
-  profileIcon: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: "#A64DFF" },
-  headerTitle: { color: "#F7F5FF", fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center", marginTop: 3 },
+  headerTitle: { color: "#F7F5FF", fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },
   tabBar: {
     height: 38,
     flexDirection: "row",
