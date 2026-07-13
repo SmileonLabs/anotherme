@@ -198,12 +198,7 @@ export default function SettingsScreen() {
             icon="user"
             label="어나더 미"
             sublabel="분석 데이터와 온톨로지 근거 보기"
-            onPress={() =>
-              router.push({
-                pathname: "/(tabs)/persona",
-                params: { view: "ontology" },
-              })
-            }
+            onPress={() => router.push("/settings/ontology")}
           />
           <SettingsRow
             icon="message-circle"

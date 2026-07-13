@@ -171,9 +171,13 @@ const ONTOLOGY_SOURCE_META: Array<{
   { key: "analysis", label: "AI 분석", icon: "cpu", color: "#93C5FD" },
 ];
 
-export default function MyPageScreen() {
+export function PersonaScreen({
+  showOntologyDetails = false,
+}: {
+  showOntologyDetails?: boolean;
+}) {
   const router = useRouter();
-  const { focus, view } = useLocalSearchParams<{ focus?: string; view?: string }>();
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
   const colors = useColors();
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
@@ -222,8 +226,6 @@ export default function MyPageScreen() {
     : (ontologyProfile?.evidenceSummary ?? []).slice(0, 3).map((label) => ({ label, createdAt: ontologyProfile?.updatedAt ?? null }));
   const recentEvents = persona?.recentEvents ?? [];
   const visibleRecentEvents = eventsExpanded ? recentEvents : recentEvents.slice(0, 1);
-  const showOntologyDetails = view === "ontology";
-
   return (
     <NeonBackdrop style={styles.container}>
       <View
@@ -665,6 +667,10 @@ export default function MyPageScreen() {
       </CustomScrollView>
     </NeonBackdrop>
   );
+}
+
+export default function MyPageScreen() {
+  return <PersonaScreen key="persona-dashboard" showOntologyDetails={false} />;
 }
 
 type EquippedStar = NonNullable<ReturnType<typeof usePlayMode>["equippedStar"]>;

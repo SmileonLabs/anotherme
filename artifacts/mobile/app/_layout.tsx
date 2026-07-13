@@ -255,6 +255,7 @@ function RootStackNav() {
         name="settings/ai-memories"
         options={{ title: "내 AI 기억", headerBackTitle: "Back" }}
       />
+      <Stack.Screen name="settings/ontology" options={{ headerShown: false }} />
       <Stack.Screen
         name="settings/knowledge-admin"
         options={{ title: "AI 지식 관리자", headerBackTitle: "Back" }}

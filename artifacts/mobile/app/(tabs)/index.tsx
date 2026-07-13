@@ -37,8 +37,7 @@ import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 const FAN_CHARACTER_IMAGE = require("../../assets/images/fan.png");
 const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
-const STAR_CARD_BG_IMAGE = require("../../assets/images/star_bg.png");
-const HOME_STAR_SCENE_IMAGE = require("../../assets/images/home-star-scene.png");
+const STAR_CHARACTER_IMAGE = require("../../assets/images/star-character-cutout.png");
 const TORIMIA_PORTAL_SCENE_IMAGE = require("../../assets/images/torimia-portal-scene.png");
 const MISSION_STAR_POINTS = [
   { left: "12%" as const, top: "22%" as const, size: 1.5, opacity: 0.72 },
@@ -374,12 +373,12 @@ export default function HomeScreen() {
         ? "NFT 장착 필요"
         : "NFT 등록 필요"
     : "FAN 모드";
-  const activeCardBgImage = activePlayMode === "fan" ? FAN_CARD_BG_IMAGE : STAR_CARD_BG_IMAGE;
+  const activeCardBgImage = FAN_CARD_BG_IMAGE;
   const activeImageSource = activePlayMode === "fan"
     ? FAN_CHARACTER_IMAGE
     : equippedStar?.imageUrl
       ? { uri: equippedStar.imageUrl }
-      : null;
+      : STAR_CHARACTER_IMAGE;
   const activeStats = activePlayMode === "star"
     ? [
         { label: "매력", value: equippedStar?.stats.charm ?? 0, icon: "heart" as const, color: "#F472B6" },
@@ -596,31 +595,25 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.playCharacterCol}>
-              {activePlayMode === "star" ? (
-                <ExpoImage
-                  source={HOME_STAR_SCENE_IMAGE}
-                  style={styles.playStarScene}
-                  contentFit="cover"
-                  contentPosition="center"
-                />
-              ) : activeImageSource ? (
+            <View style={[styles.playCharacterCol, activePlayMode === "star" && styles.playCharacterColStar]}>
+              {activeImageSource ? (
                 <>
                   <View style={styles.playOrbitOuter} />
                   <View style={styles.playOrbitInner} />
                   <View style={styles.playCharacterGlow} />
-                <ExpoImage
-                  source={activeImageSource}
-                  style={styles.playFanImage}
-                  contentFit="contain"
-                />
+                  <ExpoImage
+                    source={activeImageSource}
+                    style={activePlayMode === "star" ? styles.playStarImage : styles.playFanImage}
+                    contentFit="contain"
+                    contentPosition="center"
+                  />
                 </>
               ) : (
                 <View style={styles.playFallbackAvatar}>
                   <Feather name="heart" size={52} color="#E8DDFF" />
                 </View>
               )}
-              {activePlayMode === "fan" ? <View style={styles.playPlatform} /> : null}
+              <View style={styles.playPlatform} />
             </View>
           </View>
 
@@ -1143,7 +1136,7 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginRight: -14,
   },
-  playStarScene: { position: "absolute", width: "145%", height: "112%", right: -16, top: -12 },
+  playCharacterColStar: { marginTop: -12 },
   playOrbitOuter: {
     position: "absolute",
     width: 188,
@@ -1167,7 +1160,7 @@ const styles = StyleSheet.create({
     borderRadius: 79,
     backgroundColor: "rgba(109,53,246,0.28)",
   },
-  playStarImage: { width: 168, height: 206, zIndex: 2 },
+  playStarImage: { width: 178, height: 244, marginRight: -8, marginTop: -2, zIndex: 2 },
   playFanImage: { width: 236, height: 304, marginRight: -16, marginTop: -18, zIndex: 2 },
   playFallbackAvatar: {
     width: 132,
