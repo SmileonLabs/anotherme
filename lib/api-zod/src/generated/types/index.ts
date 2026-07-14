@@ -136,6 +136,13 @@ export * from './getStarFeedActivities200Item';
 export * from './getUsersUserIdBattleResultsParams';
 export * from './getUsersUserIdGrowthRecordsParams';
 export * from './getUsersUserIdPostsParams';
+export * from './globalSearchParams';
+// GlobalSearchResponse is exported from generated/api as the canonical Zod schema.
+export * from './globalSearchResponsePostsItem';
+export * from './globalSearchResponseStarProfilesItem';
+export * from './globalSearchResponseType';
+export * from './globalSearchResponseUsersItem';
+export * from './globalSearchType';
 export * from './growthEvent';
 export * from './growthEventStatChanges';
 export * from './growthRecord';

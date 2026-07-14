@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { and, count, desc, eq, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, lt, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   profileUpdateHistoryTable,
@@ -36,6 +36,11 @@ const updateMeSchema = z.object({
 }).strict().refine((value) => Object.keys(value).length > 0, "At least one field is required");
 const pushTokenSchema = z.object({ token: z.string().min(1).max(8_192) }).strict();
 const userSearchSchema = z.object({ email: z.email().max(320).transform((value) => value.trim().toLowerCase()) });
+const globalSearchSchema = z.object({
+  q: z.string().trim().min(2).max(80),
+  type: z.enum(["all", "users", "stars", "posts"]).default("all"),
+  limit: z.coerce.number().int().min(1).max(30).default(20),
+});
 const publicProfileParams = z.object({ userId: z.string().uuid() });
 const PUBLIC_PAGE_DEFAULT_LIMIT = 30;
 const PUBLIC_PAGE_MAX_LIMIT = 100;
@@ -90,6 +95,43 @@ function serializeProfileHistory(row: typeof profileUpdateHistoryTable.$inferSel
     createdAt: row.createdAt.toISOString(),
   };
 }
+
+router.get("/search", requireAuth, rateLimit({ name: "global-search", limit: 30, windowSeconds: 60 }), async (req, res): Promise<void> => {
+  const parsed = globalSearchSchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "검색어는 2~80자로 입력해 주세요." });
+    return;
+  }
+  const { q, type, limit } = parsed.data;
+  const blocked = await db.select({ blockerUserId: blockedUsersTable.blockerUserId, blockedUserId: blockedUsersTable.blockedUserId }).from(blockedUsersTable).where(or(eq(blockedUsersTable.blockerUserId, req.dbUser!.id), eq(blockedUsersTable.blockedUserId, req.dbUser!.id)));
+  const blockedIds = blocked.map((row) => row.blockerUserId === req.dbUser!.id ? row.blockedUserId : row.blockerUserId);
+  const users = type === "stars" || type === "posts" ? [] : await db
+    .select({ id: usersTable.id, nickname: usersTable.nickname, profileImageUrl: usersTable.profileImageUrl, statusMessage: usersTable.statusMessage })
+    .from(usersTable)
+    .where(and(notInArray(usersTable.id, [req.dbUser!.id, ...blockedIds]), or(ilike(usersTable.nickname, `%${q}%`), ilike(usersTable.statusMessage, `%${q}%`))))
+    .limit(limit);
+  const stars = type === "users" || type === "posts" ? [] : await db
+    .select({ id: starProfilesTable.id, displayName: starProfilesTable.displayName, starKey: starProfilesTable.starKey, imageUrl: starProfilesTable.imageUrl, stage: starProfilesTable.stage, ownerId: starProfilesTable.userId })
+    .from(starProfilesTable)
+    .where(or(ilike(starProfilesTable.displayName, `%${q}%`), ilike(starProfilesTable.starKey, `%${q}%`)))
+    .limit(limit);
+  const followedStarIds = stars.length ? await db.select({ starProfileId: starProfileFollowsTable.starProfileId }).from(starProfileFollowsTable).where(and(eq(starProfileFollowsTable.followerUserId, req.dbUser!.id), inArray(starProfileFollowsTable.starProfileId, stars.map((star) => star.id)))) : [];
+  const followedSet = new Set(followedStarIds.map((row) => row.starProfileId));
+  const posts = type === "users" || type === "stars" ? [] : await db
+    .select({ id: starFeedPostsTable.id, title: starFeedPostsTable.title, body: starFeedPostsTable.body, kind: starFeedPostsTable.kind, createdAt: starFeedPostsTable.createdAt, authorUserId: starFeedPostsTable.authorUserId, targetStarProfileId: starFeedPostsTable.targetStarProfileId })
+    .from(starFeedPostsTable)
+    .where(and(eq(starFeedPostsTable.status, "PUBLISHED"), eq(starFeedPostsTable.visibility, "PUBLIC"), or(ilike(starFeedPostsTable.title, `%${q}%`), ilike(starFeedPostsTable.body, `%${q}%`))))
+    .orderBy(desc(starFeedPostsTable.createdAt))
+    .limit(limit);
+  res.json({
+    query: q,
+    type,
+    users: users.map((user) => ({ ...user, isMe: user.id === req.dbUser!.id })),
+    starProfiles: stars.map((star) => ({ ...star, ownerId: blockedIds.includes(star.ownerId) ? null : star.ownerId, followedByMe: followedSet.has(star.id) })),
+    posts: posts.map((post) => ({ ...post, createdAt: post.createdAt.toISOString() })),
+    nextCursor: null,
+  });
+});
 
 router.get("/users", requireAuth, async (req, res): Promise<void> => {
   const users = await db.select().from(usersTable).limit(1000);

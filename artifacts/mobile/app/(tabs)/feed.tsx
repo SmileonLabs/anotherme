@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useGetMe } from "@workspace/api-client-react";
 
 import { Avatar } from "@/components/Avatar";
@@ -244,6 +244,7 @@ function FeedPostCard({
 
 export default function FeedScreen() {
   const router = useRouter();
+  const { postId } = useLocalSearchParams<{ postId?: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
@@ -271,6 +272,11 @@ export default function FeedScreen() {
     isCommenting,
     isSettingStarFollowing,
   } = useStarFeed(feedFilter);
+  const visiblePosts = useMemo(() => {
+    if (!postId) return posts;
+    const target = posts.find((post) => post.id === postId);
+    return target ? [target, ...posts.filter((post) => post.id !== postId)] : posts;
+  }, [postId, posts]);
   const [draft, setDraft] = useState("");
   const [postKind, setPostKind] = useState<StarFeedWritableKind>("fan");
   const [targetStarProfileId, setTargetStarProfileId] = useState<string | null>(null);
@@ -503,7 +509,7 @@ export default function FeedScreen() {
           <View style={styles.stateBox}><Text style={styles.stateTitle}>{feedFilter === "following" ? "팔로잉 피드가 비어 있어요" : "아직 추천 피드가 비어 있어요"}</Text><Text style={styles.stateText}>{feedFilter === "following" ? "STAR를 팔로우하면 새 게시물이 여기에 보여요." : "첫 FAN 응원글을 남겨보세요."}</Text></View>
         ) : (
           <View style={styles.feedList}>
-            {posts.map((post) => (
+            {visiblePosts.map((post) => (
               <FeedPostCard
                 key={post.id}
                 post={post}

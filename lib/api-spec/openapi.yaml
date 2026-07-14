@@ -84,6 +84,33 @@ paths:
                 items:
                   $ref: "#/components/schemas/PublicUser"
 
+  /search:
+    get:
+      operationId: globalSearch
+      tags: [users]
+      summary: Search public users, STAR profiles, and public feed posts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 80 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [all, users, stars, posts], default: all }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 30, default: 20 }
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalSearchResponse"
+        "400": { description: Invalid search query }
+        "401": { description: Unauthorized }
+
   /users/me:
     get:
       operationId: getMe
@@ -5662,6 +5689,49 @@ components:
           type: string
           minLength: 1
           maxLength: 8192
+
+    GlobalSearchResponse:
+      type: object
+      required: [query, type, users, starProfiles, posts, nextCursor]
+      properties:
+        query: { type: string }
+        type: { type: string, enum: [all, users, stars, posts] }
+        users:
+          type: array
+          items:
+            type: object
+            required: [id, nickname, profileImageUrl, statusMessage, isMe]
+            properties:
+              id: { type: string, format: uuid }
+              nickname: { type: string }
+              profileImageUrl: { type: [string, "null"] }
+              statusMessage: { type: [string, "null"] }
+              isMe: { type: boolean }
+        starProfiles:
+          type: array
+          items:
+            type: object
+            required: [id, displayName, starKey, imageUrl, stage, ownerId, followedByMe]
+            properties:
+              id: { type: string, format: uuid }
+              displayName: { type: string }
+              starKey: { type: string }
+              imageUrl: { type: [string, "null"] }
+              stage: { type: string }
+              ownerId: { type: [string, "null"], format: uuid }
+              followedByMe: { type: boolean }
+        posts:
+          type: array
+          items:
+            type: object
+            required: [id, title, body, kind, createdAt]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              body: { type: string }
+              kind: { type: string }
+              createdAt: { type: string, format: date-time }
+        nextCursor: { type: [string, "null"] }
 
     PublicUser:
       type: object

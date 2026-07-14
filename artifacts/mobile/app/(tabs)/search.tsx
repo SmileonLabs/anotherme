@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useListUsers } from "@workspace/api-client-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -13,6 +14,10 @@ import { NeonBackdrop } from "@/components/NeonUI";
 import { neon } from "@/constants/colors";
 import { useStarFeed, type StarFeedPost, type StarFeedPostKind } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
+import { customFetch } from "@workspace/api-client-react";
+
+type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean };
+type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; displayName: string; imageUrl: string | null; stage: string; ownerId: string | null; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
 
 const TRENDING = ["비비", "별빛", "토로미아문", "STAR 콘트", "스토리 피드"];
 
@@ -135,17 +140,50 @@ function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => voi
   );
 }
 
+function SearchPostCard({ post, onPress }: { post: SearchResponse["posts"][number]; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.postPressable, pressed && styles.pressed]}>
+      <LinearGradient colors={["rgba(12,12,28,0.98)", "rgba(5,6,18,0.98)"]} style={styles.searchPostCard}>
+        <View style={styles.postCopy}>
+          <View style={styles.postMetaRow}><Text style={styles.postAuthor}>{post.kind}</Text><Text style={styles.postTime}>{relativeTime(post.createdAt)}</Text></View>
+          <Text style={styles.postTitle} numberOfLines={2}>{post.title || post.body}</Text>
+          {post.title && post.body ? <Text style={styles.searchPostBody} numberOfLines={1}>{post.body}</Text> : null}
+        </View>
+        <Feather name="chevron-right" size={16} color={neon.muted} />
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [query, setQuery] = React.useState("");
+  const [debouncedQuery, setDebouncedQuery] = React.useState("");
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const normalized = debouncedQuery.toLocaleLowerCase();
   const { data: users = [], isLoading: usersLoading } = useListUsers();
   const { posts, isLoading: feedLoading } = useStarFeed();
-  const normalized = query.trim().toLocaleLowerCase();
+  const [followOverrides, setFollowOverrides] = React.useState<Record<string, boolean>>({});
+  const followMutation = useMutation({
+    mutationFn: ({ id, following }: { id: string; following: boolean }) => customFetch<{ following: boolean }>(`/api/star-feed/star-profiles/${id}/follow`, { method: following ? "DELETE" : "POST", responseType: "json" }),
+    onSuccess: (result, variables) => setFollowOverrides((current) => ({ ...current, [variables.id]: result.following })),
+  });
+  const searchQuery = useQuery({
+    queryKey: ["global-search", normalized],
+    enabled: normalized.length >= 2,
+    queryFn: () => customFetch<SearchResponse>(`/api/search?q=${encodeURIComponent(normalized)}&type=all&limit=20`, { responseType: "json" }),
+    staleTime: 30_000,
+  });
 
   const matchedUsers = React.useMemo(
-    () => users.filter((user) => !normalized || `${user.nickname} ${user.statusMessage ?? ""}`.toLocaleLowerCase().includes(normalized)).slice(0, 4),
-    [normalized, users],
+    () => normalized.length >= 2
+      ? (searchQuery.data?.users ?? []).slice(0, 4)
+      : users.filter((user) => `${user.nickname} ${user.statusMessage ?? ""}`.toLocaleLowerCase().includes(normalized)).slice(0, 4).map((user) => ({ ...user, isMe: false })),
+    [normalized, searchQuery.data?.users, users],
   );
   const matchedPosts = React.useMemo(
     () => posts.filter((post) => !normalized || `${post.title} ${post.body} ${post.author.nickname}`.toLocaleLowerCase().includes(normalized)).slice(0, 6),
@@ -215,23 +253,46 @@ export default function SearchScreen() {
         >
           {usersLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : (
             <View style={styles.peopleRow}>
-              {matchedUsers.map((user, index) => (
-                <Pressable key={user.id} onPress={() => router.push("/friends/add")} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
+              {matchedUsers.map((user) => (
+                <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ({ pathname: "/profile/[userId]", params: { userId: user.id } } as never))} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
                   <Avatar uri={user.profileImageUrl} name={user.nickname} size={46} />
                   <View style={styles.personCopy}>
                     <View style={styles.personNameRow}>
                       <Text style={styles.personName} numberOfLines={1}>{user.nickname}</Text>
                       <View style={styles.verified}><Feather name="check" size={8} color="#FFFFFF" /></View>
                     </View>
-                    <Text style={styles.personRole}>{index < 2 ? "STAR" : "FAN"}</Text>
+                    <Text style={styles.personRole}>{user.isMe ? "내 프로필" : "사용자"}</Text>
                   </View>
                 </Pressable>
               ))}
             </View>
           )}
+          {normalized.length >= 2 && searchQuery.isFetching ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : null}
+          {normalized.length >= 2 && searchQuery.data?.starProfiles.length ? (
+            <View style={styles.starResultRow}>
+              {searchQuery.data.starProfiles.slice(0, 4).map((star) => (
+                <View key={star.id} style={styles.starResultCard}>
+                <Pressable
+                  key={star.id}
+                  onPress={() => star.ownerId ? router.push({ pathname: "/profile/[userId]", params: { userId: star.ownerId } } as never) : undefined}
+                  style={({ pressed }) => [styles.starResultMain, pressed && styles.pressed]}
+                >
+                  <Image source={star.imageUrl ? { uri: mediaUri(star.imageUrl) } : require("../../assets/images/star-character-cutout.png")} style={styles.starResultImage} contentFit="cover" />
+                  <View style={styles.personCopy}>
+                    <Text style={styles.personName} numberOfLines={1}>{star.displayName}</Text>
+                    <Text style={styles.personRole}>{star.stage === "promoted" ? "공식 STAR" : "연습생 STAR"}</Text>
+                  </View>
+                </Pressable>
+                {star.ownerId ? <Pressable onPress={() => followMutation.mutate({ id: star.id, following: followOverrides[star.id] ?? star.followedByMe })} style={styles.followButton}><Text style={styles.followButtonText}>{(followOverrides[star.id] ?? star.followedByMe) ? "팔로잉" : "팔로우"}</Text></Pressable> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
         </SearchSection>
 
-        {feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
+        {normalized.length >= 2 && searchQuery.data?.posts.length ? (
+          <View style={styles.feedList}>{searchQuery.data.posts.slice(0, 6).map((post) => <SearchPostCard key={post.id} post={post} onPress={() => router.push({ pathname: "/(tabs)/feed", params: { postId: post.id } } as never)} />)}</View>
+        ) : feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
           <View style={styles.feedList}>
             {matchedPosts.map((post) => <FeedPreview key={post.id} post={post} onPress={() => router.push("/(tabs)/feed" as never)} />)}
           </View>
@@ -284,6 +345,12 @@ const styles = StyleSheet.create({
   trendingRank: { color: neon.magenta, fontFamily: "Inter_700Bold", fontSize: 11 },
   trendingText: { color: "#B9B5C1", fontFamily: "Inter_400Regular", fontSize: 10, flexShrink: 1 },
   peopleRow: { flexDirection: "row", gap: 6, marginTop: 4 },
+  starResultRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  starResultCard: { flex: 1, minWidth: "46%", minHeight: 58, paddingHorizontal: 7, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 12, backgroundColor: "rgba(6,6,18,0.78)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(126,72,198,0.25)" },
+  starResultMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 },
+  starResultImage: { width: 44, height: 44, borderRadius: 10, backgroundColor: "#111020" },
+  followButton: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "rgba(123,53,255,0.20)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(164,111,255,0.55)" },
+  followButtonText: { color: neon.text, fontFamily: "Inter_500Medium", fontSize: 9 },
   personCard: {
     flex: 1,
     minWidth: 0,
@@ -317,6 +384,8 @@ const styles = StyleSheet.create({
     gap: 11,
     overflow: "hidden",
   },
+  searchPostCard: { minHeight: 78, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(82,68,142,0.28)", paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", gap: 8 },
+  searchPostBody: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 4 },
   postGlow: { position: "absolute", left: 40, top: -70, width: 150, height: 120, borderRadius: 70, backgroundColor: "rgba(77,38,177,0.08)" },
   postCopy: { flex: 1, minWidth: 0, alignSelf: "stretch", justifyContent: "center" },
   postMetaRow: { flexDirection: "row", alignItems: "center", gap: 5 },

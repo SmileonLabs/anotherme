@@ -1266,6 +1266,56 @@ export interface PushTokenInput {
   token: string;
 }
 
+export type GlobalSearchResponseType = typeof GlobalSearchResponseType[keyof typeof GlobalSearchResponseType];
+
+
+export const GlobalSearchResponseType = {
+  all: 'all',
+  users: 'users',
+  stars: 'stars',
+  posts: 'posts',
+} as const;
+
+export type GlobalSearchResponseUsersItem = {
+  id: string;
+  nickname: string;
+  /** @nullable */
+  profileImageUrl: string | null;
+  /** @nullable */
+  statusMessage: string | null;
+  isMe: boolean;
+};
+
+export type GlobalSearchResponseStarProfilesItem = {
+  id: string;
+  displayName: string;
+  starKey: string;
+  /** @nullable */
+  imageUrl: string | null;
+  stage: string;
+  /** @nullable */
+  ownerId: string | null;
+  followedByMe: boolean;
+};
+
+export type GlobalSearchResponsePostsItem = {
+  id: string;
+  title: string;
+  body: string;
+  kind: string;
+  createdAt: string;
+};
+
+export interface GlobalSearchResponse {
+  query: string;
+  type: GlobalSearchResponseType;
+  users: GlobalSearchResponseUsersItem[];
+  starProfiles: GlobalSearchResponseStarProfilesItem[];
+  posts: GlobalSearchResponsePostsItem[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 export interface FriendAliasInput {
   /**
      * Null or an empty string clears the saved name.
@@ -2239,6 +2289,30 @@ export interface PublicProfile {
   followingCount: number;
   followedStarIds?: string[];
 }
+
+export type GlobalSearchParams = {
+/**
+ * @minLength 2
+ * @maxLength 80
+ */
+q: string;
+type?: GlobalSearchType;
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type GlobalSearchType = typeof GlobalSearchType[keyof typeof GlobalSearchType];
+
+
+export const GlobalSearchType = {
+  all: 'all',
+  users: 'users',
+  stars: 'stars',
+  posts: 'posts',
+} as const;
 
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;

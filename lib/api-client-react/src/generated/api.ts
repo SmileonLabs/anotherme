@@ -95,6 +95,8 @@ import type {
   GetUsersUserIdBattleResultsParams,
   GetUsersUserIdGrowthRecordsParams,
   GetUsersUserIdPostsParams,
+  GlobalSearchParams,
+  GlobalSearchResponse,
   GrowthRecordsPage,
   HealthStatus,
   Invite,
@@ -399,6 +401,90 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListUsersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGlobalSearchUrl = (params: GlobalSearchParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/search?${stringifiedParams}` : `/api/search`
+}
+
+/**
+ * @summary Search public users, STAR profiles, and public feed posts
+ */
+export const globalSearch = async (params: GlobalSearchParams, options?: RequestInit): Promise<GlobalSearchResponse> => {
+
+  return customFetch<GlobalSearchResponse>(getGlobalSearchUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGlobalSearchQueryKey = (params?: GlobalSearchParams,) => {
+    return [
+    `/api/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGlobalSearchQueryOptions = <TData = Awaited<ReturnType<typeof globalSearch>>, TError = ErrorType<void>>(params: GlobalSearchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof globalSearch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGlobalSearchQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof globalSearch>>> = ({ signal }) => globalSearch(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof globalSearch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GlobalSearchQueryResult = NonNullable<Awaited<ReturnType<typeof globalSearch>>>
+export type GlobalSearchQueryError = ErrorType<void>
+
+
+/**
+ * @summary Search public users, STAR profiles, and public feed posts
+ */
+
+export function useGlobalSearch<TData = Awaited<ReturnType<typeof globalSearch>>, TError = ErrorType<void>>(
+ params: GlobalSearchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof globalSearch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGlobalSearchQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

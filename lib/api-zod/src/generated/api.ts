@@ -40,6 +40,54 @@ export const ListUsersResponse = zod.array(ListUsersResponseItem)
 
 
 /**
+ * @summary Search public users, STAR profiles, and public feed posts
+ */
+export const globalSearchQueryQMin = 2;
+export const globalSearchQueryQMax = 80;
+
+export const globalSearchQueryTypeDefault = `all`;
+export const globalSearchQueryLimitDefault = 20;
+export const globalSearchQueryLimitMax = 30;
+
+
+
+export const GlobalSearchQueryParams = zod.object({
+  "q": zod.coerce.string().min(globalSearchQueryQMin).max(globalSearchQueryQMax),
+  "type": zod.enum(['all', 'users', 'stars', 'posts']).default(globalSearchQueryTypeDefault),
+  "limit": zod.coerce.number().min(1).max(globalSearchQueryLimitMax).default(globalSearchQueryLimitDefault)
+})
+
+export const GlobalSearchResponse = zod.object({
+  "query": zod.string(),
+  "type": zod.enum(['all', 'users', 'stars', 'posts']),
+  "users": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
+  "statusMessage": zod.string().nullable(),
+  "isMe": zod.boolean()
+})),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "starKey": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "stage": zod.string(),
+  "ownerId": zod.string().uuid().nullable(),
+  "followedByMe": zod.boolean()
+})),
+  "posts": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "kind": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextCursor": zod.string().nullable()
+})
+
+
+/**
  * @summary Get my profile
  */
 export const GetMeResponse = zod.object({
