@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Avatar } from "@/components/Avatar";
@@ -19,6 +19,7 @@ import {
   type StarFeedWritableKind,
 } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
+import { pickAndUploadImages, type UploadedImage } from "@/lib/uploadImage";
 
 type ColorTokens = ReturnType<typeof useColors>;
 
@@ -62,7 +63,9 @@ function relativeTime(value: string) {
 }
 
 function postVisualSource(post: StarFeedPost): { uri: string } | null {
+  const mediaImage = post.media.find((item) => item.mediaType === "image")?.objectPath;
   const explicit =
+    mediaImage ??
     metadataString(post.metadata, "imageUrl") ??
     metadataString(post.metadata, "thumbnailUrl") ??
     metadataString(post.metadata, "coverImageUrl") ??
@@ -97,6 +100,10 @@ function FeedPostCard({
   onCheer,
   onCommentDraft,
   onSubmitComment,
+  onSetFollowing,
+  isSettingFollowing,
+  onReport,
+  onRepost,
 }: {
   post: StarFeedPost;
   colors: ColorTokens;
@@ -106,6 +113,10 @@ function FeedPostCard({
   onCheer: (postId: string) => void;
   onCommentDraft: (postId: string, value: string) => void;
   onSubmitComment: (postId: string) => void;
+  onSetFollowing: (starProfileId: string, following: boolean) => void;
+  isSettingFollowing: boolean;
+  onReport: (postId: string, reason: "spam" | "harassment" | "sexual" | "violence" | "copyright" | "other") => void;
+  onRepost: (postId: string) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const meta = KIND_META[post.kind];
@@ -137,7 +148,21 @@ function FeedPostCard({
           </View>
           <Text style={styles.feedTime}>{relativeTime(post.createdAt)}</Text>
         </View>
-        <Feather name="more-vertical" size={18} color="#9C98A6" />
+        {post.author.starProfile ? (
+          <Pressable
+            disabled={isSettingFollowing}
+            onPress={() => onSetFollowing(post.author.starProfile!.id, post.author.starProfile!.followedByMe)}
+            style={[styles.followButton, post.author.starProfile.followedByMe && styles.followButtonActive]}
+          >
+            <Text style={styles.followButtonText}>{post.author.starProfile.followedByMe ? "팔로잉" : "팔로우"}</Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={() => Alert.alert("게시물 신고", "신고 사유를 선택해주세요.", [
+          { text: "스팸", onPress: () => onReport(post.id, "spam") },
+          { text: "괴롭힘", onPress: () => onReport(post.id, "harassment") },
+          { text: "부적절한 콘텐츠", onPress: () => onReport(post.id, "other") },
+          { text: "취소", style: "cancel" },
+        ])} accessibilityLabel="게시물 신고"><Feather name="more-vertical" size={18} color="#9C98A6" /></Pressable>
       </View>
 
       <View style={styles.feedMain}>
@@ -174,7 +199,7 @@ function FeedPostCard({
           <Feather name="message-circle" size={19} color="#B9B4C3" />
           <Text style={styles.actionCount}>{post.commentCount}</Text>
         </Pressable>
-        <Pressable style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]} accessibilityLabel="공유">
+        <Pressable onPress={() => onRepost(post.id)} style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]} accessibilityLabel="리포스트">
           <Feather name="share-2" size={18} color="#B9B4C3" />
         </Pressable>
       </View>
@@ -214,6 +239,7 @@ export default function FeedScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { starUnlocked, equippedStar } = usePlayMode();
+  const [feedFilter, setFeedFilter] = useState<"recommended" | "following">("recommended");
   const {
     posts,
     isLoading,
@@ -222,20 +248,29 @@ export default function FeedScreen() {
     createPost,
     cheerPost,
     commentPost,
+    setStarFollowing,
+    reportPost,
+    repostPost,
+    resultDrafts,
+    approveResultDraft,
+    discardResultDraft,
+    isResolvingResultDraft,
     isCreatingPost,
     isCheering,
     isCommenting,
-  } = useStarFeed();
+    isSettingStarFollowing,
+  } = useStarFeed(feedFilter);
   const [draft, setDraft] = useState("");
   const [postKind, setPostKind] = useState<StarFeedWritableKind>("fan");
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [feedFilter, setFeedFilter] = useState<"recommended" | "following">("recommended");
+  const [uploadedMedia, setUploadedMedia] = useState<UploadedImage[]>([]);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
   const officialStarReady = equippedStar?.stage === "promoted";
   const activePostKind: StarFeedWritableKind = officialStarReady ? postKind : "fan";
-  const canPost = draft.trim().length > 0 && !isCreatingPost;
+  const canPost = draft.trim().length > 0 && !isCreatingPost && !isUploadingMedia;
   const starName = equippedStar?.displayName ?? "STAR";
   const storyAuthors = useMemo(() => {
     const unique = new Map<string, StarFeedAuthor>();
@@ -251,8 +286,9 @@ export default function FeedScreen() {
     if (!body) return;
     setFeedback(null);
     try {
-      await createPost({ kind: activePostKind, body });
+      await createPost({ kind: activePostKind, body, media: uploadedMedia.map((item) => ({ objectPath: item.objectPath, mediaType: "image" })) });
       setDraft("");
+      setUploadedMedia([]);
       setComposerOpen(false);
     } catch (err) {
       setFeedback(errorMessage(err, "게시글을 올리지 못했어요. 잠시 후 다시 시도해 주세요."));
@@ -276,6 +312,49 @@ export default function FeedScreen() {
     } catch {
       setFeedback("댓글을 남기지 못했어요.");
     }
+  }
+
+  async function addImages() {
+    if (isUploadingMedia || uploadedMedia.length >= 4) return;
+    setFeedback(null);
+    setIsUploadingMedia(true);
+    try {
+      const selected = await pickAndUploadImages();
+      if (selected) setUploadedMedia((current) => [...current, ...selected].slice(0, 4));
+    } catch (err) {
+      setFeedback(errorMessage(err, "이미지를 업로드하지 못했습니다."));
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  }
+
+  async function setFollowing(starProfileId: string, following: boolean) {
+    try {
+      await setStarFollowing({ starProfileId, following });
+    } catch (err) {
+      setFeedback(errorMessage(err, "팔로우 상태를 변경하지 못했습니다."));
+    }
+  }
+
+  async function report(postId: string, reason: "spam" | "harassment" | "sexual" | "violence" | "copyright" | "other") {
+    try {
+      await reportPost({ postId, reason });
+      setFeedback("신고가 접수되어 게시물을 검토 대상으로 전환했습니다.");
+    } catch (err) {
+      setFeedback(errorMessage(err, "신고를 접수하지 못했습니다."));
+    }
+  }
+
+  async function resolveResultDraft(id: string, approve: boolean) {
+    try {
+      if (approve) await approveResultDraft(id); else await discardResultDraft(id);
+      setFeedback(approve ? "결과 카드를 STAR 피드에 게시했습니다." : "결과 카드 초안을 폐기했습니다.");
+    } catch (err) { setFeedback(errorMessage(err, "결과 카드를 처리하지 못했습니다.")); }
+  }
+
+  async function repost(postId: string) {
+    try { await repostPost(postId); setFeedback("리포스트했습니다."); }
+    catch (err) { setFeedback(errorMessage(err, "리포스트하지 못했습니다.")); }
   }
 
   return (
@@ -302,6 +381,17 @@ export default function FeedScreen() {
       </View>
 
       <CustomScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}>
+        {resultDrafts.filter((draft) => draft.status === "DRAFT").map((draft) => (
+          <View key={draft.id} style={styles.resultDraftCard}>
+            <Text style={styles.resultDraftEyebrow}>STAR 결과 카드 초안</Text>
+            <Text style={styles.resultDraftTitle}>{draft.title}</Text>
+            <Text style={styles.resultDraftBody} numberOfLines={2}>{draft.body}</Text>
+            <View style={styles.resultDraftActions}>
+              <Pressable disabled={isResolvingResultDraft} onPress={() => void resolveResultDraft(draft.id, false)} style={styles.resultDraftDiscard}><Text style={styles.resultDraftDiscardText}>폐기</Text></Pressable>
+              <Pressable disabled={isResolvingResultDraft} onPress={() => void resolveResultDraft(draft.id, true)} style={styles.resultDraftApprove}><Text style={styles.resultDraftApproveText}>승인 후 게시</Text></Pressable>
+            </View>
+          </View>
+        ))}
         {composerOpen ? (
           <LinearGradient colors={["#141025", "#090816"]} style={styles.composer}>
             <View style={styles.composerHeader}>
@@ -332,6 +422,13 @@ export default function FeedScreen() {
               maxLength={500}
               style={styles.composerInput}
             />
+            <View style={styles.mediaComposerRow}>
+              <Pressable disabled={isUploadingMedia || uploadedMedia.length >= 4} onPress={() => void addImages()} style={styles.mediaAddButton}>
+                {isUploadingMedia ? <ActivityIndicator size="small" color="#E1C7FF" /> : <Feather name="image" size={16} color="#E1C7FF" />}
+                <Text style={styles.mediaAddText}>{isUploadingMedia ? "업로드 중" : `사진 ${uploadedMedia.length}/4`}</Text>
+              </Pressable>
+              {uploadedMedia.map((item) => <Pressable key={item.objectPath} onPress={() => setUploadedMedia((current) => current.filter((media) => media.objectPath !== item.objectPath))}><Image source={{ uri: item.localUri }} style={styles.mediaPreview} contentFit="cover" /></Pressable>)}
+            </View>
             {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
             <Pressable disabled={!canPost} onPress={() => void submitPost()} style={[styles.postButton, { opacity: canPost ? 1 : 0.42 }]}>
               <Text style={styles.postButtonText}>{isCreatingPost ? "올리는 중" : "게시하기"}</Text>
@@ -364,6 +461,10 @@ export default function FeedScreen() {
                 onCheer={(postId) => void cheer(postId)}
                 onCommentDraft={(postId, value) => setCommentDrafts((prev) => ({ ...prev, [postId]: value }))}
                 onSubmitComment={(postId) => void submitComment(postId)}
+                onSetFollowing={(starProfileId, following) => void setFollowing(starProfileId, following)}
+                isSettingFollowing={isSettingStarFollowing}
+                onReport={(postId, reason) => void report(postId, reason)}
+                onRepost={(postId) => void repost(postId)}
               />
             ))}
           </View>
@@ -416,6 +517,22 @@ const styles = StyleSheet.create({
   feedHeader: { height: 46, flexDirection: "row", alignItems: "center", gap: 9 },
   avatarRing: { width: 48, height: 48, padding: 2, borderRadius: 24, borderWidth: 1, borderColor: "#A63CFF", alignItems: "center", justifyContent: "center" },
   feedIdentity: { flex: 1 },
+  followButton: { borderWidth: 1, borderColor: "#7E36D7", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  followButtonActive: { borderColor: "#4F4A58", backgroundColor: "#211D29" },
+  followButtonText: { color: "#E1C7FF", fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  mediaComposerRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  mediaAddButton: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#593079", borderRadius: 10, paddingHorizontal: 10, height: 38 },
+  mediaAddText: { color: "#E1C7FF", fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  mediaPreview: { width: 38, height: 38, borderRadius: 8 },
+  resultDraftCard: { backgroundColor: "#191126", borderColor: "#7138A2", borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
+  resultDraftEyebrow: { color: "#D7A7FF", fontFamily: "Inter_700Bold", fontSize: 11 },
+  resultDraftTitle: { color: "#F2EDF7", fontFamily: "Inter_700Bold", fontSize: 15 },
+  resultDraftBody: { color: "#B9B2C1", fontFamily: "Inter_400Regular", fontSize: 13 },
+  resultDraftActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
+  resultDraftDiscard: { paddingHorizontal: 12, paddingVertical: 8 },
+  resultDraftDiscardText: { color: "#B9B2C1", fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  resultDraftApprove: { backgroundColor: "#7736B7", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8 },
+  resultDraftApproveText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 12 },
   authorRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   feedAuthor: { color: "#E6E2EB", fontFamily: "Inter_500Medium", fontSize: 12, maxWidth: "58%" },
   feedRole: { color: "#C143FF", fontFamily: "Inter_500Medium", fontSize: 9 },

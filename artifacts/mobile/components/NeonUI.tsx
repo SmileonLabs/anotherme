@@ -20,7 +20,14 @@ export function NeonCard({ children, style, ...props }: ViewProps) {
 
 export function NeonButton({ children, style, ...props }: PressableProps) {
   return (
-    <Pressable {...props} style={({ pressed }) => [styles.buttonWrap, pressed && styles.pressed, typeof style === "function" ? style({ pressed }) : style]}>
+    <Pressable
+      {...props}
+      style={(state) => [
+        styles.buttonWrap,
+        state.pressed && styles.pressed,
+        typeof style === "function" ? style(state) : style,
+      ]}
+    >
       {(state) => (
         <LinearGradient colors={["#A64DFF", "#4C28E6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.button}>
           {typeof children === "function" ? children(state) : typeof children === "string" ? <Text style={styles.buttonText}>{children}</Text> : children}

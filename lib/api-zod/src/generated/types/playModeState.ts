@@ -14,4 +14,5 @@ export interface PlayModeState {
   starUnlocked: boolean;
   fanProfile: FanProfile;
   equippedStar?: StarProfile | null;
+  starProfiles: StarProfile[];
 }

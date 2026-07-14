@@ -59,7 +59,7 @@ type BattleWithResultSummary = BattleState & { resultSummary?: BattleResultSumma
 interface BattleFeedPostResponse {
   duplicate: boolean;
   summary: BattleResultSummary;
-  post: { id: string };
+  draft: { id: string; status: string };
 }
 
 function sideLabel(side: string): string {

@@ -25,6 +25,9 @@ import anotherMeRouter from "./anotherMe";
 import officialAccountsRouter from "./officialAccounts";
 import knowledgeRouter from "./knowledge";
 import realtimeRouter from "./realtime";
+import fanCommunitiesRouter from "./fanCommunities";
+import fanCommunityProgramsRouter from "./fanCommunityPrograms";
+import starFeedAdminRouter from "./starFeedAdmin";
 
 const router: IRouter = Router();
 
@@ -54,5 +57,8 @@ router.use(anotherMeRouter);
 router.use(officialAccountsRouter);
 router.use(knowledgeRouter);
 router.use(realtimeRouter);
+router.use(fanCommunitiesRouter);
+router.use(fanCommunityProgramsRouter);
+router.use(starFeedAdminRouter);
 
 export default router;

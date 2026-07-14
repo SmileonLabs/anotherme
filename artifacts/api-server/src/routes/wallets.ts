@@ -8,7 +8,13 @@ import {
   refreshWalletNft,
   verifyWalletChallenge,
 } from "../lib/walletVerification";
-import { StarProfileError, equipStarNft, getEquippedStarProfile } from "../lib/starProfiles";
+import {
+  StarProfileError,
+  activateStarProfile,
+  equipStarNft,
+  getEquippedStarProfile,
+  listStarProfiles,
+} from "../lib/starProfiles";
 import { ensurePlayModeState } from "../lib/fanStar";
 
 const router: IRouter = Router();
@@ -26,6 +32,7 @@ const verifyBodySchema = z.object({
 const equipBodySchema = z.object({
   tokenId: z.string().trim().min(1).max(80),
 });
+const starProfileParamsSchema = z.object({ starProfileId: z.string().uuid() });
 
 function handleWalletError(res: import("express").Response, err: unknown): boolean {
   if (!(err instanceof WalletVerificationError)) return false;
@@ -46,6 +53,8 @@ function handleStarProfileError(res: import("express").Response, err: unknown): 
   const status =
     err.code === "wallet_required"
       ? 409
+      : err.code === "star_not_owned"
+        ? 404
       : err.code === "config_missing"
         ? 503
         : err.code === "token_not_owned"
@@ -114,6 +123,28 @@ router.post("/users/me/wallet/refresh", requireAuth, async (req, res): Promise<v
 
 router.get("/users/me/star-profile", requireAuth, async (req, res): Promise<void> => {
   res.json({ equippedStar: await getEquippedStarProfile(req.dbUser!.id) });
+});
+
+router.get("/users/me/star-profiles", requireAuth, async (req, res): Promise<void> => {
+  res.json({ starProfiles: await listStarProfiles(req.dbUser!.id) });
+});
+
+router.post("/users/me/star-profiles/:starProfileId/activate", requireAuth, async (req, res): Promise<void> => {
+  const parsed = starProfileParamsSchema.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "잘못된 STAR 프로필입니다." });
+    return;
+  }
+  try {
+    const equippedStar = await activateStarProfile({
+      userId: req.dbUser!.id,
+      starProfileId: parsed.data.starProfileId,
+    });
+    res.json({ equippedStar, state: await ensurePlayModeState(req.dbUser!.id) });
+  } catch (err) {
+    if (handleStarProfileError(res, err)) return;
+    throw err;
+  }
 });
 
 router.post("/users/me/star-nft/equip", requireAuth, async (req, res): Promise<void> => {

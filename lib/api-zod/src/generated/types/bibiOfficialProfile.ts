@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { BibiOfficialProfileStarProfile } from './bibiOfficialProfileStarProfile';
 
 export interface BibiOfficialProfile {
   id: string;
@@ -13,6 +14,8 @@ export interface BibiOfficialProfile {
   handle: string;
   /** @nullable */
   profileImageUrl?: string | null;
+  /** @nullable */
+  starProfile?: BibiOfficialProfileStarProfile;
   /** @nullable */
   statusMessage?: string | null;
 }

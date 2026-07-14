@@ -315,14 +315,13 @@ export const GetMyClanResponse = zod.union([zod.object({
  * @summary Browse / search clans
  */
 export const listClansQueryLimitDefault = 30;
-export const listClansQueryLimitMax = 100;
-
-
+export const listClansQueryScopeDefault = `recommended`;
 
 export const ListClansQueryParams = zod.object({
   "q": zod.coerce.string().optional().describe('Search term matched against name and description.'),
   "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional(),
-  "limit": zod.coerce.number().min(1).max(listClansQueryLimitMax).default(listClansQueryLimitDefault)
+  "limit": zod.coerce.number().default(listClansQueryLimitDefault),
+  "scope": zod.enum(['recommended', 'following']).default(listClansQueryScopeDefault)
 })
 
 export const ListClansResponseItem = zod.object({
@@ -3004,6 +3003,13 @@ export const GetBibiOfficialProfileResponse = zod.object({
   "displayName": zod.string(),
   "handle": zod.string(),
   "profileImageUrl": zod.string().nullish(),
+  "starProfile": zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.string(),
+  "followedByMe": zod.boolean()
+}).nullish(),
   "statusMessage": zod.string().nullish()
 })
 
@@ -3133,6 +3139,30 @@ export const CreateStarFeedPostBody = zod.object({
 
 
 /**
+ * @summary Follow a public STAR profile
+ */
+export const FollowStarProfileParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const FollowStarProfileResponse = zod.object({
+  "following": zod.boolean()
+})
+
+
+/**
+ * @summary Unfollow a STAR profile
+ */
+export const UnfollowStarProfileParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const UnfollowStarProfileResponse = zod.object({
+  "following": zod.boolean()
+})
+
+
+/**
  * @summary Add my cheer reaction to a STAR feed post
  */
 export const CheerStarFeedPostParams = zod.object({
@@ -3181,6 +3211,155 @@ export const commentStarFeedPostBodyBodyMax = 240;
 
 export const CommentStarFeedPostBody = zod.object({
   "body": zod.string().min(1).max(commentStarFeedPostBodyBodyMax)
+})
+
+
+export const RepostStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const ReportStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const reportStarFeedPostBodyDetailsMax = 500;
+
+
+
+export const ReportStarFeedPostBody = zod.object({
+  "reason": zod.enum(['spam', 'harassment', 'sexual', 'violence', 'copyright', 'other']),
+  "details": zod.string().max(reportStarFeedPostBodyDetailsMax).optional()
+})
+
+
+export const discoverStarFeedByHashtagQueryLimitMax = 100;
+
+
+
+export const DiscoverStarFeedByHashtagQueryParams = zod.object({
+  "tag": zod.coerce.string(),
+  "limit": zod.coerce.number().min(1).max(discoverStarFeedByHashtagQueryLimitMax).optional()
+})
+
+export const DiscoverStarFeedByHashtagResponseItem = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+export const DiscoverStarFeedByHashtagResponse = zod.array(DiscoverStarFeedByHashtagResponseItem)
+
+
+export const ListStarResultDraftsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListStarResultDraftsResponse = zod.array(ListStarResultDraftsResponseItem)
+
+
+export const ApproveStarResultDraftParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ApproveStarResultDraftResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+
+
+export const DiscardStarResultDraftParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const createFanCommunityBodyNameMax = 80;
+
+export const createFanCommunityBodyDescriptionMax = 500;
+
+
+
+export const CreateFanCommunityBody = zod.object({
+  "starProfileId": zod.string().uuid(),
+  "name": zod.string().max(createFanCommunityBodyNameMax),
+  "description": zod.string().max(createFanCommunityBodyDescriptionMax).optional()
+})
+
+
+export const JoinFanCommunityParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const LeaveFanCommunityParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const ListStarFeedReportsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "postId": zod.string().uuid(),
+  "reason": zod.string(),
+  "details": zod.string().nullish(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListStarFeedReportsResponse = zod.array(ListStarFeedReportsResponseItem)
+
+
+export const ResolveStarFeedReportParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ResolveStarFeedReportBody = zod.object({
+  "action": zod.enum(['keep', 'remove'])
 })
 
 
@@ -3257,7 +3436,29 @@ export const GetMyPlayModeResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
 })
 
 
@@ -3302,7 +3503,29 @@ export const UpdateMyPlayModeResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
 })
 
 
@@ -3420,6 +3643,126 @@ export const GetMyStarProfileResponse = zod.object({
 
 
 /**
+ * @summary List my NFT-backed STAR profiles and the active STAR
+ */
+export const ListMyStarProfilesResponse = zod.object({
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Make one of my STAR profiles the active STAR identity
+ */
+export const ActivateMyStarProfileParams = zod.object({
+  "starProfileId": zod.coerce.string().uuid()
+})
+
+export const ActivateMyStarProfileResponse = zod.object({
+  "equippedStar": zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),
+  "state": zod.object({
+  "currentMode": zod.enum(['fan', 'star']),
+  "starUnlocked": zod.boolean(),
+  "fanProfile": zod.object({
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "fanPower": zod.number(),
+  "supportPower": zod.number(),
+  "empathy": zod.number(),
+  "story": zod.number()
+})
+}),
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
+})
+})
+
+
+/**
  * @summary Equip an owned STAR NFT
  */
 export const equipStarNftBodyTokenIdMax = 80;
@@ -3487,7 +3830,29 @@ export const EquipStarNftResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
 })
 })
 

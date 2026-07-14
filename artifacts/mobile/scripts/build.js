@@ -107,12 +107,32 @@ function patchExportedFontUrls(outPath, basePath) {
   }
 
   collectJsFiles(jsDir);
+  const sourceAssets = path.join(outPath, "assets", "__node_modules");
+  const publicFontDir = path.join(outPath, "assets", "fonts");
+  fs.mkdirSync(publicFontDir, { recursive: true });
+  const publicFonts = new Set();
+  function collectFonts(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectFonts(fullPath);
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith(".ttf")) {
+        const safeName = entry.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        if (!publicFonts.has(safeName)) {
+          fs.copyFileSync(fullPath, path.join(publicFontDir, safeName));
+          publicFonts.add(safeName);
+        }
+      }
+    }
+  }
+  collectFonts(sourceAssets);
   for (const jsFile of jsFiles) {
     const original = fs.readFileSync(jsFile, "utf8");
-    const patched = original.replace(
+    let patched = original.replace(
       new RegExp(`(${escapedBasePath}/assets/[^"'\\s)]+\\.ttf)(?!\\?)`, "g"),
       `$1?v=${version}`,
     );
+    patched = patched.replace(new RegExp(`${escapedBasePath}/assets/__node_modules/(?:[^"'\\s)]+/)*([^/"'\\s)]+\\.ttf)(?:\\?[^"'\\s)]*)?`, "g"), `${basePath}/assets/fonts/$1?v=${version}`);
     if (patched !== original) {
       fs.writeFileSync(jsFile, patched);
       console.log(`Patched font asset URLs in ${path.relative(outPath, jsFile)}.`);

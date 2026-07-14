@@ -17,6 +17,63 @@ export async function ensureStarFeedSchema(): Promise<void> {
         updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
+    await db.execute(sql`ALTER TABLE star_feed_posts ADD COLUMN IF NOT EXISTS author_star_profile_id uuid REFERENCES star_profiles(id) ON DELETE SET NULL`);
+    await db.execute(sql`ALTER TABLE star_feed_posts ADD COLUMN IF NOT EXISTS media jsonb`);
+    await db.execute(sql`ALTER TABLE star_feed_posts ADD COLUMN IF NOT EXISTS hashtags jsonb NOT NULL DEFAULT '[]'::jsonb`);
+    await db.execute(sql`ALTER TABLE star_feed_posts ADD COLUMN IF NOT EXISTS repost_of_post_id uuid REFERENCES star_feed_posts(id) ON DELETE CASCADE`);
+    await db.execute(sql`ALTER TABLE star_feed_posts ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'PUBLISHED'`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS star_feed_reports (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id uuid NOT NULL REFERENCES star_feed_posts(id) ON DELETE CASCADE,
+        reporter_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reason text NOT NULL,
+        details text,
+        status text NOT NULL DEFAULT 'OPEN',
+        reviewed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (post_id, reporter_user_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS star_result_drafts (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        star_profile_id uuid REFERENCES star_profiles(id) ON DELETE SET NULL,
+        source_type text NOT NULL,
+        source_key text NOT NULL UNIQUE,
+        title text NOT NULL,
+        body text NOT NULL,
+        metadata jsonb,
+        status text NOT NULL DEFAULT 'DRAFT',
+        published_post_id uuid REFERENCES star_feed_posts(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS star_profile_follows (
+        follower_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        star_profile_id uuid NOT NULL REFERENCES star_profiles(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (follower_user_id, star_profile_id)
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS star_feed_activities (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        actor_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+        star_profile_id uuid REFERENCES star_profiles(id) ON DELETE SET NULL,
+        post_id uuid REFERENCES star_feed_posts(id) ON DELETE CASCADE,
+        type text NOT NULL,
+        read_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS star_feed_reactions (
@@ -49,6 +106,14 @@ export async function ensureStarFeedSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS star_feed_posts_author_user_id_idx
       ON star_feed_posts(author_user_id)
     `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_feed_posts_author_star_profile_id_idx ON star_feed_posts(author_star_profile_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_feed_posts_status_created_at_idx ON star_feed_posts(status, created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_feed_posts_hashtags_gin_idx ON star_feed_posts USING gin(hashtags)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_feed_reports_status_created_at_idx ON star_feed_reports(status, created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_result_drafts_user_status_created_at_idx ON star_result_drafts(user_id, status, created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_profile_follows_profile_created_at_idx ON star_profile_follows(star_profile_id, created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_profile_follows_follower_created_at_idx ON star_profile_follows(follower_user_id, created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS star_feed_activities_user_created_at_idx ON star_feed_activities(user_id, created_at)`);
     await db.execute(sql`
       CREATE UNIQUE INDEX IF NOT EXISTS star_feed_reactions_post_user_idx
       ON star_feed_reactions(post_id, user_id)

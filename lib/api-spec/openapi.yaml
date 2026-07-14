@@ -354,6 +354,13 @@ paths:
           schema:
             type: integer
             default: 30
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [recommended, following]
+            default: recommended
             minimum: 1
             maximum: 100
       responses:
@@ -3232,6 +3239,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
 
+  /star-feed/star-profiles/{id}/follow:
+    post:
+      operationId: followStarProfile
+      tags: [star-feed]
+      summary: Follow a public STAR profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Follow state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarProfileFollowState" }
+        "404":
+          description: STAR profile not found
+    delete:
+      operationId: unfollowStarProfile
+      tags: [star-feed]
+      summary: Unfollow a STAR profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Follow state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarProfileFollowState" }
   /star-feed/posts/{id}/reactions:
     post:
       operationId: cheerStarFeedPost
@@ -3295,6 +3337,174 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /star-feed/posts/{id}/repost:
+    post:
+      operationId: repostStarFeedPost
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Reposted feed post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+        "404": { description: Source post not found }
+
+  /star-feed/posts/{id}/reports:
+    post:
+      operationId: reportStarFeedPost
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StarFeedReportInput" }
+      responses:
+        "201": { description: Report accepted }
+
+  /star-feed/discover:
+    get:
+      operationId: discoverStarFeedByHashtag
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tag
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Public posts matching hashtag
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarFeedPost" }
+
+  /star-feed/result-drafts:
+    get:
+      operationId: listStarResultDrafts
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Result drafts owned by the caller
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarResultDraft" }
+
+  /star-feed/result-drafts/{id}/approve:
+    post:
+      operationId: approveStarResultDraft
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Published result card
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+
+  /star-feed/result-drafts/{id}/discard:
+    post:
+      operationId: discardStarResultDraft
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Draft discarded }
+
+  /fan-communities:
+    get:
+      operationId: listFanCommunities
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Active fan communities }
+    post:
+      operationId: createFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/FanCommunityInput" } }
+      responses:
+        "201": { description: Community created }
+
+  /fan-communities/{id}/join:
+    post:
+      operationId: joinFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Joined } }
+    delete:
+      operationId: leaveFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Left } }
+
+  /star-feed/admin/reports:
+    get:
+      operationId: listStarFeedReports
+      tags: [star-feed-admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Open reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarFeedReport" }
+        "403": { description: Admin access required }
+
+  /star-feed/admin/reports/{id}/resolve:
+    post:
+      operationId: resolveStarFeedReport
+      tags: [star-feed-admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [keep, remove] }
+      responses:
+        "200": { description: Report resolved }
+        "403": { description: Admin access required }
 
   /storage/uploads/object:
     post:
@@ -3548,6 +3758,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EquippedStarProfileResponse"
+
+  /users/me/star-profiles:
+    get:
+      operationId: listMyStarProfiles
+      tags: [users]
+      summary: List my NFT-backed STAR profiles and the active STAR
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: All STAR profiles owned by the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarProfilesResponse"
+
+  /users/me/star-profiles/{starProfileId}/activate:
+    post:
+      operationId: activateMyStarProfile
+      tags: [users]
+      summary: Make one of my STAR profiles the active STAR identity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: starProfileId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active STAR profile and current play state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivateStarProfileResult"
+        "404":
+          description: STAR profile is not owned by the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /users/me/star-nft/equip:
     post:
@@ -4218,6 +4469,15 @@ components:
           type: string
         profileImageUrl:
           type: ["string", "null"]
+        starProfile:
+          type: ["object", "null"]
+          required: [id, displayName, stage, followedByMe]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            imageUrl: { type: ["string", "null"] }
+            stage: { type: string }
+            followedByMe: { type: boolean }
         statusMessage:
           type: ["string", "null"]
 
@@ -4376,6 +4636,49 @@ components:
           minLength: 1
           maxLength: 500
 
+    StarProfileFollowState:
+      type: object
+      required: [following]
+      properties:
+        following:
+          type: boolean
+
+    StarFeedReportInput:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, enum: [spam, harassment, sexual, violence, copyright, other] }
+        details: { type: string, maxLength: 500 }
+
+    StarFeedReport:
+      type: object
+      required: [id, postId, reason, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        postId: { type: string, format: uuid }
+        reason: { type: string }
+        details: { type: [string, "null"] }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    StarResultDraft:
+      type: object
+      required: [id, title, body, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    FanCommunityInput:
+      type: object
+      required: [starProfileId, name]
+      properties:
+        starProfileId: { type: string, format: uuid }
+        name: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+
     StarFeedCommentInput:
       type: object
       required: [body]
@@ -4481,7 +4784,7 @@ components:
 
     PlayModeState:
       type: object
-      required: [currentMode, starUnlocked, fanProfile]
+      required: [currentMode, starUnlocked, fanProfile, starProfiles]
       properties:
         currentMode:
           type: string
@@ -4494,6 +4797,28 @@ components:
           oneOf:
             - $ref: "#/components/schemas/StarProfile"
             - type: "null"
+        starProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarProfile"
+
+    StarProfilesResponse:
+      type: object
+      required: [starProfiles]
+      properties:
+        starProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarProfile"
+
+    ActivateStarProfileResult:
+      type: object
+      required: [equippedStar, state]
+      properties:
+        equippedStar:
+          $ref: "#/components/schemas/StarProfile"
+        state:
+          $ref: "#/components/schemas/PlayModeState"
 
     PlayModeError:
       allOf:

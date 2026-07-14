@@ -21,6 +21,7 @@ import type {
 
 import type {
   Achievement,
+  ActivateStarProfileResult,
   AnotherMeRoomSettings,
   AnotherMeRoomSettingsPatch,
   AnotherMeSession,
@@ -69,12 +70,14 @@ import type {
   DailyTalkRewardPatch,
   DailyTalkRewardStatus,
   DeleteMessageInput,
+  DiscoverStarFeedByHashtagParams,
   DungeonInput,
   DungeonState,
   EquipStarNftInput,
   EquipStarNftResult,
   EquippedStarProfileResponse,
   ErrorEnvelope,
+  FanCommunityInput,
   FetchRoomMessagesParams,
   ForwardMessageInput,
   FriendAliasInput,
@@ -129,6 +132,7 @@ import type {
   ReadInput,
   RealtimeTicket,
   RedeemInviteInput,
+  ResolveStarFeedReportBody,
   RewardClaimError,
   RewardClaimResult,
   RewardsSummary,
@@ -138,6 +142,11 @@ import type {
   StarFeedCommentInput,
   StarFeedPost,
   StarFeedPostInput,
+  StarFeedReport,
+  StarFeedReportInput,
+  StarProfileFollowState,
+  StarProfilesResponse,
+  StarResultDraft,
   StickerBadgeInput,
   SubmitClanWarArgumentBody,
   TorimiaError,
@@ -9456,6 +9465,146 @@ export const useCreateStarFeedPost = <TError = ErrorType<ApiError | PlayModeErro
       return useMutation(getCreateStarFeedPostMutationOptions(options));
     }
 
+export const getFollowStarProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/star-profiles/${id}/follow`
+}
+
+/**
+ * @summary Follow a public STAR profile
+ */
+export const followStarProfile = async (id: string, options?: RequestInit): Promise<StarProfileFollowState> => {
+
+  return customFetch<StarProfileFollowState>(getFollowStarProfileUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getFollowStarProfileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof followStarProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof followStarProfile>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['followStarProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof followStarProfile>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  followStarProfile(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FollowStarProfileMutationResult = NonNullable<Awaited<ReturnType<typeof followStarProfile>>>
+
+    export type FollowStarProfileMutationError = ErrorType<void>
+
+    /**
+ * @summary Follow a public STAR profile
+ */
+export const useFollowStarProfile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof followStarProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof followStarProfile>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getFollowStarProfileMutationOptions(options));
+    }
+
+export const getUnfollowStarProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/star-profiles/${id}/follow`
+}
+
+/**
+ * @summary Unfollow a STAR profile
+ */
+export const unfollowStarProfile = async (id: string, options?: RequestInit): Promise<StarProfileFollowState> => {
+
+  return customFetch<StarProfileFollowState>(getUnfollowStarProfileUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnfollowStarProfileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unfollowStarProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unfollowStarProfile>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['unfollowStarProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unfollowStarProfile>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unfollowStarProfile(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnfollowStarProfileMutationResult = NonNullable<Awaited<ReturnType<typeof unfollowStarProfile>>>
+
+    export type UnfollowStarProfileMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Unfollow a STAR profile
+ */
+export const useUnfollowStarProfile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unfollowStarProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unfollowStarProfile>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getUnfollowStarProfileMutationOptions(options));
+    }
+
 export const getCheerStarFeedPostUrl = (id: string,) => {
 
 
@@ -9596,6 +9745,814 @@ export const useCommentStarFeedPost = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getCommentStarFeedPostMutationOptions(options));
+    }
+
+export const getRepostStarFeedPostUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/posts/${id}/repost`
+}
+
+export const repostStarFeedPost = async (id: string, options?: RequestInit): Promise<StarFeedPost> => {
+
+  return customFetch<StarFeedPost>(getRepostStarFeedPostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRepostStarFeedPostMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repostStarFeedPost>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repostStarFeedPost>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['repostStarFeedPost'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repostStarFeedPost>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  repostStarFeedPost(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RepostStarFeedPostMutationResult = NonNullable<Awaited<ReturnType<typeof repostStarFeedPost>>>
+
+    export type RepostStarFeedPostMutationError = ErrorType<void>
+
+    export const useRepostStarFeedPost = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repostStarFeedPost>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof repostStarFeedPost>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRepostStarFeedPostMutationOptions(options));
+    }
+
+export const getReportStarFeedPostUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/posts/${id}/reports`
+}
+
+export const reportStarFeedPost = async (id: string,
+    starFeedReportInput: StarFeedReportInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReportStarFeedPostUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      starFeedReportInput,)
+  }
+);}
+
+
+
+
+export const getReportStarFeedPostMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportStarFeedPost>>, TError,{id: string;data: BodyType<StarFeedReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportStarFeedPost>>, TError,{id: string;data: BodyType<StarFeedReportInput>}, TContext> => {
+
+const mutationKey = ['reportStarFeedPost'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportStarFeedPost>>, {id: string;data: BodyType<StarFeedReportInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reportStarFeedPost(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportStarFeedPostMutationResult = NonNullable<Awaited<ReturnType<typeof reportStarFeedPost>>>
+    export type ReportStarFeedPostMutationBody = BodyType<StarFeedReportInput>
+    export type ReportStarFeedPostMutationError = ErrorType<unknown>
+
+    export const useReportStarFeedPost = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportStarFeedPost>>, TError,{id: string;data: BodyType<StarFeedReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportStarFeedPost>>,
+        TError,
+        {id: string;data: BodyType<StarFeedReportInput>},
+        TContext
+      > => {
+      return useMutation(getReportStarFeedPostMutationOptions(options));
+    }
+
+export const getDiscoverStarFeedByHashtagUrl = (params: DiscoverStarFeedByHashtagParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/star-feed/discover?${stringifiedParams}` : `/api/star-feed/discover`
+}
+
+export const discoverStarFeedByHashtag = async (params: DiscoverStarFeedByHashtagParams, options?: RequestInit): Promise<StarFeedPost[]> => {
+
+  return customFetch<StarFeedPost[]>(getDiscoverStarFeedByHashtagUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDiscoverStarFeedByHashtagQueryKey = (params?: DiscoverStarFeedByHashtagParams,) => {
+    return [
+    `/api/star-feed/discover`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getDiscoverStarFeedByHashtagQueryOptions = <TData = Awaited<ReturnType<typeof discoverStarFeedByHashtag>>, TError = ErrorType<unknown>>(params: DiscoverStarFeedByHashtagParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof discoverStarFeedByHashtag>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDiscoverStarFeedByHashtagQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof discoverStarFeedByHashtag>>> = ({ signal }) => discoverStarFeedByHashtag(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof discoverStarFeedByHashtag>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DiscoverStarFeedByHashtagQueryResult = NonNullable<Awaited<ReturnType<typeof discoverStarFeedByHashtag>>>
+export type DiscoverStarFeedByHashtagQueryError = ErrorType<unknown>
+
+
+
+export function useDiscoverStarFeedByHashtag<TData = Awaited<ReturnType<typeof discoverStarFeedByHashtag>>, TError = ErrorType<unknown>>(
+ params: DiscoverStarFeedByHashtagParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof discoverStarFeedByHashtag>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDiscoverStarFeedByHashtagQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListStarResultDraftsUrl = () => {
+
+
+
+
+  return `/api/star-feed/result-drafts`
+}
+
+export const listStarResultDrafts = async ( options?: RequestInit): Promise<StarResultDraft[]> => {
+
+  return customFetch<StarResultDraft[]>(getListStarResultDraftsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStarResultDraftsQueryKey = () => {
+    return [
+    `/api/star-feed/result-drafts`
+    ] as const;
+    }
+
+
+export const getListStarResultDraftsQueryOptions = <TData = Awaited<ReturnType<typeof listStarResultDrafts>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStarResultDrafts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStarResultDraftsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStarResultDrafts>>> = ({ signal }) => listStarResultDrafts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStarResultDrafts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStarResultDraftsQueryResult = NonNullable<Awaited<ReturnType<typeof listStarResultDrafts>>>
+export type ListStarResultDraftsQueryError = ErrorType<unknown>
+
+
+
+export function useListStarResultDrafts<TData = Awaited<ReturnType<typeof listStarResultDrafts>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStarResultDrafts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStarResultDraftsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getApproveStarResultDraftUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/result-drafts/${id}/approve`
+}
+
+export const approveStarResultDraft = async (id: string, options?: RequestInit): Promise<StarFeedPost> => {
+
+  return customFetch<StarFeedPost>(getApproveStarResultDraftUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getApproveStarResultDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveStarResultDraft>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveStarResultDraft>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['approveStarResultDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveStarResultDraft>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  approveStarResultDraft(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveStarResultDraftMutationResult = NonNullable<Awaited<ReturnType<typeof approveStarResultDraft>>>
+
+    export type ApproveStarResultDraftMutationError = ErrorType<unknown>
+
+    export const useApproveStarResultDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveStarResultDraft>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveStarResultDraft>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getApproveStarResultDraftMutationOptions(options));
+    }
+
+export const getDiscardStarResultDraftUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/result-drafts/${id}/discard`
+}
+
+export const discardStarResultDraft = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDiscardStarResultDraftUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDiscardStarResultDraftMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardStarResultDraft>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof discardStarResultDraft>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['discardStarResultDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof discardStarResultDraft>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  discardStarResultDraft(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DiscardStarResultDraftMutationResult = NonNullable<Awaited<ReturnType<typeof discardStarResultDraft>>>
+
+    export type DiscardStarResultDraftMutationError = ErrorType<unknown>
+
+    export const useDiscardStarResultDraft = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardStarResultDraft>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof discardStarResultDraft>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDiscardStarResultDraftMutationOptions(options));
+    }
+
+export const getListFanCommunitiesUrl = () => {
+
+
+
+
+  return `/api/fan-communities`
+}
+
+export const listFanCommunities = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getListFanCommunitiesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListFanCommunitiesQueryKey = () => {
+    return [
+    `/api/fan-communities`
+    ] as const;
+    }
+
+
+export const getListFanCommunitiesQueryOptions = <TData = Awaited<ReturnType<typeof listFanCommunities>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFanCommunities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFanCommunitiesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFanCommunities>>> = ({ signal }) => listFanCommunities({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFanCommunities>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListFanCommunitiesQueryResult = NonNullable<Awaited<ReturnType<typeof listFanCommunities>>>
+export type ListFanCommunitiesQueryError = ErrorType<unknown>
+
+
+
+export function useListFanCommunities<TData = Awaited<ReturnType<typeof listFanCommunities>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFanCommunities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListFanCommunitiesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateFanCommunityUrl = () => {
+
+
+
+
+  return `/api/fan-communities`
+}
+
+export const createFanCommunity = async (fanCommunityInput: FanCommunityInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCreateFanCommunityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      fanCommunityInput,)
+  }
+);}
+
+
+
+
+export const getCreateFanCommunityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFanCommunity>>, TError,{data: BodyType<FanCommunityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createFanCommunity>>, TError,{data: BodyType<FanCommunityInput>}, TContext> => {
+
+const mutationKey = ['createFanCommunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFanCommunity>>, {data: BodyType<FanCommunityInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createFanCommunity(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateFanCommunityMutationResult = NonNullable<Awaited<ReturnType<typeof createFanCommunity>>>
+    export type CreateFanCommunityMutationBody = BodyType<FanCommunityInput>
+    export type CreateFanCommunityMutationError = ErrorType<unknown>
+
+    export const useCreateFanCommunity = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFanCommunity>>, TError,{data: BodyType<FanCommunityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createFanCommunity>>,
+        TError,
+        {data: BodyType<FanCommunityInput>},
+        TContext
+      > => {
+      return useMutation(getCreateFanCommunityMutationOptions(options));
+    }
+
+export const getJoinFanCommunityUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/join`
+}
+
+export const joinFanCommunity = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getJoinFanCommunityUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getJoinFanCommunityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinFanCommunity>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinFanCommunity>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['joinFanCommunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinFanCommunity>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  joinFanCommunity(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinFanCommunityMutationResult = NonNullable<Awaited<ReturnType<typeof joinFanCommunity>>>
+
+    export type JoinFanCommunityMutationError = ErrorType<unknown>
+
+    export const useJoinFanCommunity = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinFanCommunity>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinFanCommunity>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getJoinFanCommunityMutationOptions(options));
+    }
+
+export const getLeaveFanCommunityUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/join`
+}
+
+export const leaveFanCommunity = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getLeaveFanCommunityUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getLeaveFanCommunityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveFanCommunity>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leaveFanCommunity>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['leaveFanCommunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveFanCommunity>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  leaveFanCommunity(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeaveFanCommunityMutationResult = NonNullable<Awaited<ReturnType<typeof leaveFanCommunity>>>
+
+    export type LeaveFanCommunityMutationError = ErrorType<unknown>
+
+    export const useLeaveFanCommunity = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveFanCommunity>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof leaveFanCommunity>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getLeaveFanCommunityMutationOptions(options));
+    }
+
+export const getListStarFeedReportsUrl = () => {
+
+
+
+
+  return `/api/star-feed/admin/reports`
+}
+
+export const listStarFeedReports = async ( options?: RequestInit): Promise<StarFeedReport[]> => {
+
+  return customFetch<StarFeedReport[]>(getListStarFeedReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStarFeedReportsQueryKey = () => {
+    return [
+    `/api/star-feed/admin/reports`
+    ] as const;
+    }
+
+
+export const getListStarFeedReportsQueryOptions = <TData = Awaited<ReturnType<typeof listStarFeedReports>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStarFeedReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStarFeedReportsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStarFeedReports>>> = ({ signal }) => listStarFeedReports({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStarFeedReports>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListStarFeedReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listStarFeedReports>>>
+export type ListStarFeedReportsQueryError = ErrorType<void>
+
+
+
+export function useListStarFeedReports<TData = Awaited<ReturnType<typeof listStarFeedReports>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStarFeedReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListStarFeedReportsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getResolveStarFeedReportUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/admin/reports/${id}/resolve`
+}
+
+export const resolveStarFeedReport = async (id: string,
+    resolveStarFeedReportBody: ResolveStarFeedReportBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getResolveStarFeedReportUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      resolveStarFeedReportBody,)
+  }
+);}
+
+
+
+
+export const getResolveStarFeedReportMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveStarFeedReport>>, TError,{id: string;data: BodyType<ResolveStarFeedReportBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveStarFeedReport>>, TError,{id: string;data: BodyType<ResolveStarFeedReportBody>}, TContext> => {
+
+const mutationKey = ['resolveStarFeedReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveStarFeedReport>>, {id: string;data: BodyType<ResolveStarFeedReportBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resolveStarFeedReport(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveStarFeedReportMutationResult = NonNullable<Awaited<ReturnType<typeof resolveStarFeedReport>>>
+    export type ResolveStarFeedReportMutationBody = BodyType<ResolveStarFeedReportBody>
+    export type ResolveStarFeedReportMutationError = ErrorType<void>
+
+    export const useResolveStarFeedReport = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveStarFeedReport>>, TError,{id: string;data: BodyType<ResolveStarFeedReportBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveStarFeedReport>>,
+        TError,
+        {id: string;data: BodyType<ResolveStarFeedReportBody>},
+        TContext
+      > => {
+      return useMutation(getResolveStarFeedReportMutationOptions(options));
     }
 
 export const getUploadStorageObjectUrl = (params: UploadStorageObjectParams,) => {
@@ -10267,6 +11224,153 @@ export function useGetMyStarProfile<TData = Awaited<ReturnType<typeof getMyStarP
 
 
 
+
+export const getListMyStarProfilesUrl = () => {
+
+
+
+
+  return `/api/users/me/star-profiles`
+}
+
+/**
+ * @summary List my NFT-backed STAR profiles and the active STAR
+ */
+export const listMyStarProfiles = async ( options?: RequestInit): Promise<StarProfilesResponse> => {
+
+  return customFetch<StarProfilesResponse>(getListMyStarProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMyStarProfilesQueryKey = () => {
+    return [
+    `/api/users/me/star-profiles`
+    ] as const;
+    }
+
+
+export const getListMyStarProfilesQueryOptions = <TData = Awaited<ReturnType<typeof listMyStarProfiles>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyStarProfiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMyStarProfilesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyStarProfiles>>> = ({ signal }) => listMyStarProfiles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMyStarProfiles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMyStarProfilesQueryResult = NonNullable<Awaited<ReturnType<typeof listMyStarProfiles>>>
+export type ListMyStarProfilesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List my NFT-backed STAR profiles and the active STAR
+ */
+
+export function useListMyStarProfiles<TData = Awaited<ReturnType<typeof listMyStarProfiles>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyStarProfiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMyStarProfilesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getActivateMyStarProfileUrl = (starProfileId: string,) => {
+
+
+
+
+  return `/api/users/me/star-profiles/${starProfileId}/activate`
+}
+
+/**
+ * @summary Make one of my STAR profiles the active STAR identity
+ */
+export const activateMyStarProfile = async (starProfileId: string, options?: RequestInit): Promise<ActivateStarProfileResult> => {
+
+  return customFetch<ActivateStarProfileResult>(getActivateMyStarProfileUrl(starProfileId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getActivateMyStarProfileMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof activateMyStarProfile>>, TError,{starProfileId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof activateMyStarProfile>>, TError,{starProfileId: string}, TContext> => {
+
+const mutationKey = ['activateMyStarProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof activateMyStarProfile>>, {starProfileId: string}> = (props) => {
+          const {starProfileId} = props ?? {};
+
+          return  activateMyStarProfile(starProfileId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ActivateMyStarProfileMutationResult = NonNullable<Awaited<ReturnType<typeof activateMyStarProfile>>>
+
+    export type ActivateMyStarProfileMutationError = ErrorType<ApiError>
+
+    /**
+ * @summary Make one of my STAR profiles the active STAR identity
+ */
+export const useActivateMyStarProfile = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof activateMyStarProfile>>, TError,{starProfileId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof activateMyStarProfile>>,
+        TError,
+        {starProfileId: string},
+        TContext
+      > => {
+      return useMutation(getActivateMyStarProfileMutationOptions(options));
+    }
 
 export const getEquipStarNftUrl = () => {
 

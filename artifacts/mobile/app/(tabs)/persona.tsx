@@ -278,7 +278,7 @@ export function PersonaScreen({
                 equippedStar={equippedStar}
                 isAnalyzing={isAnalyzing}
                 onEditProfile={() => router.push("/profile/edit")}
-                onWallet={() => router.push("/pvt/wallet")}
+                onWallet={() => router.push("/pvt/wallet" as never)}
                 onNotifications={() => router.push("/settings/notifications")}
                 onAccount={() => router.push("/settings")}
                 onAnalyze={() => analyze()}

@@ -15,3 +15,9 @@ export {
 // generated/types). Prefer the zod schemas; the type shapes remain available via
 // `z.infer<typeof ...>`.
 export { CreateClanWarBody, SubmitClanWarArgumentBody } from "./generated/api";
+
+// The generated API schema and generated type barrel use the same name for
+// this body. Keep the runtime Zod schema as the canonical public export and
+// expose the type-only shape under an explicit alias.
+export { ResolveStarFeedReportBody } from "./generated/api";
+export type { ResolveStarFeedReportBody as ResolveStarFeedReportBodyType } from "./generated/types";

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListClansArchetype } from './listClansArchetype';
+import type { ListClansScope } from './listClansScope';
 
 export type ListClansParams = {
 /**
@@ -13,9 +14,10 @@ export type ListClansParams = {
  */
 q?: string;
 archetype?: ListClansArchetype;
+limit?: number;
 /**
  * @minimum 1
  * @maximum 100
  */
-limit?: number;
+scope?: ListClansScope;
 };

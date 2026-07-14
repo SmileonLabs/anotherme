@@ -233,7 +233,7 @@ export default function SearchScreen() {
 
         {feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
           <View style={styles.feedList}>
-            {matchedPosts.map((post) => <FeedPreview key={post.id} post={post} onPress={() => router.push("/(tabs)/feed")} />)}
+            {matchedPosts.map((post) => <FeedPreview key={post.id} post={post} onPress={() => router.push("/(tabs)/feed" as never)} />)}
           </View>
         ) : <Text style={styles.empty}>검색 결과가 없습니다.</Text>}
       </CustomScrollView>

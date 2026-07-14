@@ -345,6 +345,18 @@ export interface DailyTalkRewardPatch {
   visibility?: DailyTalkRewardPatchVisibility;
 }
 
+/**
+ * @nullable
+ */
+export type BibiOfficialProfileStarProfile = {
+  id: string;
+  displayName: string;
+  /** @nullable */
+  imageUrl?: string | null;
+  stage: string;
+  followedByMe: boolean;
+} | null;
+
 export interface BibiOfficialProfile {
   id: string;
   nickname: string;
@@ -352,6 +364,8 @@ export interface BibiOfficialProfile {
   handle: string;
   /** @nullable */
   profileImageUrl?: string | null;
+  /** @nullable */
+  starProfile?: BibiOfficialProfileStarProfile;
   /** @nullable */
   statusMessage?: string | null;
 }
@@ -562,6 +576,54 @@ export interface StarFeedPostInput {
   body: string;
 }
 
+export interface StarProfileFollowState {
+  following: boolean;
+}
+
+export type StarFeedReportInputReason = typeof StarFeedReportInputReason[keyof typeof StarFeedReportInputReason];
+
+
+export const StarFeedReportInputReason = {
+  spam: 'spam',
+  harassment: 'harassment',
+  sexual: 'sexual',
+  violence: 'violence',
+  copyright: 'copyright',
+  other: 'other',
+} as const;
+
+export interface StarFeedReportInput {
+  reason: StarFeedReportInputReason;
+  /** @maxLength 500 */
+  details?: string;
+}
+
+export interface StarFeedReport {
+  id: string;
+  postId: string;
+  reason: string;
+  /** @nullable */
+  details?: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface StarResultDraft {
+  id: string;
+  title: string;
+  body: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface FanCommunityInput {
+  starProfileId: string;
+  /** @maxLength 80 */
+  name: string;
+  /** @maxLength 500 */
+  description?: string;
+}
+
 export interface StarFeedCommentInput {
   /**
      * @minLength 1
@@ -660,6 +722,16 @@ export interface PlayModeState {
   starUnlocked: boolean;
   fanProfile: FanProfile;
   equippedStar?: StarProfile | null;
+  starProfiles: StarProfile[];
+}
+
+export interface StarProfilesResponse {
+  starProfiles: StarProfile[];
+}
+
+export interface ActivateStarProfileResult {
+  equippedStar: StarProfile;
+  state: PlayModeState;
 }
 
 export type PlayModeError = ApiError & {
@@ -2139,11 +2211,12 @@ export type ListClansParams = {
  */
 q?: string;
 archetype?: ListClansArchetype;
+limit?: number;
 /**
  * @minimum 1
  * @maximum 100
  */
-limit?: number;
+scope?: ListClansScope;
 };
 
 export type ListClansArchetype = typeof ListClansArchetype[keyof typeof ListClansArchetype];
@@ -2158,6 +2231,14 @@ export const ListClansArchetype = {
   entertainer: 'entertainer',
   activist: 'activist',
   observer: 'observer',
+} as const;
+
+export type ListClansScope = typeof ListClansScope[keyof typeof ListClansScope];
+
+
+export const ListClansScope = {
+  recommended: 'recommended',
+  following: 'following',
 } as const;
 
 export type GetClanRankingsParams = {
@@ -2291,6 +2372,27 @@ export type ListStarFeedPostsParams = {
  * @maximum 100
  */
 limit?: number;
+};
+
+export type DiscoverStarFeedByHashtagParams = {
+tag: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ResolveStarFeedReportBodyAction = typeof ResolveStarFeedReportBodyAction[keyof typeof ResolveStarFeedReportBodyAction];
+
+
+export const ResolveStarFeedReportBodyAction = {
+  keep: 'keep',
+  remove: 'remove',
+} as const;
+
+export type ResolveStarFeedReportBody = {
+  action: ResolveStarFeedReportBodyAction;
 };
 
 export type UploadStorageObjectParams = {

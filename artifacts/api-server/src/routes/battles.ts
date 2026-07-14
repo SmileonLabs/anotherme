@@ -9,6 +9,7 @@ import {
   chatRoomsTable,
   friendshipsTable,
   messagesTable,
+  starResultDraftsTable,
   userBattleStatsTable,
   type BattleEvaluation,
   type BattleState,
@@ -37,7 +38,6 @@ import {
 import { ensurePlayModeState } from "../lib/fanStar";
 import {
   STAR_FEED_POST_BODY_MAX,
-  createStarFeedPostWithResult,
 } from "../lib/starFeed";
 import { roomWithMeta } from "./rooms";
 import { rateLimit } from "../lib/rateLimit";
@@ -523,6 +523,7 @@ router.post("/battles/:id/feed-post", requireAuth, async (req, res): Promise<voi
   }
 
   const kind = parsed.data.kind ?? "fan";
+  let starProfileId: string | null = null;
   if (kind === "star") {
     const state = await ensurePlayModeState(userId);
     if (!state.starUnlocked) {
@@ -549,24 +550,27 @@ router.post("/battles/:id/feed-post", requireAuth, async (req, res): Promise<voi
       });
       return;
     }
+    starProfileId = state.equippedStar.id;
   }
 
-  const sourceKey = `battle_feed:${raw}:${summary.matchSeq}:${userId}:${kind}`;
-  const result = await createStarFeedPostWithResult({
+  const sourceKey = `battle_result_draft:${raw}:${summary.matchSeq}:${userId}:${kind}`;
+  const [draft] = await db.insert(starResultDraftsTable).values({
     userId,
-    kind,
+    starProfileId,
+    sourceType: "battle",
+    sourceKey,
     title: battleFeedTitle(summary, kind),
     body: battleFeedBody(summary, kind),
-    sourceKey,
     metadata: {
       ...summary,
       kind,
     },
-  });
+  }).onConflictDoNothing({ target: starResultDraftsTable.sourceKey }).returning();
+  const resultDraft = draft ?? (await db.select().from(starResultDraftsTable).where(eq(starResultDraftsTable.sourceKey, sourceKey)).limit(1))[0];
 
-  res.status(result.created ? 201 : 200).json({
-    post: result.post,
-    duplicate: !result.created,
+  res.status(draft ? 201 : 200).json({
+    draft: resultDraft,
+    duplicate: !draft,
     summary,
   });
 });

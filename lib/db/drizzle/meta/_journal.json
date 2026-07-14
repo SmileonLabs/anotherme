@@ -29,6 +29,49 @@
       "when": 1783752065658,
       "tag": "0003_fresh_nighthawk",
       "breakpoints": true
-    }
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784000000000,
+      "tag": "0004_social_star_following",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784001000000,
+      "tag": "0005_social_media_moderation",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784002000000,
+      "tag": "0006_star_result_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784003000000,
+      "tag": "0007_star_feed_hashtags",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784004000000,
+      "tag": "0008_star_feed_reposts",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784005000000,
+      "tag": "0009_fan_communities",
+      "breakpoints": true
+    },
+    { "idx": 10, "version": "7", "when": 1784006000000, "tag": "0010_broadcast_missions", "breakpoints": true }
   ]
 }

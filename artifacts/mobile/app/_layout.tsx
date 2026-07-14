@@ -238,7 +238,6 @@ function RootStackNav() {
         name="clan/war/[id]"
         options={{ title: "팬클럽전", headerBackTitle: "Back" }}
       />
-      <Stack.Screen name="quests/index" options={{ headerShown: false }} />
       <Stack.Screen
         name="settings/notifications"
         options={{ title: "알림 설정", headerBackTitle: "Back" }}

@@ -41,6 +41,7 @@ export class StarProfileError extends Error {
       | "wallet_required"
       | "config_missing"
       | "invalid_token_id"
+      | "star_not_owned"
       | "token_not_owned"
       | "nft_check_failed",
     message: string,
@@ -84,6 +85,53 @@ export async function getEquippedStarProfile(userId: string): Promise<StarProfil
     .orderBy(desc(starProfilesTable.equippedAt))
     .limit(1);
   return serializeStarProfile(profile);
+}
+
+/**
+ * A user can own several IP/NFT-backed STAR profiles.  `equippedAt` identifies
+ * the one currently acting as the user's STAR identity; it does not remove or
+ * deactivate the rest of the user's collection.
+ */
+export async function listStarProfiles(userId: string): Promise<StarProfileView[]> {
+  const profiles = await db
+    .select()
+    .from(starProfilesTable)
+    .where(eq(starProfilesTable.userId, userId))
+    .orderBy(desc(starProfilesTable.equippedAt), desc(starProfilesTable.verifiedAt), desc(starProfilesTable.createdAt));
+  return profiles.flatMap((profile) => {
+    const view = serializeStarProfile(profile);
+    return view ? [view] : [];
+  });
+}
+
+export async function activateStarProfile(params: {
+  userId: string;
+  starProfileId: string;
+}): Promise<StarProfileView> {
+  const [owned] = await db
+    .select()
+    .from(starProfilesTable)
+    .where(and(eq(starProfilesTable.id, params.starProfileId), eq(starProfilesTable.userId, params.userId)))
+    .limit(1);
+  if (!owned) {
+    throw new StarProfileError("star_not_owned", "선택한 STAR 프로필을 찾을 수 없어요.");
+  }
+
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(starProfilesTable)
+      .set({ equippedAt: null, updatedAt: now })
+      .where(eq(starProfilesTable.userId, params.userId));
+    await tx
+      .update(starProfilesTable)
+      .set({ equippedAt: now, updatedAt: now })
+      .where(and(eq(starProfilesTable.id, params.starProfileId), eq(starProfilesTable.userId, params.userId)));
+  });
+
+  const active = await getEquippedStarProfile(params.userId);
+  if (!active) throw new Error("active STAR profile reload failed");
+  return active;
 }
 
 async function setStarUnlocked(userId: string): Promise<void> {

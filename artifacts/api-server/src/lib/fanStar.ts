@@ -7,7 +7,7 @@ import {
   type PlayMode,
   type UserPlayMode,
 } from "@workspace/db";
-import { getEquippedStarProfile, type StarProfileView } from "./starProfiles";
+import { listStarProfiles, type StarProfileView } from "./starProfiles";
 
 export interface PlayModeState {
   currentMode: PlayMode;
@@ -18,6 +18,7 @@ export interface PlayModeState {
     stats: FanProfile["stats"];
   };
   equippedStar: StarProfileView | null;
+  starProfiles: StarProfileView[];
 }
 
 function normalizeMode(value: string | null | undefined): PlayMode {
@@ -25,9 +26,10 @@ function normalizeMode(value: string | null | undefined): PlayMode {
 }
 
 async function serialize(mode: UserPlayMode, fanProfile: FanProfile): Promise<PlayModeState> {
-  const starUnlocked = Boolean(mode.starUnlocked);
+  const starProfiles = await listStarProfiles(mode.userId);
+  const equippedStar = starProfiles.find((profile) => profile.equippedAt !== null) ?? null;
+  const starUnlocked = starProfiles.length > 0;
   const currentMode = starUnlocked ? normalizeMode(mode.currentMode) : "fan";
-  const equippedStar = starUnlocked ? await getEquippedStarProfile(mode.userId) : null;
   return {
     currentMode,
     starUnlocked,
@@ -37,6 +39,7 @@ async function serialize(mode: UserPlayMode, fanProfile: FanProfile): Promise<Pl
       stats: fanProfile.stats,
     },
     equippedStar,
+    starProfiles,
   };
 }
 
@@ -55,10 +58,14 @@ export async function ensurePlayModeState(userId: string): Promise<PlayModeState
 
   if (!fanProfile || !mode) throw new Error("Failed to initialize play mode state");
 
-  if (mode.currentMode === "star" && !mode.starUnlocked) {
+  const state = await serialize(mode, fanProfile);
+  if (
+    (mode.currentMode === "star" && !state.starUnlocked) ||
+    mode.starUnlocked !== state.starUnlocked
+  ) {
     [mode] = await db
       .update(userPlayModesTable)
-      .set({ currentMode: "fan" })
+      .set({ currentMode: state.starUnlocked ? mode.currentMode : "fan", starUnlocked: state.starUnlocked })
       .where(eq(userPlayModesTable.userId, userId))
       .returning();
   }
