@@ -2210,6 +2210,23 @@ export interface BattleResultsPage {
   nextCursor: string | null;
 }
 
+export type PublicProfileFan = { [key: string]: unknown };
+
+export type PublicProfileStarsItem = { [key: string]: unknown };
+
+export interface PublicProfile {
+  id: string;
+  nickname: string;
+  profileImageUrl?: string | null;
+  statusMessage?: string | null;
+  createdAt?: string;
+  fan?: PublicProfileFan;
+  stars: PublicProfileStarsItem[];
+  followerCount: number;
+  followingCount: number;
+  followedStarIds?: string[];
+}
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**
@@ -2537,4 +2554,14 @@ export type GetUsersUserIdBattleResultsParams = {
 limit?: number;
 cursor?: string;
 };
+
+export type GetStarFeedActivities200Item = { [key: string]: unknown };
+
+export type GetFanCommunitiesIdBroadcasts200Item = { [key: string]: unknown };
+
+export type PostFanCommunitiesIdBroadcastsBody = { [key: string]: unknown };
+
+export type GetFanCommunitiesIdMissions200Item = { [key: string]: unknown };
+
+export type PostFanCommunitiesIdMissionsBody = { [key: string]: unknown };
 

@@ -4076,6 +4076,61 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BattleResultsPage" }
+  /users/{userId}/profile:
+    get:
+      tags: [users]
+      summary: Get a public user profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Public profile, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProfile" } } } }
+  /star-feed/activities:
+    get:
+      tags: [star-feed]
+      summary: List STAR feed activities
+      security: [{ bearerAuth: [] }]
+      responses: { "200": { description: Activities, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+  /star-feed/activities/read:
+    post:
+      tags: [star-feed]
+      summary: Mark STAR feed activities as read
+      security: [{ bearerAuth: [] }]
+      responses: { "204": { description: Marked as read } }
+  /fan-communities/{id}/broadcasts:
+    get:
+      tags: [fan-communities]
+      summary: List community broadcasts
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Broadcasts, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+    post:
+      tags: [fan-communities]
+      summary: Create a community broadcast
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { "201": { description: Broadcast created } }
+  /fan-communities/{id}/missions:
+    get:
+      tags: [fan-communities]
+      summary: List community missions
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Missions, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+    post:
+      tags: [fan-communities]
+      summary: Create a community mission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { "201": { description: Mission created } }
+  /fan-missions/{id}/join:
+    post:
+      tags: [fan-communities]
+      summary: Join a fan mission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Mission joined } }
 
 components:
   securitySchemes:
@@ -7112,3 +7167,17 @@ components:
         opponentScore: { type: integer }
         opponentName: { type: string }
         completedAt: { type: string, format: date-time }
+    PublicProfile:
+      type: object
+      required: [id, nickname, stars, followerCount, followingCount]
+      properties:
+        id: { type: string, format: uuid }
+        nickname: { type: string }
+        profileImageUrl: { type: string, nullable: true }
+        statusMessage: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        fan: { type: object }
+        stars: { type: array, items: { type: object } }
+        followerCount: { type: integer }
+        followingCount: { type: integer }
+        followedStarIds: { type: array, items: { type: string, format: uuid } }

@@ -11,6 +11,8 @@ export {
   GetUsersUserIdPostsParams,
   GetUsersUserIdGrowthRecordsParams,
   GetUsersUserIdBattleResultsParams,
+  PostFanCommunitiesIdBroadcastsBody,
+  PostFanCommunitiesIdMissionsBody,
 } from "./generated/api";
 
 // `CreateClanWarBody` and `SubmitClanWarArgumentBody` are emitted by BOTH

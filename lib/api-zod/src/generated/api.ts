@@ -4180,3 +4180,95 @@ export const GetUsersUserIdBattleResultsResponse = zod.object({
 })
 
 
+/**
+ * @summary Get a public user profile
+ */
+export const GetUsersUserIdProfileParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const GetUsersUserIdProfileResponse = zod.object({
+  "id": zod.string().uuid(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "statusMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional(),
+  "fan": zod.object({
+
+}).passthrough().optional(),
+  "stars": zod.array(zod.object({
+
+}).passthrough()),
+  "followerCount": zod.number(),
+  "followingCount": zod.number(),
+  "followedStarIds": zod.array(zod.string().uuid()).optional()
+})
+
+
+/**
+ * @summary List STAR feed activities
+ */
+export const GetStarFeedActivitiesResponseItem = zod.object({
+
+}).passthrough()
+export const GetStarFeedActivitiesResponse = zod.array(GetStarFeedActivitiesResponseItem)
+
+
+/**
+ * @summary List community broadcasts
+ */
+export const GetFanCommunitiesIdBroadcastsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetFanCommunitiesIdBroadcastsResponseItem = zod.object({
+
+}).passthrough()
+export const GetFanCommunitiesIdBroadcastsResponse = zod.array(GetFanCommunitiesIdBroadcastsResponseItem)
+
+
+/**
+ * @summary Create a community broadcast
+ */
+export const PostFanCommunitiesIdBroadcastsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const PostFanCommunitiesIdBroadcastsBody = zod.object({
+
+}).passthrough()
+
+
+/**
+ * @summary List community missions
+ */
+export const GetFanCommunitiesIdMissionsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetFanCommunitiesIdMissionsResponseItem = zod.object({
+
+}).passthrough()
+export const GetFanCommunitiesIdMissionsResponse = zod.array(GetFanCommunitiesIdMissionsResponseItem)
+
+
+/**
+ * @summary Create a community mission
+ */
+export const PostFanCommunitiesIdMissionsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const PostFanCommunitiesIdMissionsBody = zod.object({
+
+}).passthrough()
+
+
+/**
+ * @summary Join a fan mission
+ */
+export const PostFanMissionsIdJoinParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+

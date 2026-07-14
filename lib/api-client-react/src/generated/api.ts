@@ -87,8 +87,11 @@ import type {
   FriendRequestWithUser,
   GetAnotherMeSummonStatusParams,
   GetClanRankingsParams,
+  GetFanCommunitiesIdBroadcasts200Item,
+  GetFanCommunitiesIdMissions200Item,
   GetPersonaRankingsParams,
   GetServiceRankingsParams,
+  GetStarFeedActivities200Item,
   GetUsersUserIdBattleResultsParams,
   GetUsersUserIdGrowthRecordsParams,
   GetUsersUserIdPostsParams,
@@ -126,10 +129,13 @@ import type {
   PlayModeError,
   PlayModeInput,
   PlayModeState,
+  PostFanCommunitiesIdBroadcastsBody,
+  PostFanCommunitiesIdMissionsBody,
   PresenceHeartbeat,
   PresenceUsersResponse,
   ProfilePostsPage,
   ProfileUpdateHistoryItem,
+  PublicProfile,
   PublicUser,
   PushTokenInput,
   PvtTransaction,
@@ -12088,4 +12094,596 @@ export function useGetUsersUserIdBattleResults<TData = Awaited<ReturnType<typeof
 
 
 
+
+export const getGetUsersUserIdProfileUrl = (userId: string,) => {
+
+
+
+
+  return `/api/users/${userId}/profile`
+}
+
+/**
+ * @summary Get a public user profile
+ */
+export const getUsersUserIdProfile = async (userId: string, options?: RequestInit): Promise<PublicProfile> => {
+
+  return customFetch<PublicProfile>(getGetUsersUserIdProfileUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUsersUserIdProfileQueryKey = (userId: string,) => {
+    return [
+    `/api/users/${userId}/profile`
+    ] as const;
+    }
+
+
+export const getGetUsersUserIdProfileQueryOptions = <TData = Awaited<ReturnType<typeof getUsersUserIdProfile>>, TError = ErrorType<unknown>>(userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUsersUserIdProfileQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUsersUserIdProfile>>> = ({ signal }) => getUsersUserIdProfile(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUsersUserIdProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getUsersUserIdProfile>>>
+export type GetUsersUserIdProfileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a public user profile
+ */
+
+export function useGetUsersUserIdProfile<TData = Awaited<ReturnType<typeof getUsersUserIdProfile>>, TError = ErrorType<unknown>>(
+ userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUsersUserIdProfileQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetStarFeedActivitiesUrl = () => {
+
+
+
+
+  return `/api/star-feed/activities`
+}
+
+/**
+ * @summary List STAR feed activities
+ */
+export const getStarFeedActivities = async ( options?: RequestInit): Promise<GetStarFeedActivities200Item[]> => {
+
+  return customFetch<GetStarFeedActivities200Item[]>(getGetStarFeedActivitiesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStarFeedActivitiesQueryKey = () => {
+    return [
+    `/api/star-feed/activities`
+    ] as const;
+    }
+
+
+export const getGetStarFeedActivitiesQueryOptions = <TData = Awaited<ReturnType<typeof getStarFeedActivities>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarFeedActivities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStarFeedActivitiesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStarFeedActivities>>> = ({ signal }) => getStarFeedActivities({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStarFeedActivities>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStarFeedActivitiesQueryResult = NonNullable<Awaited<ReturnType<typeof getStarFeedActivities>>>
+export type GetStarFeedActivitiesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List STAR feed activities
+ */
+
+export function useGetStarFeedActivities<TData = Awaited<ReturnType<typeof getStarFeedActivities>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarFeedActivities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStarFeedActivitiesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPostStarFeedActivitiesReadUrl = () => {
+
+
+
+
+  return `/api/star-feed/activities/read`
+}
+
+/**
+ * @summary Mark STAR feed activities as read
+ */
+export const postStarFeedActivitiesRead = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getPostStarFeedActivitiesReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPostStarFeedActivitiesReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postStarFeedActivitiesRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postStarFeedActivitiesRead>>, TError,void, TContext> => {
+
+const mutationKey = ['postStarFeedActivitiesRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postStarFeedActivitiesRead>>, void> = () => {
+
+
+          return  postStarFeedActivitiesRead(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostStarFeedActivitiesReadMutationResult = NonNullable<Awaited<ReturnType<typeof postStarFeedActivitiesRead>>>
+
+    export type PostStarFeedActivitiesReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark STAR feed activities as read
+ */
+export const usePostStarFeedActivitiesRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postStarFeedActivitiesRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postStarFeedActivitiesRead>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getPostStarFeedActivitiesReadMutationOptions(options));
+    }
+
+export const getGetFanCommunitiesIdBroadcastsUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/broadcasts`
+}
+
+/**
+ * @summary List community broadcasts
+ */
+export const getFanCommunitiesIdBroadcasts = async (id: string, options?: RequestInit): Promise<GetFanCommunitiesIdBroadcasts200Item[]> => {
+
+  return customFetch<GetFanCommunitiesIdBroadcasts200Item[]>(getGetFanCommunitiesIdBroadcastsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFanCommunitiesIdBroadcastsQueryKey = (id: string,) => {
+    return [
+    `/api/fan-communities/${id}/broadcasts`
+    ] as const;
+    }
+
+
+export const getGetFanCommunitiesIdBroadcastsQueryOptions = <TData = Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFanCommunitiesIdBroadcastsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>> = ({ signal }) => getFanCommunitiesIdBroadcasts(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFanCommunitiesIdBroadcastsQueryResult = NonNullable<Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>>
+export type GetFanCommunitiesIdBroadcastsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List community broadcasts
+ */
+
+export function useGetFanCommunitiesIdBroadcasts<TData = Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdBroadcasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFanCommunitiesIdBroadcastsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPostFanCommunitiesIdBroadcastsUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/broadcasts`
+}
+
+/**
+ * @summary Create a community broadcast
+ */
+export const postFanCommunitiesIdBroadcasts = async (id: string,
+    postFanCommunitiesIdBroadcastsBody: PostFanCommunitiesIdBroadcastsBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getPostFanCommunitiesIdBroadcastsUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      postFanCommunitiesIdBroadcastsBody,)
+  }
+);}
+
+
+
+
+export const getPostFanCommunitiesIdBroadcastsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdBroadcastsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdBroadcastsBody>}, TContext> => {
+
+const mutationKey = ['postFanCommunitiesIdBroadcasts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>, {id: string;data: BodyType<PostFanCommunitiesIdBroadcastsBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  postFanCommunitiesIdBroadcasts(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostFanCommunitiesIdBroadcastsMutationResult = NonNullable<Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>>
+    export type PostFanCommunitiesIdBroadcastsMutationBody = BodyType<PostFanCommunitiesIdBroadcastsBody>
+    export type PostFanCommunitiesIdBroadcastsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a community broadcast
+ */
+export const usePostFanCommunitiesIdBroadcasts = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdBroadcastsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postFanCommunitiesIdBroadcasts>>,
+        TError,
+        {id: string;data: BodyType<PostFanCommunitiesIdBroadcastsBody>},
+        TContext
+      > => {
+      return useMutation(getPostFanCommunitiesIdBroadcastsMutationOptions(options));
+    }
+
+export const getGetFanCommunitiesIdMissionsUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/missions`
+}
+
+/**
+ * @summary List community missions
+ */
+export const getFanCommunitiesIdMissions = async (id: string, options?: RequestInit): Promise<GetFanCommunitiesIdMissions200Item[]> => {
+
+  return customFetch<GetFanCommunitiesIdMissions200Item[]>(getGetFanCommunitiesIdMissionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFanCommunitiesIdMissionsQueryKey = (id: string,) => {
+    return [
+    `/api/fan-communities/${id}/missions`
+    ] as const;
+    }
+
+
+export const getGetFanCommunitiesIdMissionsQueryOptions = <TData = Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFanCommunitiesIdMissionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>> = ({ signal }) => getFanCommunitiesIdMissions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFanCommunitiesIdMissionsQueryResult = NonNullable<Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>>
+export type GetFanCommunitiesIdMissionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List community missions
+ */
+
+export function useGetFanCommunitiesIdMissions<TData = Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFanCommunitiesIdMissions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFanCommunitiesIdMissionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPostFanCommunitiesIdMissionsUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-communities/${id}/missions`
+}
+
+/**
+ * @summary Create a community mission
+ */
+export const postFanCommunitiesIdMissions = async (id: string,
+    postFanCommunitiesIdMissionsBody: PostFanCommunitiesIdMissionsBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getPostFanCommunitiesIdMissionsUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      postFanCommunitiesIdMissionsBody,)
+  }
+);}
+
+
+
+
+export const getPostFanCommunitiesIdMissionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdMissionsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdMissionsBody>}, TContext> => {
+
+const mutationKey = ['postFanCommunitiesIdMissions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>, {id: string;data: BodyType<PostFanCommunitiesIdMissionsBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  postFanCommunitiesIdMissions(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostFanCommunitiesIdMissionsMutationResult = NonNullable<Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>>
+    export type PostFanCommunitiesIdMissionsMutationBody = BodyType<PostFanCommunitiesIdMissionsBody>
+    export type PostFanCommunitiesIdMissionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a community mission
+ */
+export const usePostFanCommunitiesIdMissions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>, TError,{id: string;data: BodyType<PostFanCommunitiesIdMissionsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postFanCommunitiesIdMissions>>,
+        TError,
+        {id: string;data: BodyType<PostFanCommunitiesIdMissionsBody>},
+        TContext
+      > => {
+      return useMutation(getPostFanCommunitiesIdMissionsMutationOptions(options));
+    }
+
+export const getPostFanMissionsIdJoinUrl = (id: string,) => {
+
+
+
+
+  return `/api/fan-missions/${id}/join`
+}
+
+/**
+ * @summary Join a fan mission
+ */
+export const postFanMissionsIdJoin = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getPostFanMissionsIdJoinUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPostFanMissionsIdJoinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanMissionsIdJoin>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postFanMissionsIdJoin>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['postFanMissionsIdJoin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postFanMissionsIdJoin>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  postFanMissionsIdJoin(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostFanMissionsIdJoinMutationResult = NonNullable<Awaited<ReturnType<typeof postFanMissionsIdJoin>>>
+
+    export type PostFanMissionsIdJoinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Join a fan mission
+ */
+export const usePostFanMissionsIdJoin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postFanMissionsIdJoin>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postFanMissionsIdJoin>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getPostFanMissionsIdJoinMutationOptions(options));
+    }
 
