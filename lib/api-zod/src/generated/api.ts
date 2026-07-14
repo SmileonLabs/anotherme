@@ -3104,6 +3104,11 @@ export const ListStarFeedPostsResponseItem = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3134,7 +3139,8 @@ export const createStarFeedPostBodyBodyMax = 500;
 export const CreateStarFeedPostBody = zod.object({
   "kind": zod.enum(['fan', 'star']).default(createStarFeedPostBodyKindDefault),
   "title": zod.string().max(createStarFeedPostBodyTitleMax).optional(),
-  "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax)
+  "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax),
+  "targetStarProfileId": zod.string().uuid().nullish().describe('Optional STAR being supported by a FAN post; null means the neutral FAN profile.')
 })
 
 
@@ -3182,6 +3188,11 @@ export const CheerStarFeedPostResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3255,6 +3266,11 @@ export const DiscoverStarFeedByHashtagResponseItem = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3299,6 +3315,11 @@ export const ApproveStarResultDraftResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -4004,6 +4025,11 @@ export const CreateBattleFeedPostResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -4100,6 +4126,11 @@ export const GetUsersUserIdPostsResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),

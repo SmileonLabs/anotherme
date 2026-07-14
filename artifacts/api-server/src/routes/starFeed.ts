@@ -1,7 +1,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
+import { eq } from "drizzle-orm";
+import { db, starProfilesTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { ensurePlayModeState } from "../lib/fanStar";
+import { recordReward } from "../lib/growth";
 import {
   STAR_FEED_COMMENT_BODY_MAX,
   STAR_FEED_LIST_LIMIT_DEFAULT,
@@ -33,6 +36,7 @@ const listQuerySchema = z.object({
 
 const createPostBodySchema = z.object({
   kind: z.enum(["fan", "star"]).optional(),
+  targetStarProfileId: z.string().uuid().nullable().optional(),
   title: z.string().trim().max(STAR_FEED_POST_TITLE_MAX).optional(),
   body: z.string().trim().min(1).max(STAR_FEED_POST_BODY_MAX),
   media: z.array(z.object({
@@ -109,8 +113,20 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
   }
 
   const kind = parsed.data.kind ?? "fan";
+  const playState = kind === "star" ? await ensurePlayModeState(req.dbUser!.id) : null;
+  if (kind === "fan" && parsed.data.targetStarProfileId) {
+    const [targetStar] = await db
+      .select({ id: starProfilesTable.id })
+      .from(starProfilesTable)
+      .where(eq(starProfilesTable.id, parsed.data.targetStarProfileId))
+      .limit(1);
+    if (!targetStar) {
+      res.status(404).json({ error: "STAR_NOT_FOUND", message: "응원 대상 STAR를 찾을 수 없습니다." });
+      return;
+    }
+  }
   if (kind === "star") {
-    const state = await ensurePlayModeState(req.dbUser!.id);
+    const state = playState!;
     if (!state.starUnlocked) {
       res.status(403).json({
         error: "STAR_LOCKED",
@@ -143,9 +159,21 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
     title: parsed.data.title,
     body: parsed.data.body,
     media: parsed.data.media,
-    authorStarProfileId: kind === "star" ? (await ensurePlayModeState(req.dbUser!.id)).equippedStar?.id : null,
+    authorStarProfileId: playState?.equippedStar?.id ?? null,
+    targetStarProfileId: kind === "star" ? playState?.equippedStar?.id ?? null : parsed.data.targetStarProfileId ?? null,
   });
   if (kind === "star") await createStarPostActivities(post);
+  if (kind === "fan") {
+    void recordReward({
+      userId: req.dbUser!.id,
+      sourceType: "system",
+      eventType: "fan_support" as never,
+      sourceKey: `fan_support:${post.id}`,
+      expDelta: parsed.data.targetStarProfileId ? 5 : 2,
+      reason: parsed.data.targetStarProfileId ? "STAR 응원 활동" : "FAN 커뮤니티 활동",
+      metadata: { targetStarProfileId: parsed.data.targetStarProfileId ?? null, postId: post.id },
+    }).catch(() => undefined);
+  }
   res.status(201).json(post);
 });
 

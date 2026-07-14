@@ -252,6 +252,7 @@ export * from './starProfile';
 export * from './starProfileFollowState';
 export * from './starProfilesResponse';
 export * from './starProfileStage';
+export * from './starProfileTarget';
 export * from './starResultDraft';
 export * from './starStats';
 export * from './stickerBadgeInput';

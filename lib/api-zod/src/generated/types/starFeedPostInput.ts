@@ -16,4 +16,9 @@ export interface StarFeedPostInput {
      * @maxLength 500
      */
   body: string;
+  /**
+     * Optional STAR being supported by a FAN post; null means the neutral FAN profile.
+     * @nullable
+     */
+  targetStarProfileId?: string | null;
 }

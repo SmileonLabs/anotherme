@@ -1,3 +1,4 @@
+import { alias } from "drizzle-orm/pg-core";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   db,
@@ -58,6 +59,7 @@ export interface StarFeedPostView {
   visibility: string;
   createdAt: string;
   author: StarFeedAuthorView;
+  targetStarProfile: { id: string; displayName: string; imageUrl: string | null } | null;
   reactionCount: number;
   commentCount: number;
   reactedByMe: boolean;
@@ -86,7 +88,12 @@ type PostRow = {
   authorStarDisplayName: string | null;
   authorStarImageUrl: string | null;
   authorStarStage: string | null;
+  targetStarProfileId: string | null;
+  targetStarDisplayName: string | null;
+  targetStarImageUrl: string | null;
 };
+
+const targetStarProfilesTable = alias(starProfilesTable, "target_star_profiles");
 
 function serializeAuthor(row: Pick<PostRow, "authorUserId" | "authorNickname" | "authorProfileImageUrl" | "authorStarProfileId" | "authorStarDisplayName" | "authorStarImageUrl" | "authorStarStage">, followedStarProfileIds = new Set<string>()): StarFeedAuthorView {
   return {
@@ -168,6 +175,9 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
     visibility: row.visibility,
     createdAt: row.createdAt.toISOString(),
     author: serializeAuthor(row, followedStarProfileIds),
+    targetStarProfile: row.targetStarProfileId && row.targetStarDisplayName
+      ? { id: row.targetStarProfileId, displayName: row.targetStarDisplayName, imageUrl: row.targetStarImageUrl }
+      : null,
     reactionCount: reactionCountByPost.get(row.id) ?? 0,
     commentCount: commentCountByPost.get(row.id) ?? 0,
     reactedByMe: reactedPostIds.has(row.id),
@@ -220,10 +230,14 @@ async function selectPostRows(where?: ReturnType<typeof eq>): Promise<PostRow[]>
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
       authorStarStage: starProfilesTable.stage,
+      targetStarProfileId: starFeedPostsTable.targetStarProfileId,
+      targetStarDisplayName: targetStarProfilesTable.displayName,
+      targetStarImageUrl: targetStarProfilesTable.imageUrl,
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
-    .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId));
+    .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
+    .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId));
 
   return where
     ? query.where(where).orderBy(desc(starFeedPostsTable.createdAt)).limit(1)
@@ -254,10 +268,14 @@ export async function listStarFeedPosts(
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
       authorStarStage: starProfilesTable.stage,
+      targetStarProfileId: starFeedPostsTable.targetStarProfileId,
+      targetStarDisplayName: targetStarProfilesTable.displayName,
+      targetStarImageUrl: targetStarProfilesTable.imageUrl,
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
+    .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId))
     .where(sql`${scope === "following" ? sql`
       (${starFeedPostsTable.authorUserId} = ${meUserId}
        OR EXISTS (SELECT 1 FROM star_profile_follows sf WHERE sf.follower_user_id = ${meUserId} AND sf.star_profile_id = ${starFeedPostsTable.authorStarProfileId}))
@@ -306,10 +324,14 @@ export async function listPublicStarFeedPostsByAuthor(
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
       authorStarStage: starProfilesTable.stage,
+      targetStarProfileId: starFeedPostsTable.targetStarProfileId,
+      targetStarDisplayName: targetStarProfilesTable.displayName,
+      targetStarImageUrl: targetStarProfilesTable.imageUrl,
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
+    .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId))
     .where(and(eq(starFeedPostsTable.authorUserId, authorUserId), ...(starProfileId ? [eq(starFeedPostsTable.authorStarProfileId, starProfileId)] : []), eq(starFeedPostsTable.visibility, "PUBLIC"), eq(starFeedPostsTable.status, "PUBLISHED"), ...(cursor ? [lt(starFeedPostsTable.createdAt, new Date(cursor))] : [])))
     .orderBy(desc(starFeedPostsTable.createdAt))
     .limit(safeLimit);
@@ -346,6 +368,7 @@ export async function createStarFeedPostWithResult(params: {
   metadata?: Record<string, unknown> | null;
   media?: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }>;
   authorStarProfileId?: string | null;
+  targetStarProfileId?: string | null;
 }): Promise<CreateStarFeedPostResult> {
   const title = params.title?.trim() || (params.kind === "star" ? "공식 STAR 기록" : "팬 응원");
   const values = {
@@ -358,6 +381,7 @@ export async function createStarFeedPostWithResult(params: {
     media: params.media ?? null,
     hashtags: normalizeHashtags(params.body),
     authorStarProfileId: params.authorStarProfileId ?? null,
+    targetStarProfileId: params.targetStarProfileId ?? null,
   };
 
   const [created] = params.sourceKey
@@ -437,6 +461,7 @@ export async function createStarFeedPost(params: {
   metadata?: Record<string, unknown> | null;
   media?: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }>;
   authorStarProfileId?: string | null;
+  targetStarProfileId?: string | null;
 }): Promise<StarFeedPostView> {
   const result = await createStarFeedPostWithResult(params);
   return result.post;

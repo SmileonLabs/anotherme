@@ -3232,6 +3232,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
+        "404":
+          description: Target STAR profile was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "409":
           description: A STAR NFT must be equipped before posting as a STAR
           content:
@@ -4698,7 +4704,7 @@ components:
 
     StarFeedPost:
       type: object
-      required: [id, kind, title, body, visibility, createdAt, author, reactionCount, commentCount, reactedByMe, recentComments]
+      required: [id, kind, title, body, visibility, createdAt, author, targetStarProfile, reactionCount, commentCount, reactedByMe, recentComments]
       properties:
         id:
           type: string
@@ -4720,6 +4726,10 @@ components:
           format: date-time
         author:
           $ref: "#/components/schemas/StarFeedAuthor"
+        targetStarProfile:
+          oneOf:
+            - $ref: "#/components/schemas/StarProfileTarget"
+            - type: "null"
         reactionCount:
           type: integer
         commentCount:
@@ -4746,6 +4756,18 @@ components:
           type: string
           minLength: 1
           maxLength: 500
+        targetStarProfileId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional STAR being supported by a FAN post; null means the neutral FAN profile.
+
+    StarProfileTarget:
+      type: object
+      required: [id, displayName, imageUrl]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        imageUrl: { type: [string, "null"] }
 
     StarProfileFollowState:
       type: object

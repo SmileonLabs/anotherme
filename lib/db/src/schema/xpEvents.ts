@@ -31,7 +31,8 @@ export type GrowthEventType =
   | "life_quest_complete"
   | "life_quest_abandon"
   | "quest_reward"
-  | "achievement_reward";
+  | "achievement_reward"
+  | "fan_support";
 
 /**
  * Append-only log of every growth-granting activity. One row records the XP and

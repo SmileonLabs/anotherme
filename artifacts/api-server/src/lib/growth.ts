@@ -459,8 +459,8 @@ export async function recordLifeQuestActivity(
 export interface RecordRewardParams {
   userId: string;
   /** "quest" | "achievement" — keeps reward grants distinct from core activity. */
-  sourceType: Extract<GrowthSourceType, "quest" | "achievement">;
-  eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward">;
+  sourceType: Extract<GrowthSourceType, "quest" | "achievement" | "system">;
+  eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward" | "fan_support">;
   /** Deterministic idempotency key, e.g. `quest:{periodKey}:{questKey}:{userId}`. */
   sourceKey: string;
   /** Flat FAN XP reward. Must be > 0 to grant. */

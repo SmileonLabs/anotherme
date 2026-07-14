@@ -541,6 +541,13 @@ export const StarFeedPostVisibility = {
   PUBLIC: 'PUBLIC',
 } as const;
 
+export interface StarProfileTarget {
+  id: string;
+  displayName: string;
+  /** @nullable */
+  imageUrl: string | null;
+}
+
 export interface StarFeedPost {
   id: string;
   kind: StarFeedPostKind;
@@ -551,6 +558,7 @@ export interface StarFeedPost {
   visibility: StarFeedPostVisibility;
   createdAt: string;
   author: StarFeedAuthor;
+  targetStarProfile: StarProfileTarget | null;
   reactionCount: number;
   commentCount: number;
   reactedByMe: boolean;
@@ -574,6 +582,11 @@ export interface StarFeedPostInput {
      * @maxLength 500
      */
   body: string;
+  /**
+     * Optional STAR being supported by a FAN post; null means the neutral FAN profile.
+     * @nullable
+     */
+  targetStarProfileId?: string | null;
 }
 
 export interface StarProfileFollowState {

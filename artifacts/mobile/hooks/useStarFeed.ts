@@ -29,6 +29,7 @@ export interface StarFeedPost {
   visibility?: string;
   createdAt: string;
   author: StarFeedAuthor;
+  targetStarProfile: { id: string; displayName: string; imageUrl: string | null } | null;
   reactionCount: number;
   commentCount: number;
   reactedByMe: boolean;
@@ -56,14 +57,15 @@ export function useStarFeed(scope: "recommended" | "following" = "recommended") 
   });
 
   const createPostMutation = useMutation({
-    mutationFn: ({ kind, body, media = [] }: { kind: StarFeedWritableKind; body: string; media?: StarFeedPost["media"] }) =>
+    mutationFn: ({ kind, body, media = [], targetStarProfileId = null }: { kind: StarFeedWritableKind; body: string; media?: StarFeedPost["media"]; targetStarProfileId?: string | null }) =>
       customFetch<StarFeedPost>("/api/star-feed/posts", {
         method: "POST",
         responseType: "json",
-        body: JSON.stringify({ kind, body, media }),
+        body: JSON.stringify({ kind, body, media, targetStarProfileId }),
       }),
     onSuccess: (post) => {
       queryClient.setQueryData<StarFeedPost[]>(starFeedScopeQueryKey(scope), (posts) => [post, ...(posts ?? [])]);
+      void queryClient.invalidateQueries({ queryKey: ["play-mode"] });
     },
   });
 

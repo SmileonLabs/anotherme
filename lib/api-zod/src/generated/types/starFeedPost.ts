@@ -10,6 +10,7 @@ import type { StarFeedComment } from './starFeedComment';
 import type { StarFeedPostKind } from './starFeedPostKind';
 import type { StarFeedPostMetadata } from './starFeedPostMetadata';
 import type { StarFeedPostVisibility } from './starFeedPostVisibility';
+import type { StarProfileTarget } from './starProfileTarget';
 
 export interface StarFeedPost {
   id: string;
@@ -21,6 +22,7 @@ export interface StarFeedPost {
   visibility: StarFeedPostVisibility;
   createdAt: Date;
   author: StarFeedAuthor;
+  targetStarProfile: StarProfileTarget | null;
   reactionCount: number;
   commentCount: number;
   reactedByMe: boolean;
