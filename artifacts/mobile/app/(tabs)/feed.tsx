@@ -63,7 +63,7 @@ function relativeTime(value: string) {
 }
 
 function postVisualSource(post: StarFeedPost): { uri: string } | null {
-  const mediaImage = post.media.find((item) => item.mediaType === "image")?.objectPath;
+  const mediaImage = (post.media ?? []).find((item) => item.mediaType === "image")?.objectPath;
   const explicit =
     mediaImage ??
     metadataString(post.metadata, "imageUrl") ??
@@ -119,7 +119,9 @@ function FeedPostCard({
   onRepost: (postId: string) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const meta = KIND_META[post.kind];
+  // Older production rows may contain a feed kind added after this client was
+  // built. Keep the card renderable instead of crashing the whole feed screen.
+  const meta = KIND_META[post.kind] ?? { label: "FAN", tags: ["Another Me", "새 소식"] };
   const keywordTags = metadataStringArray(post.metadata, "keywords").slice(0, 2);
   const tags = keywordTags.length ? keywordTags : meta.tags;
   const canComment = commentDraft.trim().length > 0 && !isCommenting;

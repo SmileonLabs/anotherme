@@ -436,16 +436,16 @@ export default function HomeScreen() {
   };
   const todayMissions = [
     {
-      key: "first-chat",
-      title: "오늘 첫 대화",
-      description: "비비와 인사하고\n대화를 나눠요",
-      icon: "message-circle" as const,
-      color: "#8B5CF6",
-      gradient: ["rgba(34,12,78,0.82)", "rgba(8,5,25,0.98)", "rgba(5,4,18,1)"] as const,
+      key: "daily_battle",
+      title: "오늘의 토크베틀",
+      description: "AI 상대와 주제로 대결하고\n승부를 기록해요",
+      icon: "zap" as const,
+      color: "#A855F7",
+      gradient: ["rgba(64,16,112,0.86)", "rgba(14,5,35,0.98)", "rgba(5,4,18,1)"] as const,
       onPress: () => router.push("/(tabs)/battle" as never),
     },
     {
-      key: "fan-cheer",
+      key: "daily_clan",
       title: "팬 응원하기",
       description: "비비에게 응원의\n메시지를 보내요",
       icon: "heart" as const,
@@ -454,7 +454,7 @@ export default function HomeScreen() {
       onPress: () => router.push("/(tabs)/feed" as never),
     },
     {
-      key: "growth-material",
+      key: "daily_dungeon",
       title: "성장 재료 수집",
       description: "STAR 미션으로 성장\n재료를 모아요",
       icon: "target" as const,
@@ -661,9 +661,9 @@ export default function HomeScreen() {
           </View>
           <View style={styles.questRow}>
             {todayMissions.map((mission, index) => {
-              const quest = dailyQuests[index];
+              const quest = dailyQuests.find((item) => item.key === mission.key);
               const progress = quest?.progress ?? 0;
-              const target = quest?.target ?? (index === 2 ? 3 : 1);
+              const target = quest?.target ?? (mission.key === "daily_dungeon" ? 3 : 1);
               const ratio = Math.min(100, Math.round((progress / Math.max(target, 1)) * 100));
               return (
                 <Pressable
