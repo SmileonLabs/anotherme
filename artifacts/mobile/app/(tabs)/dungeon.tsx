@@ -86,6 +86,7 @@ export default function LifeQuestLobbyScreen() {
             ? "공식 STAR로 무대와 팬클럽 활동을 확장해요. 팬들과 함께 세계관과 기록을 쌓아갑니다."
             : "연습생 STAR로 꿈을 키우고 토르미아의 문을 준비해요. 문이 열리면 공식 STAR 활동과 팬클럽이 열립니다."}
         </Text>
+        <Text style={[styles.identityHint, { color: colors.primary }]}>{equippedStar ? `장착 STAR · ${equippedStar.displayName}` : "FAN · STAR NFT를 장착하면 STAR 미션이 열립니다"}</Text>
 
         {!missionReady ? (
           <MissionGate
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
   },
   brand: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, marginTop: 4, marginBottom: 14 },
+  identityHint: { fontSize: 11, fontFamily: "Inter_600SemiBold", marginTop: -8, marginBottom: 12 },
   gateCard: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
