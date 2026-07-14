@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 // Orval emits response schemas in both generated/api.ts and generated/types/index.ts.
 // Keep the runtime Zod schema as the public export when a response name collides.
 const barrel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../lib/api-zod/src/generated/types/index.ts");
-const marker = "export * from './globalSearchResponse';";
 if (fs.existsSync(barrel)) {
   const source = fs.readFileSync(barrel, "utf8");
-  if (source.includes(marker)) {
-    fs.writeFileSync(barrel, source.replace(marker, "// GlobalSearchResponse is exported from generated/api as the canonical Zod schema."));
-  }
+  const markers = new Map([
+    ["export * from './globalSearchResponse';", "// GlobalSearchResponse is exported from generated/api as the canonical Zod schema."],
+    ["export * from './blockSearchTrendingTermBody';", "// BlockSearchTrendingTermBody is exported from generated/api as the canonical Zod schema."],
+  ]);
+  let next = source;
+  for (const [marker, replacement] of markers) next = next.replace(marker, replacement);
+  if (next !== source) fs.writeFileSync(barrel, next);
 }

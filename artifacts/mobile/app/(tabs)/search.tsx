@@ -18,8 +18,7 @@ import { customFetch } from "@workspace/api-client-react";
 
 type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean };
 type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; displayName: string; imageUrl: string | null; stage: string; ownerId: string | null; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
-
-const TRENDING = ["비비", "별빛", "토로미아문", "STAR 콘트", "스토리 피드"];
+type TrendingResponse = { items: Array<{ term: string; rank: number; change: number; resultCount: number }>; generatedAt: string };
 
 const POST_TAGS: Record<StarFeedPostKind, string[]> = {
   official: ["Another Me", "공식"],
@@ -178,6 +177,11 @@ export default function SearchScreen() {
     queryFn: () => customFetch<SearchResponse>(`/api/search?q=${encodeURIComponent(normalized)}&type=all&limit=20`, { responseType: "json" }),
     staleTime: 30_000,
   });
+  const trendingQuery = useQuery({
+    queryKey: ["search-trending"],
+    queryFn: () => customFetch<TrendingResponse>("/api/search/trending?limit=5", { responseType: "json" }),
+    staleTime: 5 * 60_000,
+  });
 
   const matchedUsers = React.useMemo(
     () => normalized.length >= 2
@@ -234,16 +238,15 @@ export default function SearchScreen() {
           title="인기 검색어"
           action={<Pressable onPress={() => setQuery("")}><Text style={styles.more}>더보기 〉</Text></Pressable>}
         >
-          <View style={styles.trendingRow}>
-            {TRENDING.map((term, index) => (
-              <Pressable key={term} onPress={() => setQuery(term)} style={styles.trendingItem}>
-                <Text style={styles.trendingRank}>{index + 1}.</Text>
-                <Text style={styles.trendingText} numberOfLines={1}>{term}</Text>
-                {index === 3 ? <Feather name="arrow-up-right" size={12} color={neon.magenta} /> : null}
-                {index === 4 ? <Feather name="arrow-down" size={12} color={neon.cyan} /> : null}
+          {trendingQuery.isLoading ? <ActivityIndicator color={neon.purple} style={styles.trendingLoader} /> : trendingQuery.data?.items.length ? <View style={styles.trendingRow}>
+            {trendingQuery.data.items.map((item) => (
+              <Pressable key={item.term} onPress={() => setQuery(item.term)} style={styles.trendingItem}>
+                <Text style={styles.trendingRank}>{item.rank}.</Text>
+                <Text style={styles.trendingText} numberOfLines={1}>{item.term}</Text>
+                {item.change > 0 ? <Feather name="arrow-up-right" size={12} color={neon.magenta} /> : item.change < 0 ? <Feather name="arrow-down-right" size={12} color={neon.cyan} /> : null}
               </Pressable>
             ))}
-          </View>
+          </View> : <Text style={styles.emptyTrending}>아직 인기 검색어가 없습니다.</Text>}
         </SearchSection>
 
         <SearchSection
@@ -341,6 +344,8 @@ const styles = StyleSheet.create({
   sectionTitle: { color: neon.text, fontFamily: "Inter_600SemiBold", fontSize: 14 },
   more: { color: "#918B9E", fontFamily: "Inter_400Regular", fontSize: 10 },
   trendingRow: { flexDirection: "row", alignItems: "center", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(126,79,185,0.18)", paddingTop: 8, marginTop: 3 },
+  trendingLoader: { minHeight: 34 },
+  emptyTrending: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 10, paddingVertical: 12, textAlign: "center" },
   trendingItem: { minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 2 },
   trendingRank: { color: neon.magenta, fontFamily: "Inter_700Bold", fontSize: 11 },
   trendingText: { color: "#B9B5C1", fontFamily: "Inter_400Regular", fontSize: 10, flexShrink: 1 },

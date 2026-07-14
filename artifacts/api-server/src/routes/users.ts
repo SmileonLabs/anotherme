@@ -20,6 +20,7 @@ import { addSubscription } from "../lib/push";
 import { toPublicUser } from "../lib/publicUser";
 import { rateLimit } from "../lib/rateLimit";
 import { listPublicStarFeedPostsByAuthor } from "../lib/starFeed";
+import { getTrendingSearches, recordSearchQuery } from "../lib/searchTrending";
 
 const router: IRouter = Router();
 
@@ -123,6 +124,7 @@ router.get("/search", requireAuth, rateLimit({ name: "global-search", limit: 30,
     .where(and(eq(starFeedPostsTable.status, "PUBLISHED"), eq(starFeedPostsTable.visibility, "PUBLIC"), or(ilike(starFeedPostsTable.title, `%${q}%`), ilike(starFeedPostsTable.body, `%${q}%`))))
     .orderBy(desc(starFeedPostsTable.createdAt))
     .limit(limit);
+  void recordSearchQuery({ term: q, userId: req.dbUser!.id, resultCount: users.length + stars.length + posts.length }).catch(() => undefined);
   res.json({
     query: q,
     type,
@@ -131,6 +133,11 @@ router.get("/search", requireAuth, rateLimit({ name: "global-search", limit: 30,
     posts: posts.map((post) => ({ ...post, createdAt: post.createdAt.toISOString() })),
     nextCursor: null,
   });
+});
+
+router.get("/search/trending", requireAuth, rateLimit({ name: "search-trending", limit: 30, windowSeconds: 60 }), async (req, res): Promise<void> => {
+  const limit = z.coerce.number().int().min(1).max(10).catch(5).parse(req.query.limit);
+  res.json({ items: await getTrendingSearches(limit), generatedAt: new Date().toISOString() });
 });
 
 router.get("/users", requireAuth, async (req, res): Promise<void> => {

@@ -28,6 +28,7 @@ import realtimeRouter from "./realtime";
 import fanCommunitiesRouter from "./fanCommunities";
 import fanCommunityProgramsRouter from "./fanCommunityPrograms";
 import starFeedAdminRouter from "./starFeedAdmin";
+import searchAdminRouter from "./searchAdmin";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(realtimeRouter);
 router.use(fanCommunitiesRouter);
 router.use(fanCommunityProgramsRouter);
 router.use(starFeedAdminRouter);
+router.use(searchAdminRouter);
 
 export default router;

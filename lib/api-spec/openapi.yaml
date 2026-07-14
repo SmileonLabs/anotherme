@@ -111,6 +111,95 @@ paths:
         "400": { description: Invalid search query }
         "401": { description: Unauthorized }
 
+  /search/trending:
+    get:
+      operationId: getTrendingSearches
+      tags: [users]
+      summary: Get cached popular search terms
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10, default: 5 }
+      responses:
+        "200":
+          description: Popular search terms
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, generatedAt]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [term, rank, change, resultCount]
+                      properties:
+                        term: { type: string }
+                        rank: { type: integer }
+                        change: { type: integer }
+                        resultCount: { type: integer }
+                  generatedAt: { type: string, format: date-time }
+        "401": { description: Unauthorized }
+
+  /search/admin/blocks:
+    get:
+      operationId: listSearchTrendingBlocks
+      tags: [users]
+      summary: List hidden trending search terms
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Hidden terms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [normalizedTerm, reason, createdAt]
+                  properties:
+                    normalizedTerm: { type: string }
+                    reason: { type: string }
+                    createdBy: { type: [string, "null"], format: uuid }
+                    createdAt: { type: string, format: date-time }
+        "403": { description: Admin required }
+    post:
+      operationId: blockSearchTrendingTerm
+      tags: [users]
+      summary: Hide a term from trending search results
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [term]
+              properties:
+                term: { type: string, minLength: 2, maxLength: 80 }
+                reason: { type: string, maxLength: 200 }
+      responses:
+        "201": { description: Term blocked }
+        "400": { description: Invalid term }
+        "403": { description: Admin required }
+
+  /search/admin/blocks/{term}:
+    delete:
+      operationId: unblockSearchTrendingTerm
+      tags: [users]
+      summary: Remove a term from the trending block list
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: term
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Term unblocked }
+        "403": { description: Admin required }
+
   /users/me:
     get:
       operationId: getMe

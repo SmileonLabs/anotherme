@@ -88,6 +88,65 @@ export const GlobalSearchResponse = zod.object({
 
 
 /**
+ * @summary Get cached popular search terms
+ */
+export const getTrendingSearchesQueryLimitDefault = 5;
+export const getTrendingSearchesQueryLimitMax = 10;
+
+
+
+export const GetTrendingSearchesQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getTrendingSearchesQueryLimitMax).default(getTrendingSearchesQueryLimitDefault)
+})
+
+export const GetTrendingSearchesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "term": zod.string(),
+  "rank": zod.number(),
+  "change": zod.number(),
+  "resultCount": zod.number()
+})),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List hidden trending search terms
+ */
+export const ListSearchTrendingBlocksResponseItem = zod.object({
+  "normalizedTerm": zod.string(),
+  "reason": zod.string(),
+  "createdBy": zod.string().uuid().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListSearchTrendingBlocksResponse = zod.array(ListSearchTrendingBlocksResponseItem)
+
+
+/**
+ * @summary Hide a term from trending search results
+ */
+export const blockSearchTrendingTermBodyTermMin = 2;
+export const blockSearchTrendingTermBodyTermMax = 80;
+
+export const blockSearchTrendingTermBodyReasonMax = 200;
+
+
+
+export const BlockSearchTrendingTermBody = zod.object({
+  "term": zod.string().min(blockSearchTrendingTermBodyTermMin).max(blockSearchTrendingTermBodyTermMax),
+  "reason": zod.string().max(blockSearchTrendingTermBodyReasonMax).optional()
+})
+
+
+/**
+ * @summary Remove a term from the trending block list
+ */
+export const UnblockSearchTrendingTermParams = zod.object({
+  "term": zod.coerce.string()
+})
+
+
+/**
  * @summary Get my profile
  */
 export const GetMeResponse = zod.object({

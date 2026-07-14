@@ -27,3 +27,4 @@ export * from "./anotherMe";
 export * from "./knowledge";
 export * from "./ontologySyncJobs";
 export * from "./dialogueEngine";
+export * from "./search";

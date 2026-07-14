@@ -2314,6 +2314,44 @@ export const GlobalSearchType = {
   posts: 'posts',
 } as const;
 
+export type GetTrendingSearchesParams = {
+/**
+ * @minimum 1
+ * @maximum 10
+ */
+limit?: number;
+};
+
+export type GetTrendingSearches200ItemsItem = {
+  term: string;
+  rank: number;
+  change: number;
+  resultCount: number;
+};
+
+export type GetTrendingSearches200 = {
+  items: GetTrendingSearches200ItemsItem[];
+  generatedAt: string;
+};
+
+export type ListSearchTrendingBlocks200Item = {
+  normalizedTerm: string;
+  reason: string;
+  /** @nullable */
+  createdBy?: string | null;
+  createdAt: string;
+};
+
+export type BlockSearchTrendingTermBody = {
+  /**
+     * @minLength 2
+     * @maxLength 80
+     */
+  term: string;
+  /** @maxLength 200 */
+  reason?: string;
+};
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**

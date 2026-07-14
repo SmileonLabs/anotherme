@@ -45,6 +45,7 @@ import type {
   BibiOfficialProfile,
   BibiOfficialRoom,
   BlockInput,
+  BlockSearchTrendingTermBody,
   Call,
   CallSession,
   CallWithCaller,
@@ -92,6 +93,8 @@ import type {
   GetPersonaRankingsParams,
   GetServiceRankingsParams,
   GetStarFeedActivities200Item,
+  GetTrendingSearches200,
+  GetTrendingSearchesParams,
   GetUsersUserIdBattleResultsParams,
   GetUsersUserIdGrowthRecordsParams,
   GetUsersUserIdPostsParams,
@@ -114,6 +117,7 @@ import type {
   ListClansParams,
   ListPresenceUsersParams,
   ListPvtTransactionsParams,
+  ListSearchTrendingBlocks200Item,
   ListStarFeedPostsParams,
   MediaUrlRequest,
   MediaUrlResponse,
@@ -496,6 +500,308 @@ export function useGlobalSearch<TData = Awaited<ReturnType<typeof globalSearch>>
 
 
 
+
+export const getGetTrendingSearchesUrl = (params?: GetTrendingSearchesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/search/trending?${stringifiedParams}` : `/api/search/trending`
+}
+
+/**
+ * @summary Get cached popular search terms
+ */
+export const getTrendingSearches = async (params?: GetTrendingSearchesParams, options?: RequestInit): Promise<GetTrendingSearches200> => {
+
+  return customFetch<GetTrendingSearches200>(getGetTrendingSearchesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTrendingSearchesQueryKey = (params?: GetTrendingSearchesParams,) => {
+    return [
+    `/api/search/trending`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTrendingSearchesQueryOptions = <TData = Awaited<ReturnType<typeof getTrendingSearches>>, TError = ErrorType<void>>(params?: GetTrendingSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrendingSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTrendingSearchesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTrendingSearches>>> = ({ signal }) => getTrendingSearches(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTrendingSearches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTrendingSearchesQueryResult = NonNullable<Awaited<ReturnType<typeof getTrendingSearches>>>
+export type GetTrendingSearchesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get cached popular search terms
+ */
+
+export function useGetTrendingSearches<TData = Awaited<ReturnType<typeof getTrendingSearches>>, TError = ErrorType<void>>(
+ params?: GetTrendingSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrendingSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTrendingSearchesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListSearchTrendingBlocksUrl = () => {
+
+
+
+
+  return `/api/search/admin/blocks`
+}
+
+/**
+ * @summary List hidden trending search terms
+ */
+export const listSearchTrendingBlocks = async ( options?: RequestInit): Promise<ListSearchTrendingBlocks200Item[]> => {
+
+  return customFetch<ListSearchTrendingBlocks200Item[]>(getListSearchTrendingBlocksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSearchTrendingBlocksQueryKey = () => {
+    return [
+    `/api/search/admin/blocks`
+    ] as const;
+    }
+
+
+export const getListSearchTrendingBlocksQueryOptions = <TData = Awaited<ReturnType<typeof listSearchTrendingBlocks>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSearchTrendingBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSearchTrendingBlocksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSearchTrendingBlocks>>> = ({ signal }) => listSearchTrendingBlocks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSearchTrendingBlocks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSearchTrendingBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof listSearchTrendingBlocks>>>
+export type ListSearchTrendingBlocksQueryError = ErrorType<void>
+
+
+/**
+ * @summary List hidden trending search terms
+ */
+
+export function useListSearchTrendingBlocks<TData = Awaited<ReturnType<typeof listSearchTrendingBlocks>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSearchTrendingBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSearchTrendingBlocksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getBlockSearchTrendingTermUrl = () => {
+
+
+
+
+  return `/api/search/admin/blocks`
+}
+
+/**
+ * @summary Hide a term from trending search results
+ */
+export const blockSearchTrendingTerm = async (blockSearchTrendingTermBody: BlockSearchTrendingTermBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getBlockSearchTrendingTermUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      blockSearchTrendingTermBody,)
+  }
+);}
+
+
+
+
+export const getBlockSearchTrendingTermMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockSearchTrendingTerm>>, TError,{data: BodyType<BlockSearchTrendingTermBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof blockSearchTrendingTerm>>, TError,{data: BodyType<BlockSearchTrendingTermBody>}, TContext> => {
+
+const mutationKey = ['blockSearchTrendingTerm'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof blockSearchTrendingTerm>>, {data: BodyType<BlockSearchTrendingTermBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  blockSearchTrendingTerm(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BlockSearchTrendingTermMutationResult = NonNullable<Awaited<ReturnType<typeof blockSearchTrendingTerm>>>
+    export type BlockSearchTrendingTermMutationBody = BodyType<BlockSearchTrendingTermBody>
+    export type BlockSearchTrendingTermMutationError = ErrorType<void>
+
+    /**
+ * @summary Hide a term from trending search results
+ */
+export const useBlockSearchTrendingTerm = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockSearchTrendingTerm>>, TError,{data: BodyType<BlockSearchTrendingTermBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof blockSearchTrendingTerm>>,
+        TError,
+        {data: BodyType<BlockSearchTrendingTermBody>},
+        TContext
+      > => {
+      return useMutation(getBlockSearchTrendingTermMutationOptions(options));
+    }
+
+export const getUnblockSearchTrendingTermUrl = (term: string,) => {
+
+
+
+
+  return `/api/search/admin/blocks/${term}`
+}
+
+/**
+ * @summary Remove a term from the trending block list
+ */
+export const unblockSearchTrendingTerm = async (term: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnblockSearchTrendingTermUrl(term),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnblockSearchTrendingTermMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockSearchTrendingTerm>>, TError,{term: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unblockSearchTrendingTerm>>, TError,{term: string}, TContext> => {
+
+const mutationKey = ['unblockSearchTrendingTerm'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unblockSearchTrendingTerm>>, {term: string}> = (props) => {
+          const {term} = props ?? {};
+
+          return  unblockSearchTrendingTerm(term,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnblockSearchTrendingTermMutationResult = NonNullable<Awaited<ReturnType<typeof unblockSearchTrendingTerm>>>
+
+    export type UnblockSearchTrendingTermMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a term from the trending block list
+ */
+export const useUnblockSearchTrendingTerm = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockSearchTrendingTerm>>, TError,{term: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unblockSearchTrendingTerm>>,
+        TError,
+        {term: string},
+        TContext
+      > => {
+      return useMutation(getUnblockSearchTrendingTermMutationOptions(options));
+    }
 
 export const getGetMeUrl = () => {
 
