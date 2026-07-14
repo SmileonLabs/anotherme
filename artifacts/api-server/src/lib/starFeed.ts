@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   db,
   friendshipsTable,
@@ -278,6 +278,43 @@ export async function listStarFeedPosts(
     .limit(safeLimit);
 
   return decoratePosts(meUserId, rows);
+}
+
+export async function listPublicStarFeedPostsByAuthor(
+  viewerUserId: string,
+  authorUserId: string,
+  limit = STAR_FEED_LIST_LIMIT_DEFAULT,
+  starProfileId?: string,
+  cursor?: string,
+): Promise<{ items: StarFeedPostView[]; nextCursor: string | null }> {
+  const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+  const rows = await db
+    .select({
+      id: starFeedPostsTable.id,
+      kind: starFeedPostsTable.kind,
+      title: starFeedPostsTable.title,
+      body: starFeedPostsTable.body,
+      metadata: starFeedPostsTable.metadata,
+      media: starFeedPostsTable.media,
+      status: starFeedPostsTable.status,
+      visibility: starFeedPostsTable.visibility,
+      createdAt: starFeedPostsTable.createdAt,
+      authorUserId: usersTable.id,
+      authorNickname: usersTable.nickname,
+      authorProfileImageUrl: usersTable.profileImageUrl,
+      authorStarProfileId: starFeedPostsTable.authorStarProfileId,
+      authorStarDisplayName: starProfilesTable.displayName,
+      authorStarImageUrl: starProfilesTable.imageUrl,
+      authorStarStage: starProfilesTable.stage,
+    })
+    .from(starFeedPostsTable)
+    .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
+    .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
+    .where(and(eq(starFeedPostsTable.authorUserId, authorUserId), ...(starProfileId ? [eq(starFeedPostsTable.authorStarProfileId, starProfileId)] : []), eq(starFeedPostsTable.visibility, "PUBLIC"), eq(starFeedPostsTable.status, "PUBLISHED"), ...(cursor ? [lt(starFeedPostsTable.createdAt, new Date(cursor))] : [])))
+    .orderBy(desc(starFeedPostsTable.createdAt))
+    .limit(safeLimit);
+  const items = await decoratePosts(viewerUserId, rows);
+  return { items, nextCursor: rows.length === safeLimit ? rows[rows.length - 1].createdAt.toISOString() : null };
 }
 
 export async function getStarFeedPost(

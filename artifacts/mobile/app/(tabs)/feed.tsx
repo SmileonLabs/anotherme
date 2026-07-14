@@ -2,8 +2,10 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { useGetMe } from "@workspace/api-client-react";
 
 import { Avatar } from "@/components/Avatar";
 import { CustomScrollView } from "@/components/CustomScroll";
@@ -73,17 +75,17 @@ function postVisualSource(post: StarFeedPost): { uri: string } | null {
   return explicit ? { uri: mediaUri(explicit) } : null;
 }
 
-function StoryItem({ author, index }: { author: StarFeedAuthor; index: number }) {
+function StoryItem({ author, index, isOwn, onPress }: { author: StarFeedAuthor; index: number; isOwn: boolean; onPress: () => void }) {
   return (
-    <Pressable style={({ pressed }) => [styles.storyItem, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${author.nickname} 프로필 보기`} style={({ pressed }) => [styles.storyItem, pressed && styles.pressed]}>
       <LinearGradient colors={["#F044D0", "#7B35FF", "#24D6E8"]} style={styles.storyRing}>
         <View style={styles.storyAvatarInset}>
           <Avatar uri={author.profileImageUrl} name={author.nickname} size={50} />
         </View>
-        {index === 0 ? <View style={styles.storyPlus}><Feather name="plus" size={12} color="#FFFFFF" /></View> : null}
+        {isOwn ? <View style={styles.storyPlus}><Feather name="plus" size={12} color="#FFFFFF" /></View> : null}
       </LinearGradient>
       <View style={styles.storyNameRow}>
-        <Text style={styles.storyName} numberOfLines={1}>{index === 0 ? "내 스토리" : author.nickname}</Text>
+        <Text style={styles.storyName} numberOfLines={1}>{isOwn ? "내 스토리" : author.nickname}</Text>
         {index === 1 ? <View style={styles.verified}><Feather name="check" size={7} color="#FFFFFF" /></View> : null}
       </View>
       {index > 0 ? <Text style={styles.storyRole}>{index < 3 ? "STAR" : "FAN"}</Text> : null}
@@ -104,6 +106,7 @@ function FeedPostCard({
   isSettingFollowing,
   onReport,
   onRepost,
+  onProfilePress,
 }: {
   post: StarFeedPost;
   colors: ColorTokens;
@@ -117,6 +120,7 @@ function FeedPostCard({
   isSettingFollowing: boolean;
   onReport: (postId: string, reason: "spam" | "harassment" | "sexual" | "violence" | "copyright" | "other") => void;
   onRepost: (postId: string) => void;
+  onProfilePress: (author: StarFeedAuthor) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   // Older production rows may contain a feed kind added after this client was
@@ -141,7 +145,7 @@ function FeedPostCard({
     >
       <View pointerEvents="none" style={styles.cardGlow} />
       <View style={styles.feedHeader}>
-        <View style={styles.avatarRing}><Avatar uri={post.author.profileImageUrl} name={post.author.nickname} size={44} /></View>
+        <Pressable onPress={() => onProfilePress(post.author)} accessibilityRole="button" accessibilityLabel={`${post.author.nickname} 프로필 보기`} style={styles.avatarRing}><Avatar uri={post.author.profileImageUrl} name={post.author.nickname} size={44} /></Pressable>
         <View style={styles.feedIdentity}>
           <View style={styles.authorRow}>
             <Text style={styles.feedAuthor} numberOfLines={1}>{post.author.nickname}</Text>
@@ -238,13 +242,17 @@ function FeedPostCard({
 }
 
 export default function FeedScreen() {
+  const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { data: me } = useGetMe();
   const { starUnlocked, equippedStar } = usePlayMode();
   const [feedFilter, setFeedFilter] = useState<"recommended" | "following">("recommended");
+  const [selectedProfile, setSelectedProfile] = useState<StarFeedAuthor | null>(null);
   const {
     posts,
     isLoading,
+    isFetching,
     error,
     refetch,
     createPost,
@@ -282,6 +290,13 @@ export default function FeedScreen() {
     });
     return [...unique.values()].slice(0, 7);
   }, [posts]);
+  function openProfile(author: StarFeedAuthor) {
+    if (author.id) {
+      router.push({ pathname: "/profile/[userId]", params: { userId: author.id } } as never);
+    } else {
+      setSelectedProfile(author);
+    }
+  }
 
   async function submitPost() {
     const body = draft.trim();
@@ -439,17 +454,17 @@ export default function FeedScreen() {
         ) : null}
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stories}>
-          {storyAuthors.map((author, index) => <StoryItem key={author.id ?? `${author.nickname}-${index}`} author={author} index={index} />)}
+          {storyAuthors.map((author, index) => <StoryItem key={author.id ?? `${author.nickname}-${index}`} author={author} index={index} isOwn={author.id === me?.id} onPress={() => openProfile(author)} />)}
         </ScrollView>
 
         {feedback && !composerOpen ? <Text style={styles.feedbackBanner}>{feedback}</Text> : null}
 
-        {isLoading ? (
+        {isLoading || isFetching ? (
           <View style={styles.stateBox}><ActivityIndicator color={neon.purple} /><Text style={styles.stateText}>피드를 불러오는 중이에요.</Text></View>
         ) : error ? (
           <Pressable onPress={() => void refetch()} style={styles.stateBox}><Text style={styles.stateTitle}>피드를 불러오지 못했어요</Text><Text style={styles.stateText}>눌러서 다시 시도해 주세요.</Text></Pressable>
         ) : posts.length === 0 ? (
-          <View style={styles.stateBox}><Text style={styles.stateTitle}>아직 피드가 비어 있어요</Text><Text style={styles.stateText}>첫 FAN 응원글을 남겨보세요.</Text></View>
+          <View style={styles.stateBox}><Text style={styles.stateTitle}>{feedFilter === "following" ? "팔로잉 피드가 비어 있어요" : "아직 추천 피드가 비어 있어요"}</Text><Text style={styles.stateText}>{feedFilter === "following" ? "STAR를 팔로우하면 새 게시물이 여기에 보여요." : "첫 FAN 응원글을 남겨보세요."}</Text></View>
         ) : (
           <View style={styles.feedList}>
             {posts.map((post) => (
@@ -467,11 +482,30 @@ export default function FeedScreen() {
                 isSettingFollowing={isSettingStarFollowing}
                 onReport={(postId, reason) => void report(postId, reason)}
                 onRepost={(postId) => void repost(postId)}
+                onProfilePress={openProfile}
               />
             ))}
           </View>
         )}
       </CustomScrollView>
+      <Modal visible={!!selectedProfile} transparent animationType="slide" onRequestClose={() => setSelectedProfile(null)}>
+        {selectedProfile ? (
+          <View style={styles.profileSheetBackdrop}>
+            <View style={styles.profileSheet}>
+              <Pressable onPress={() => setSelectedProfile(null)} style={styles.profileClose}><Feather name="x" size={20} color="#D8D2E0" /></Pressable>
+              <View style={styles.profileHero}><View style={styles.profileAvatar}><Avatar uri={selectedProfile.profileImageUrl} name={selectedProfile.nickname} size={72} /></View><Text style={styles.profileName}>{selectedProfile.nickname}</Text><Text style={styles.profileRole}>{selectedProfile.starProfile ? `STAR · ${selectedProfile.starProfile.displayName}` : "FAN"}</Text></View>
+              {selectedProfile.starProfile ? <Text style={styles.profileMeta}>NFT 단계: {selectedProfile.starProfile.stage === "promoted" ? "PROMOTED" : "ASPIRING"}</Text> : null}
+              {selectedProfile.id === me?.id ? (
+                <Pressable onPress={() => { setSelectedProfile(null); router.push("/profile/edit"); }} style={styles.profileFollow}><Text style={styles.profileFollowText}>내 프로필 관리</Text></Pressable>
+              ) : (
+                <Pressable disabled={!selectedProfile.starProfile || isSettingStarFollowing} onPress={() => selectedProfile.starProfile && void setFollowing(selectedProfile.starProfile.id, selectedProfile.starProfile.followedByMe)} style={[styles.profileFollow, (!selectedProfile.starProfile || isSettingStarFollowing) && styles.profileFollowDisabled]}><Text style={styles.profileFollowText}>{selectedProfile.starProfile?.followedByMe ? "팔로잉" : "팔로우"}</Text></Pressable>
+              )}
+              <Text style={styles.profileSectionTitle}>공개 피드</Text>
+              <ScrollView style={styles.profilePosts} contentContainerStyle={styles.profilePostsContent}>{posts.filter((post) => post.author.id === selectedProfile.id).slice(0, 10).map((post) => <View key={post.id} style={styles.profilePost}><Text style={styles.profilePostTitle}>{post.title}</Text><Text style={styles.profilePostBody} numberOfLines={2}>{post.body}</Text></View>)}{posts.every((post) => post.author.id !== selectedProfile.id) ? <Text style={styles.profileEmpty}>표시할 공개 게시물이 없어요.</Text> : null}</ScrollView>
+            </View>
+          </View>
+        ) : null}
+      </Modal>
     </NeonBackdrop>
   );
 }
@@ -513,6 +547,24 @@ const styles = StyleSheet.create({
   feedback: { color: "#FF7770", fontFamily: "Inter_500Medium", fontSize: 11 },
   postButton: { height: 40, borderRadius: 14, backgroundColor: "#6F3EAA", alignItems: "center", justifyContent: "center" },
   postButtonText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 12 },
+  profileSheetBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.62)" },
+  profileSheet: { maxHeight: "78%", minHeight: 360, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: "#0D0A1D", borderWidth: 1, borderColor: "rgba(166,77,255,0.42)", padding: 20 },
+  profileClose: { alignSelf: "flex-end", padding: 4 },
+  profileHero: { alignItems: "center", marginTop: -8, marginBottom: 10 },
+  profileAvatar: { width: 82, height: 82, borderRadius: 41, padding: 4, borderWidth: 1, borderColor: "#B84CFF", backgroundColor: "#21143B" },
+  profileName: { color: "#F0EDF4", fontFamily: "Inter_700Bold", fontSize: 18, marginTop: 9 },
+  profileRole: { color: "#C48AFF", fontFamily: "Inter_500Medium", fontSize: 11, marginTop: 3 },
+  profileMeta: { color: "#A9A3BA", fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center" },
+  profileFollow: { alignSelf: "center", marginTop: 12, borderRadius: 999, paddingHorizontal: 28, paddingVertical: 9, backgroundColor: "#7E36D7" },
+  profileFollowDisabled: { opacity: 0.5 },
+  profileFollowText: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  profileSectionTitle: { color: "#F0EDF4", fontFamily: "Inter_700Bold", fontSize: 14, marginTop: 18, marginBottom: 8 },
+  profilePosts: { flex: 1 },
+  profilePostsContent: { gap: 8, paddingBottom: 20 },
+  profilePost: { borderRadius: 12, borderWidth: 1, borderColor: "rgba(123,53,255,0.24)", backgroundColor: "rgba(30,18,55,0.72)", padding: 11 },
+  profilePostTitle: { color: "#EDE5FA", fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  profilePostBody: { color: "#B9B1C7", fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16, marginTop: 4 },
+  profileEmpty: { color: "#8D879A", fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center", paddingVertical: 20 },
   feedList: { gap: 8 },
   feedCard: { borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(61,56,113,0.42)", padding: 11, overflow: "hidden" },
   cardGlow: { position: "absolute", right: -80, top: -90, width: 230, height: 190, borderRadius: 120, backgroundColor: "rgba(43,34,126,0.10)" },

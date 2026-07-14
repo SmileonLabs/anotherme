@@ -4068,3 +4068,115 @@ export const FailCallResponse = zod.object({
 })
 
 
+/**
+ * @summary List a user's public feed posts with cursor pagination
+ */
+export const GetUsersUserIdPostsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdPostsQueryLimitDefault = 30;
+export const getUsersUserIdPostsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdPostsQueryParams = zod.object({
+  "starId": zod.coerce.string().uuid().optional(),
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdPostsQueryLimitMax).default(getUsersUserIdPostsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const GetUsersUserIdPostsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary List public growth records with cursor pagination
+ */
+export const GetUsersUserIdGrowthRecordsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdGrowthRecordsQueryLimitDefault = 30;
+export const getUsersUserIdGrowthRecordsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdGrowthRecordsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdGrowthRecordsQueryLimitMax).default(getUsersUserIdGrowthRecordsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const GetUsersUserIdGrowthRecordsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "starProfileId": zod.string().uuid(),
+  "eventType": zod.string(),
+  "xpDelta": zod.number(),
+  "reason": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary List public battle results with cursor pagination
+ */
+export const GetUsersUserIdBattleResultsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdBattleResultsQueryLimitDefault = 30;
+export const getUsersUserIdBattleResultsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdBattleResultsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdBattleResultsQueryLimitMax).default(getUsersUserIdBattleResultsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const GetUsersUserIdBattleResultsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "roomId": zod.string().uuid(),
+  "topic": zod.string(),
+  "category": zod.string(),
+  "outcome": zod.enum(['win', 'loss', 'draw']),
+  "myScore": zod.number(),
+  "opponentScore": zod.number(),
+  "opponentName": zod.string(),
+  "completedAt": zod.coerce.date()
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+

@@ -126,6 +126,7 @@ export function useStarFeed(scope: "recommended" | "following" = "recommended") 
   return {
     posts: query.data ?? [],
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
     isRefetching: query.isRefetching,
     error: query.error,
     refetch: query.refetch,

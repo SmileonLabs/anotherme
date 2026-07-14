@@ -37,6 +37,7 @@ import type {
   BattleFeedPostResult,
   BattleHistoryItem,
   BattlePersonaList,
+  BattleResultsPage,
   BattleState,
   BattleTopicInput,
   BattleTopicSuggestions,
@@ -88,6 +89,10 @@ import type {
   GetClanRankingsParams,
   GetPersonaRankingsParams,
   GetServiceRankingsParams,
+  GetUsersUserIdBattleResultsParams,
+  GetUsersUserIdGrowthRecordsParams,
+  GetUsersUserIdPostsParams,
+  GrowthRecordsPage,
   HealthStatus,
   Invite,
   InviteMembersInput,
@@ -123,6 +128,7 @@ import type {
   PlayModeState,
   PresenceHeartbeat,
   PresenceUsersResponse,
+  ProfilePostsPage,
   ProfileUpdateHistoryItem,
   PublicUser,
   PushTokenInput,
@@ -11815,4 +11821,271 @@ export const useFailCall = <TError = ErrorType<ErrorEnvelope>,
       > => {
       return useMutation(getFailCallMutationOptions(options));
     }
+
+export const getGetUsersUserIdPostsUrl = (userId: string,
+    params?: GetUsersUserIdPostsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/users/${userId}/posts?${stringifiedParams}` : `/api/users/${userId}/posts`
+}
+
+/**
+ * @summary List a user's public feed posts with cursor pagination
+ */
+export const getUsersUserIdPosts = async (userId: string,
+    params?: GetUsersUserIdPostsParams, options?: RequestInit): Promise<ProfilePostsPage> => {
+
+  return customFetch<ProfilePostsPage>(getGetUsersUserIdPostsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUsersUserIdPostsQueryKey = (userId: string,
+    params?: GetUsersUserIdPostsParams,) => {
+    return [
+    `/api/users/${userId}/posts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetUsersUserIdPostsQueryOptions = <TData = Awaited<ReturnType<typeof getUsersUserIdPosts>>, TError = ErrorType<unknown>>(userId: string,
+    params?: GetUsersUserIdPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUsersUserIdPostsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUsersUserIdPosts>>> = ({ signal }) => getUsersUserIdPosts(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdPosts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUsersUserIdPostsQueryResult = NonNullable<Awaited<ReturnType<typeof getUsersUserIdPosts>>>
+export type GetUsersUserIdPostsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List a user's public feed posts with cursor pagination
+ */
+
+export function useGetUsersUserIdPosts<TData = Awaited<ReturnType<typeof getUsersUserIdPosts>>, TError = ErrorType<unknown>>(
+ userId: string,
+    params?: GetUsersUserIdPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUsersUserIdPostsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetUsersUserIdGrowthRecordsUrl = (userId: string,
+    params?: GetUsersUserIdGrowthRecordsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/users/${userId}/growth-records?${stringifiedParams}` : `/api/users/${userId}/growth-records`
+}
+
+/**
+ * @summary List public growth records with cursor pagination
+ */
+export const getUsersUserIdGrowthRecords = async (userId: string,
+    params?: GetUsersUserIdGrowthRecordsParams, options?: RequestInit): Promise<GrowthRecordsPage> => {
+
+  return customFetch<GrowthRecordsPage>(getGetUsersUserIdGrowthRecordsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUsersUserIdGrowthRecordsQueryKey = (userId: string,
+    params?: GetUsersUserIdGrowthRecordsParams,) => {
+    return [
+    `/api/users/${userId}/growth-records`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetUsersUserIdGrowthRecordsQueryOptions = <TData = Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>, TError = ErrorType<unknown>>(userId: string,
+    params?: GetUsersUserIdGrowthRecordsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUsersUserIdGrowthRecordsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>> = ({ signal }) => getUsersUserIdGrowthRecords(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUsersUserIdGrowthRecordsQueryResult = NonNullable<Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>>
+export type GetUsersUserIdGrowthRecordsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List public growth records with cursor pagination
+ */
+
+export function useGetUsersUserIdGrowthRecords<TData = Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>, TError = ErrorType<unknown>>(
+ userId: string,
+    params?: GetUsersUserIdGrowthRecordsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdGrowthRecords>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUsersUserIdGrowthRecordsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetUsersUserIdBattleResultsUrl = (userId: string,
+    params?: GetUsersUserIdBattleResultsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/users/${userId}/battle-results?${stringifiedParams}` : `/api/users/${userId}/battle-results`
+}
+
+/**
+ * @summary List public battle results with cursor pagination
+ */
+export const getUsersUserIdBattleResults = async (userId: string,
+    params?: GetUsersUserIdBattleResultsParams, options?: RequestInit): Promise<BattleResultsPage> => {
+
+  return customFetch<BattleResultsPage>(getGetUsersUserIdBattleResultsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUsersUserIdBattleResultsQueryKey = (userId: string,
+    params?: GetUsersUserIdBattleResultsParams,) => {
+    return [
+    `/api/users/${userId}/battle-results`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetUsersUserIdBattleResultsQueryOptions = <TData = Awaited<ReturnType<typeof getUsersUserIdBattleResults>>, TError = ErrorType<unknown>>(userId: string,
+    params?: GetUsersUserIdBattleResultsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdBattleResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUsersUserIdBattleResultsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUsersUserIdBattleResults>>> = ({ signal }) => getUsersUserIdBattleResults(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdBattleResults>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUsersUserIdBattleResultsQueryResult = NonNullable<Awaited<ReturnType<typeof getUsersUserIdBattleResults>>>
+export type GetUsersUserIdBattleResultsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List public battle results with cursor pagination
+ */
+
+export function useGetUsersUserIdBattleResults<TData = Awaited<ReturnType<typeof getUsersUserIdBattleResults>>, TError = ErrorType<unknown>>(
+ userId: string,
+    params?: GetUsersUserIdBattleResultsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUsersUserIdBattleResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUsersUserIdBattleResultsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 

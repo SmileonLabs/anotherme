@@ -8,6 +8,9 @@ export {
   FetchRoomMessagesParams,
   ListClanMemoriesParams,
   UnpinRoomMessageParams,
+  GetUsersUserIdPostsParams,
+  GetUsersUserIdGrowthRecordsParams,
+  GetUsersUserIdBattleResultsParams,
 } from "./generated/api";
 
 // `CreateClanWarBody` and `SubmitClanWarArgumentBody` are emitted by BOTH

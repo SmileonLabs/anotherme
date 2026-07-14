@@ -2166,6 +2166,50 @@ export type ClanWarDetail = ClanWarSummary & ({
   result?: ClanWarResult | null;
 });
 
+export interface ProfilePostsPage {
+  items: StarFeedPost[];
+  nextCursor: string | null;
+}
+
+export interface GrowthRecord {
+  id: string;
+  starProfileId: string;
+  eventType: string;
+  xpDelta: number;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface GrowthRecordsPage {
+  items: GrowthRecord[];
+  nextCursor: string | null;
+}
+
+export type PublicBattleResultOutcome = typeof PublicBattleResultOutcome[keyof typeof PublicBattleResultOutcome];
+
+
+export const PublicBattleResultOutcome = {
+  win: 'win',
+  loss: 'loss',
+  draw: 'draw',
+} as const;
+
+export interface PublicBattleResult {
+  roomId: string;
+  topic: string;
+  category: string;
+  outcome: PublicBattleResultOutcome;
+  myScore: number;
+  opponentScore: number;
+  opponentName: string;
+  completedAt: string;
+}
+
+export interface BattleResultsPage {
+  items: PublicBattleResult[];
+  nextCursor: string | null;
+}
+
 export type GetPersonaRankingsParams = {
 type?: GetPersonaRankingsType;
 /**
@@ -2465,4 +2509,32 @@ export const GetServiceRankingsArchetype = {
   activist: 'activist',
   observer: 'observer',
 } as const;
+
+export type GetUsersUserIdPostsParams = {
+starId?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+cursor?: string;
+};
+
+export type GetUsersUserIdGrowthRecordsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+cursor?: string;
+};
+
+export type GetUsersUserIdBattleResultsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+cursor?: string;
+};
 

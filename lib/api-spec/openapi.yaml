@@ -4021,6 +4021,62 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /users/{userId}/posts:
+    get:
+      tags: [users]
+      summary: List a user's public feed posts with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: starId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Public posts page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfilePostsPage" }
+  /users/{userId}/growth-records:
+    get:
+      tags: [users]
+      summary: List public growth records with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Growth records page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrowthRecordsPage" }
+  /users/{userId}/battle-results:
+    get:
+      tags: [users]
+      summary: List public battle results with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Battle results page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BattleResultsPage" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -7007,3 +7063,52 @@ components:
               oneOf:
                 - $ref: "#/components/schemas/ClanWarResult"
                 - type: "null"
+    ProfilePostsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StarFeedPost" }
+        nextCursor:
+          type: string
+          format: date-time
+          nullable: true
+    GrowthRecordsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/GrowthRecord" }
+        nextCursor: { type: string, format: date-time, nullable: true }
+    GrowthRecord:
+      type: object
+      required: [id, starProfileId, eventType, xpDelta, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        starProfileId: { type: string, format: uuid }
+        eventType: { type: string }
+        xpDelta: { type: integer }
+        reason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    BattleResultsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PublicBattleResult" }
+        nextCursor: { type: string, format: date-time, nullable: true }
+    PublicBattleResult:
+      type: object
+      required: [roomId, topic, category, outcome, myScore, opponentScore, opponentName, completedAt]
+      properties:
+        roomId: { type: string, format: uuid }
+        topic: { type: string }
+        category: { type: string }
+        outcome: { type: string, enum: [win, loss, draw] }
+        myScore: { type: integer }
+        opponentScore: { type: integer }
+        opponentName: { type: string }
+        completedAt: { type: string, format: date-time }
