@@ -288,8 +288,12 @@ export default function FeedScreen() {
       const key = post.author.id ?? post.author.nickname;
       if (!unique.has(key)) unique.set(key, post.author);
     });
-    return [...unique.values()].slice(0, 7);
-  }, [posts]);
+    const own = me?.id
+      ? { id: me.id, nickname: me.nickname, profileImageUrl: me.profileImageUrl ?? null, starProfile: null }
+      : null;
+    const others = [...unique.values()].filter((author) => author.id !== me?.id);
+    return (own ? [own, ...others] : others).slice(0, 7);
+  }, [posts, me]);
   function openProfile(author: StarFeedAuthor) {
     if (author.id) {
       router.push({ pathname: "/profile/[userId]", params: { userId: author.id } } as never);
