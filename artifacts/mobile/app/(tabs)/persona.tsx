@@ -188,7 +188,16 @@ export function PersonaScreen({
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
   const { data: card, isError: isCardError, refetch: refetchCard } = useGetMyPersonaCard();
-  const { mode, fanProfile, starUnlocked, equippedStar } = usePlayMode();
+  const {
+    mode,
+    fanProfile,
+    starUnlocked,
+    equippedStar,
+    starProfiles,
+    activateStar,
+    isActivatingStar,
+    setMode,
+  } = usePlayMode();
   const { state: torimia, requirements: torimiaRequirements } = useTorimia();
   const { status: walletStatus } = useWalletVerification();
 
@@ -275,7 +284,17 @@ export function PersonaScreen({
                 stats={fanProfile?.stats}
                 activityCount={recentEvents.length}
                 walletStatus={walletStatus}
+                mode={mode}
+                starUnlocked={starUnlocked}
                 equippedStar={equippedStar}
+                starProfiles={starProfiles}
+                isEquippingStar={isActivatingStar}
+                onEquipStar={async (starProfileId) => {
+                  await activateStar(starProfileId);
+                  await setMode("star");
+                }}
+                onSelectFan={() => void setMode("fan")}
+                onStarRegistration={scrollToStarLock}
                 isAnalyzing={isAnalyzing}
                 onEditProfile={() => router.push("/profile/edit")}
                 onWallet={() => router.push("/pvt/wallet" as never)}
@@ -732,7 +751,14 @@ function MyDashboard({
   stats,
   activityCount,
   walletStatus,
+  mode,
+  starUnlocked,
   equippedStar,
+  starProfiles,
+  isEquippingStar,
+  onEquipStar,
+  onSelectFan,
+  onStarRegistration,
   isAnalyzing,
   onEditProfile,
   onWallet,
@@ -748,7 +774,14 @@ function MyDashboard({
   stats?: FanProfileState["stats"];
   activityCount: number;
   walletStatus?: WalletStatus;
+  mode: "fan" | "star";
+  starUnlocked: boolean;
   equippedStar: EquippedStar | null;
+  starProfiles: EquippedStar[];
+  isEquippingStar: boolean;
+  onEquipStar: (starProfileId: string) => Promise<void>;
+  onSelectFan: () => void;
+  onStarRegistration: () => void;
   isAnalyzing: boolean;
   onEditProfile: () => void;
   onWallet: () => void;
@@ -757,22 +790,44 @@ function MyDashboard({
   onAnalyze: () => void;
 }) {
   const [inventoryOpen, setInventoryOpen] = React.useState(false);
-  const xpInLevel = Math.max(0, xp % 100);
-  const statItems = [
-    { icon: "heart" as const, label: "친밀도", value: stats?.fanPower ?? 0, color: "#FF62B6" },
-    { icon: "star" as const, label: "팬심", value: stats?.fanPower ?? 0, color: "#FFE23D" },
-    { icon: "volume-2" as const, label: "응원력", value: stats?.supportPower ?? 0, color: "#39D9FF" },
-    { icon: "message-circle" as const, label: "공감력", value: stats?.empathy ?? 0, color: "#54E8DF" },
-    { icon: "book-open" as const, label: "스토리", value: stats?.story ?? 0, color: "#D679FF" },
+  const isStarMode = mode === "star";
+  const isStarLocked = isStarMode && !equippedStar;
+  const displayLevel = isStarMode ? equippedStar?.level ?? 1 : level;
+  const displayXp = isStarMode ? equippedStar?.xp ?? 0 : xp;
+  const xpInLevel = Math.max(0, displayXp % 100);
+  const statItems = isStarMode
+    ? [
+        { icon: "heart" as const, label: "매력", value: equippedStar?.stats.charm ?? 0, color: "#FF62B6" },
+        { icon: "star" as const, label: "무대감", value: equippedStar?.stats.stagePresence ?? 0, color: "#FFE23D" },
+        { icon: "link" as const, label: "유대", value: equippedStar?.stats.bond ?? 0, color: "#39D9FF" },
+        { icon: "book-open" as const, label: "세계관", value: equippedStar?.stats.lore ?? 0, color: "#D679FF" },
+      ]
+    : [
+        { icon: "heart" as const, label: "팬심", value: stats?.fanPower ?? 0, color: "#FF62B6" },
+        { icon: "volume-2" as const, label: "응원력", value: stats?.supportPower ?? 0, color: "#39D9FF" },
+        { icon: "message-circle" as const, label: "공감력", value: stats?.empathy ?? 0, color: "#54E8DF" },
+        { icon: "book-open" as const, label: "스토리", value: stats?.story ?? 0, color: "#D679FF" },
+      ];
+  const inventoryItems = [
+    {
+      key: "fan",
+      title: "FAN",
+      subtitle: "기본 캐릭터",
+      source: require("../../assets/images/fan-slime.png") as ImageSource,
+      active: !equippedStar,
+      onPress: onSelectFan,
+    },
+    ...starProfiles.map((star) => ({
+      key: star.id,
+      title: star.displayName,
+      subtitle: star.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
+      source: star.imageUrl
+        ? ({ uri: mediaUri(star.imageUrl) } as ImageSource)
+        : (require("../../assets/images/star-character-cutout.png") as ImageSource),
+      active: equippedStar?.id === star.id,
+      onPress: () => void onEquipStar(star.id),
+    })),
   ];
-  const inventory: ImageSource[] = [];
-  if (avatarUri) inventory.push({ uri: mediaUri(avatarUri) });
-  inventory.push(
-    equippedStar?.imageUrl
-      ? { uri: mediaUri(equippedStar.imageUrl) }
-      : require("../../assets/images/star-character-cutout.png"),
-    require("../../assets/images/fan.png"),
-  );
 
   return (
     <View style={styles.dashboardContent}>
@@ -799,12 +854,24 @@ function MyDashboard({
 
       <LinearGradient colors={["#0F0E26", "#08091B"]} style={styles.dashboardStatsCard}>
         <View style={styles.dashboardLevelBlock}>
-          <Text style={styles.dashboardSectionTitle}>✦ 내 스탯</Text>
-          <Text style={styles.dashboardLevel}>Lv. {level}</Text>
-          <Text style={styles.dashboardXpText}>{xpInLevel} / 100 STAR</Text>
+          <Text style={styles.dashboardSectionTitle}>{isStarLocked ? "STAR 스탯 잠금" : isStarMode ? `${equippedStar?.displayName ?? "STAR"} 스탯` : "내 FAN 스탯"}</Text>
+          <Text style={styles.dashboardLevel}>{isStarLocked ? "—" : `Lv. ${displayLevel}`}</Text>
+          <Text style={styles.dashboardXpText}>{isStarLocked ? "NFT 등록 후 이용 가능" : `${xpInLevel} / 100 ${isStarMode ? "STAR" : "FAN"} XP`}</Text>
           <View style={styles.dashboardXpTrack}><LinearGradient colors={["#7138FF", "#D893FF"]} style={[styles.dashboardXpFill, { width: `${xpInLevel}%` }]} /></View>
         </View>
-        <View style={styles.dashboardStatsList}>{statItems.map((item) => <DashboardStat key={item.label} {...item} />)}</View>
+        {isStarLocked ? (
+          <View style={styles.dashboardStatsLocked}>
+            <Feather name="lock" size={22} color="#D28CFF" />
+            <Text style={styles.dashboardStatsLockedTitle}>STAR 성장 잠금</Text>
+            <Text style={styles.dashboardStatsLockedSub}>NFT를 등록하고 STAR를 장착하면 스탯이 열려요.</Text>
+            <Pressable onPress={onStarRegistration} style={({ pressed }) => [styles.dashboardStatsLockedButton, pressed && { opacity: 0.75 }]}>
+              <Feather name="star" size={14} color="#fff" />
+              <Text style={styles.dashboardStatsLockedButtonText}>{starUnlocked ? "STAR 장착하기" : "NFT 등록하기"}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.dashboardStatsList}>{statItems.map((item) => <DashboardStat key={item.label} {...item} />)}</View>
+        )}
       </LinearGradient>
 
       <View style={styles.dashboardInfoGrid}>
@@ -824,10 +891,41 @@ function MyDashboard({
 
       <Pressable onPress={() => setInventoryOpen((open) => !open)} style={({ pressed }) => [styles.dashboardInventoryCard, pressed && { opacity: 0.72 }]}>
         <View style={styles.dashboardInventoryCopy}><Text style={styles.dashboardCardTitle}>내 캐릭터 / 인벤토리 ✦</Text><Text style={styles.dashboardInventorySub}>저장된 내 캐릭터 보기 〉</Text></View>
-        <View style={styles.dashboardInventoryImages}>{inventory.map((source, index) => <Image key={index} source={source} style={styles.dashboardInventoryImage} contentFit="cover" />)}</View>
+        <View style={styles.dashboardInventoryImages}>
+          {inventoryItems.slice(0, 3).map((item) => (
+            <View key={item.key} style={[styles.dashboardInventoryThumb, item.active && styles.dashboardInventoryThumbActive]}>
+              <Image source={item.source} style={styles.dashboardInventoryImage} contentFit="cover" />
+            </View>
+          ))}
+        </View>
         <Feather name={inventoryOpen ? "chevron-up" : "chevron-right"} size={18} color="#D6D0DF" />
       </Pressable>
-      {inventoryOpen ? <View style={styles.dashboardInventoryDetail}><StarLockCard /></View> : null}
+      {inventoryOpen ? (
+        <View style={styles.dashboardInventoryDetail}>
+          <Text style={styles.dashboardInventoryDetailTitle}>보유 캐릭터</Text>
+          <Text style={styles.dashboardInventoryDetailSub}>캐릭터를 선택하면 현재 활동 캐릭터로 장착됩니다.</Text>
+          <View style={styles.dashboardInventoryGrid}>
+            {inventoryItems.map((item) => (
+              <Pressable
+                key={item.key}
+                disabled={isEquippingStar}
+                onPress={item.onPress}
+                style={({ pressed }) => [
+                  styles.dashboardInventoryItem,
+                  item.active && styles.dashboardInventoryItemActive,
+                  pressed && { opacity: 0.72 },
+                ]}
+              >
+                <Image source={item.source} style={styles.dashboardInventoryItemImage} contentFit="contain" />
+                <Text style={styles.dashboardInventoryItemTitle} numberOfLines={1}>{item.title}</Text>
+                <Text style={styles.dashboardInventoryItemSubtitle}>{item.active ? "사용 중" : item.subtitle}</Text>
+                {item.active ? <Feather name="check-circle" size={14} color="#D28CFF" /> : null}
+              </Pressable>
+            ))}
+          </View>
+          {!starProfiles.length ? <StarLockCard /> : null}
+        </View>
+      ) : null}
 
       <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardSettingsCard}>
         <Text style={styles.dashboardCardTitle}>설정 ✦</Text>
@@ -1485,6 +1583,11 @@ const styles = StyleSheet.create({
   dashboardXpTrack: { height: 8, borderRadius: 4, borderWidth: 1, borderColor: "rgba(133,64,198,0.44)", overflow: "hidden", marginTop: 9 },
   dashboardXpFill: { height: "100%", borderRadius: 4 },
   dashboardStatsList: { flex: 1, paddingLeft: 20, justifyContent: "space-between" },
+  dashboardStatsLocked: { flex: 1, paddingLeft: 20, alignItems: "center", justifyContent: "center" },
+  dashboardStatsLockedTitle: { color: "#E9D5FF", fontFamily: "Inter_700Bold", fontSize: 13, marginTop: 7 },
+  dashboardStatsLockedSub: { color: "#AFA8B9", fontFamily: "Inter_400Regular", fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 5 },
+  dashboardStatsLockedButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 132, height: 32, borderRadius: 16, backgroundColor: "#6D35F6", paddingHorizontal: 12, marginTop: 10 },
+  dashboardStatsLockedButtonText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 11 },
   dashboardStatRow: { height: 25, flexDirection: "row", alignItems: "center", gap: 8 },
   dashboardStatLabel: { color: "#D0CAD7", width: 45, fontFamily: "Inter_400Regular", fontSize: 10 },
   dashboardStatTrack: { flex: 1, height: 7, borderRadius: 4, backgroundColor: "#1A1930", overflow: "hidden" },
@@ -1503,8 +1606,18 @@ const styles = StyleSheet.create({
   dashboardInventoryCopy: { flex: 1 },
   dashboardInventorySub: { color: "#8F8999", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 12 },
   dashboardInventoryImages: { flexDirection: "row", gap: 7 },
-  dashboardInventoryImage: { width: 58, height: 66, borderRadius: 9, borderWidth: 1, borderColor: "rgba(186,79,255,0.56)", backgroundColor: "#121025" },
-  dashboardInventoryDetail: { borderRadius: 14, overflow: "hidden" },
+  dashboardInventoryThumb: { width: 58, height: 66, borderRadius: 9, overflow: "hidden", borderWidth: 1, borderColor: "rgba(186,79,255,0.42)", backgroundColor: "#121025" },
+  dashboardInventoryThumbActive: { borderColor: "#D28CFF", borderWidth: 2 },
+  dashboardInventoryImage: { width: "100%", height: "100%", backgroundColor: "#121025" },
+  dashboardInventoryDetail: { borderRadius: 14, overflow: "hidden", padding: 14, backgroundColor: "rgba(10,9,25,0.96)", borderWidth: 1, borderColor: "rgba(126,74,192,0.42)" },
+  dashboardInventoryDetailTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 14 },
+  dashboardInventoryDetailSub: { color: "#8F8999", fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 5 },
+  dashboardInventoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 14 },
+  dashboardInventoryItem: { width: 94, minHeight: 132, borderRadius: 12, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", backgroundColor: "#121025", alignItems: "center", padding: 7 },
+  dashboardInventoryItemActive: { borderColor: "#D28CFF", backgroundColor: "rgba(109,53,246,0.2)" },
+  dashboardInventoryItemImage: { width: 78, height: 78 },
+  dashboardInventoryItemTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 11, marginTop: 3 },
+  dashboardInventoryItemSubtitle: { color: "#9D96A7", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 3 },
   dashboardSettingsCard: { borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 14, overflow: "hidden" },
   dashboardSettingRow: { minHeight: 35, flexDirection: "row", alignItems: "center", gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(82,61,108,0.25)" },
   dashboardSettingLabel: { color: "#D3CDD9", fontFamily: "Inter_400Regular", fontSize: 10, flex: 1 },
