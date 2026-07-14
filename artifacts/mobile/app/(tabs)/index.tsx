@@ -35,9 +35,10 @@ import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
 import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
-const FAN_CHARACTER_IMAGE = require("../../assets/images/fan.png");
+const FAN_CHARACTER_IMAGE = require("../../assets/images/fan-slime.png");
 const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
 const STAR_CHARACTER_IMAGE = require("../../assets/images/star-character-cutout.png");
+const STAR_RANDOM_BOX_IMAGE = require("../../assets/images/star-random-box.png");
 const TORIMIA_PORTAL_SCENE_IMAGE = require("../../assets/images/torimia-portal-scene.png");
 const MISSION_STAR_POINTS = [
   { left: "12%" as const, top: "22%" as const, size: 1.5, opacity: 0.72 },
@@ -359,6 +360,7 @@ export default function HomeScreen() {
   const latestFeedPosts = feedPosts.slice(0, 2);
   const starStage = equippedStar ? starStageLabel(equippedStar.stage) : null;
   const activePlayMode = selectedPlayMode;
+  const starLocked = activePlayMode === "star" && !equippedStar;
   const activeLevel = activePlayMode === "star" ? equippedStar?.level ?? 1 : fanProfile?.level ?? 1;
   const activeXp = activePlayMode === "star" ? equippedStar?.xp ?? 0 : fanProfile?.xp ?? 0;
   const activeXpLabel = activePlayMode === "star" ? "STAR XP" : "FAN XP";
@@ -378,7 +380,7 @@ export default function HomeScreen() {
     ? FAN_CHARACTER_IMAGE
     : equippedStar?.imageUrl
       ? { uri: equippedStar.imageUrl }
-      : STAR_CHARACTER_IMAGE;
+      : STAR_RANDOM_BOX_IMAGE;
   const activeStats = activePlayMode === "star"
     ? [
         { label: "매력", value: equippedStar?.stats.charm ?? 0, icon: "heart" as const, color: "#F472B6" },
@@ -543,7 +545,7 @@ export default function HomeScreen() {
             style={StyleSheet.absoluteFill}
           />
 
-          <View style={styles.playCardHeader}>
+          <View style={[styles.playCardHeader, starLocked && styles.playCardHeaderLocked]}>
             <View style={styles.modeSwitchWrap}>
               <Pressable
                 onPress={() => handleModeSelect("star")}
@@ -574,7 +576,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.playCardBody}>
+          <View style={[styles.playCardBody, starLocked && styles.playCardBodyLocked]}>
             <View style={styles.playInfoCol}>
               <Text style={styles.playLevel}>Lv. {activeLevel}</Text>
               <View style={styles.playXpTrack}>
@@ -615,12 +617,21 @@ export default function HomeScreen() {
               )}
               <View style={styles.playPlatform} />
             </View>
+            {starLocked ? (
+              <View pointerEvents="none" style={styles.starLockOverlay}>
+                <View style={styles.starLockBadge}>
+                  <Feather name="lock" size={14} color="#E9D5FF" />
+                  <Text style={styles.starLockText}>NFT 등록 후 이용 가능</Text>
+                </View>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.playCardActions}>
             <Pressable
               onPress={() => router.push("/profile/ranking")}
-              style={({ pressed }) => [styles.playActionGhost, { opacity: pressed ? 0.72 : 1 }]}
+              disabled={starLocked}
+              style={({ pressed }) => [styles.playActionGhost, starLocked && styles.playActionDisabled, { opacity: pressed ? 0.72 : 1 }]}
             >
               <Feather name="bar-chart-2" size={15} color="#E8DDFF" />
               <Text style={styles.playActionGhostText}>상세 성장 리포트</Text>
@@ -1088,6 +1099,7 @@ const styles = StyleSheet.create({
   },
   playCardBg: { opacity: 0.9 },
   playCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  playCardHeaderLocked: { opacity: 0.62 },
   modeSwitchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -1111,7 +1123,8 @@ const styles = StyleSheet.create({
   modeSwitchTextActive: { color: "#fff" },
   playStatusWrap: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
   playStatusText: { color: "#B8AFD7", fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  playCardBody: { flex: 1, flexDirection: "row", marginTop: 12 },
+  playCardBody: { flex: 1, flexDirection: "row", marginTop: 12, position: "relative" },
+  playCardBodyLocked: { opacity: 0.62 },
   playInfoCol: { width: "43%", zIndex: 3, paddingLeft: 3 },
   playLevel: { color: "#fff", fontSize: 43, fontFamily: "Inter_800ExtraBold", letterSpacing: -1.6, textShadowColor: "rgba(255,255,255,0.25)", textShadowRadius: 8 },
   playXpTrack: {
@@ -1183,6 +1196,24 @@ const styles = StyleSheet.create({
     borderColor: "rgba(139,92,246,0.62)",
     backgroundColor: "rgba(109,53,246,0.16)",
   },
+  starLockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(7,5,20,0.22)",
+  },
+  starLockBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 18,
+    backgroundColor: "rgba(30,18,68,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(216,180,254,0.46)",
+  },
+  starLockText: { color: "#E9D5FF", fontSize: 12, fontFamily: "Inter_700Bold" },
   playCardActions: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 },
   playActionGhost: {
     flex: 1,
@@ -1197,6 +1228,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(216,180,254,0.22)",
   },
+  playActionDisabled: { opacity: 0.48 },
   playActionGhostText: { color: "#E8DDFF", fontSize: 12.5, fontFamily: "Inter_700Bold" },
   playActionPrimary: {
     flex: 1,
