@@ -372,7 +372,7 @@ export default function HomeScreen() {
       : starUnlocked
         ? "NFT 장착 필요"
         : "NFT 등록 필요"
-    : "FAN 모드";
+    : "FAN · 응원 중인 STAR 없음";
   const activeCardBgImage = FAN_CARD_BG_IMAGE;
   const activeImageSource = activePlayMode === "fan"
     ? FAN_CHARACTER_IMAGE
