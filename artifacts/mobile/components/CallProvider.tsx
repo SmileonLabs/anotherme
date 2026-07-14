@@ -45,6 +45,7 @@ import { markCallFailed, reportCallDiagnostic } from "@/lib/callApi";
 import { crossAlert } from "@/lib/crossAlert";
 import { isTerminalCallStatus, type CallMode } from "@/lib/callLifecycle";
 import { useCallPolling } from "@/hooks/useCallPolling";
+import { usePlayMode } from "@/hooks/usePlayMode";
 
 const RING_TIMEOUT_MS = 45_000;
 const KEEPALIVE_MIN_INTERVAL_MS = 8000;
@@ -88,6 +89,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 }
 
 function CallManager({ children }: { children: React.ReactNode }) {
+  const { equippedStar } = usePlayMode();
+  const callIdentityLabel = equippedStar ? `통화 프로필 · STAR ${equippedStar.displayName}` : "통화 프로필 · FAN";
   const colors = useColors();
 
   const [mode, setMode] = useState<CallMode>("idle");
@@ -799,6 +802,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
                       ? "영상통화 연결 중..."
                       : "영상통화 중"}
                 </Text>
+                <Text style={styles.identityLight}>{callIdentityLabel}</Text>
                 {showWebCallHint && (
                   <Text style={styles.webCallHint}>웹/PWA는 화면을 내리면 마이크가 멈출 수 있어요.</Text>
                 )}
@@ -818,6 +822,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
                     ? "통화 연결 중..."
                     : "통화 중"}
               </Text>
+              <Text style={styles.identityLight}>{callIdentityLabel}</Text>
               {showWebCallHint && (
                 <Text style={styles.webCallHint}>웹/PWA는 화면을 내리면 마이크가 멈출 수 있어요.</Text>
               )}
@@ -932,6 +937,12 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: "rgba(255,255,255,0.7)",
     marginTop: 8,
+  },
+  identityLight: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: "rgba(201,140,255,0.95)",
+    marginTop: 6,
   },
   webCallHint: {
     maxWidth: 280,
