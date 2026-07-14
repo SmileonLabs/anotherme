@@ -22,7 +22,7 @@ import { allocateRoomMessageSeq } from "./readReceipts";
 
 const DM_EMAIL = "dungeon-master@todotalk.system";
 const DM_CLERK_ID = "system:dungeon-master";
-export const DM_NICKNAME = "던전 마스터";
+export const DM_NICKNAME = "성장RPG 마스터";
 
 const DUNGEON_MODEL = "gpt-5-mini";
 
@@ -41,7 +41,7 @@ export async function getOrCreateDmUser(): Promise<string> {
       clerkId: DM_CLERK_ID,
       email: DM_EMAIL,
       nickname: DM_NICKNAME,
-      statusMessage: "🎲 던전을 안내하는 AI 게임 마스터",
+      statusMessage: "🎲 성장RPG를 안내하는 AI 게임 마스터",
       notificationEnabled: false,
     })
     .onConflictDoNothing({ target: usersTable.email });
@@ -57,8 +57,8 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
 
 function buildSystemPrompt(): string {
   return [
-    "당신은 정통 판타지 세계를 무대로 한 텍스트 머드(MUD) 게임의 '던전 마스터(DM)'입니다.",
-    "여러 명의 플레이어가 하나의 파티로 같은 던전을 함께 탐험합니다(협동 플레이).",
+    "당신은 정통 판타지 세계를 무대로 한 텍스트 머드(MUD) 게임의 '성장RPG 마스터(DM)'입니다.",
+    "여러 명의 플레이어가 하나의 파티로 같은 성장RPG를 함께 탐험합니다(협동 플레이).",
     "반드시 한국어로만 답하세요.",
     "검과 마법, 고블린·오크·슬라임 같은 몬스터, 함정, 보물, 수수께끼가 등장하는 고전 판타지 분위기를 유지하세요.",
     "내러티브(narrative)는 생생하지만 간결하게 2~5문장으로 쓰고, 현재 상황 묘사로 자연스럽게 끝내세요. '이제 어떻게 하시겠습니까?', '무엇을 할 것인가?', '어떻게 할 것인가?', '당신의 선택은?' 같이 플레이어에게 행동을 되묻는 상투적인 마무리 문구는 절대 붙이지 마세요. 행동 선택지는 choices 필드로 따로 제시되므로 내러티브에서 반복하지 마세요.",
@@ -69,8 +69,8 @@ function buildSystemPrompt(): string {
     "파티 전원의 hp가 0이 되면(전멸) ended=true, 메인 목표를 달성하면 ended=true로 표시하세요.",
     "",
     "## 미션 목표 (goals)",
-    "각 던전에는 분명한 미션이 있어야 재미있습니다. goals 배열로 관리하세요.",
-    "- 메인 목표(kind='main')는 정확히 1개. 이 던전의 승리 조건입니다. 다음 세 유형 중 하나로 명확하게 정하세요: (가)몬스터 처치(예: '동굴의 주인 마룡 그라쉬를 쓰러뜨린다'), (나)수집(예: '봉인된 성배 조각 3개를 모두 회수한다'), (다)단서/수수께끼 해결(예: '사라진 영주의 행방을 밝혀낸다').",
+    "각 성장RPG에는 분명한 미션이 있어야 재미있습니다. goals 배열로 관리하세요.",
+    "- 메인 목표(kind='main')는 정확히 1개. 이 성장RPG의 승리 조건입니다. 다음 세 유형 중 하나로 명확하게 정하세요: (가)몬스터 처치(예: '동굴의 주인 마룡 그라쉬를 쓰러뜨린다'), (나)수집(예: '봉인된 성배 조각 3개를 모두 회수한다'), (다)단서/수수께끼 해결(예: '사라진 영주의 행방을 밝혀낸다').",
     "- 서브 목표(kind='sub')는 1~3개. 메인으로 가는 중간 단계입니다(예: '지하 묘지의 녹슨 열쇠를 찾는다').",
     "- 매 턴 goals 배열 전체를 다시 반환하세요. 이미 정한 목표의 text는 절대 바꾸지 말고, 달성된 목표만 done=true로 바꾸세요. 새 서브 목표가 자연스럽게 생기면 추가할 수 있습니다.",
     "- 메인 목표가 done=true가 되면 반드시 ended=true로 모험을 끝내고, 승리를 축하하는 에필로그를 narrative에 쓰세요.",
@@ -304,8 +304,8 @@ export async function runDungeonTurn(
 
     const openingInstruction = [
       "(게임 시작) 이번이 이 파티의 첫 장면입니다. 웹소설 프롤로그처럼 몰입감 있는 도입부를 작성하세요:",
-      `- 테마는 '${session.theme}'입니다. 이 세계와 던전에 얽힌 배경(전설, 소문, 닥쳐온 위협 등)을 한두 문장으로 제시하세요.`,
-      "- 이 던전의 미션을 정하세요: goals 배열에 메인 목표(kind='main') 1개와 서브 목표(kind='sub') 1~3개를 담으세요. 메인 목표는 명확한 승리 조건(몬스터 처치/수집/단서 해결 중 하나)이어야 합니다. 처음에는 모두 done=false.",
+      `- 테마는 '${session.theme}'입니다. 이 세계와 성장RPG에 얽힌 배경(전설, 소문, 닥쳐온 위협 등)을 한두 문장으로 제시하세요.`,
+      "- 이 성장RPG의 미션을 정하세요: goals 배열에 메인 목표(kind='main') 1개와 서브 목표(kind='sub') 1~3개를 담으세요. 메인 목표는 명확한 승리 조건(몬스터 처치/수집/단서 해결 중 하나)이어야 합니다. 처음에는 모두 done=false.",
       "- 도입부 narrative에서 파티에게 이 미션(무엇을 왜 하러 왔는지, 메인 목표)을 자연스럽게 알려주세요.",
       "- 그런 다음 파티가 막 도착한 첫 장면을 생생하게 묘사하고, 첫 선택지를 제시하세요. 첫 선택지에도 현명한 선택과 위험한 선택을 섞되, 단서를 깔아 두세요.",
       "- party 배열의 이름을 직접 언급해 인물에 생명을 불어넣으세요.",
@@ -345,7 +345,7 @@ export async function runDungeonTurn(
         // (narrative + party + several enemies + choices + events); 2000 was too
         // low, so reasoning + output overran the budget, the response was
         // truncated (finish_reason "length"), and JSON.parse failed → the
-        // "던전 마스터가 답하지 못했습니다" fallback. Give ample headroom.
+        // "성장RPG 마스터가 답하지 못했습니다" fallback. Give ample headroom.
         max_completion_tokens: 6000,
         reasoning_effort: "low",
         messages: [
@@ -437,7 +437,7 @@ export async function runDungeonTurn(
       // "main goal done => game ends" path could be permanently disabled.
       if (!action && !nextGoals.some((g) => g.kind === "main")) {
         nextGoals = [
-          { text: `${session.theme}의 핵심 위협을 물리치고 던전을 정복한다`, kind: "main", done: false },
+          { text: `${session.theme}의 핵심 위협을 물리치고 성장RPG를 정복한다`, kind: "main", done: false },
           ...nextGoals.filter((g) => g.kind === "sub").slice(0, 3),
         ];
       }
@@ -498,8 +498,8 @@ export async function runDungeonTurn(
       nextPoints = (state.points ?? 0) + pointsDelta;
     } else {
       narrative = action
-        ? "음... 던전 마스터가 잠시 답하지 못했습니다. 다시 행동을 선택해 주세요."
-        : "던전 마스터가 던전을 준비하는 데 실패했습니다. 잠시 후 다시 시도해 주세요.";
+        ? "음... 성장RPG 마스터가 잠시 답하지 못했습니다. 다시 행동을 선택해 주세요."
+        : "성장RPG 마스터가 성장RPG를 준비하는 데 실패했습니다. 잠시 후 다시 시도해 주세요.";
     }
 
     const newParty = Array.from(byId.values());

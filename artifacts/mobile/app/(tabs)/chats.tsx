@@ -29,7 +29,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "unread", label: "안 읽음" },
   { key: "group", label: "그룹" },
-  { key: "dungeon", label: "던전" },
+  { key: "dungeon", label: "성장RPG" },
   { key: "battle", label: "토크배틀" },
 ];
 

@@ -189,7 +189,7 @@ export function computeIdentity(stats: PersonaStats): PersonaIdentity {
   let growthDirection: string;
   if (total < MIN_TOTAL_FOR_ARCHETYPE) {
     growthDirection =
-      "채팅·배틀·던전으로 다양한 활동을 시작하면 당신만의 정체성이 또렷해질 거예요.";
+      "채팅·배틀·성장RPG로 다양한 활동을 시작하면 당신만의 정체성이 또렷해질 거예요.";
   } else {
     const weakest = ascending[0].key;
     growthDirection = `${GROWTH_HINT[weakest]} 더 균형 잡힌 어나더 미로 성장할 수 있어요.`;

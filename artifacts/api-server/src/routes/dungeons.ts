@@ -64,7 +64,7 @@ router.post("/dungeons", requireAuth, rateLimit({ name: "create-dungeon", limit:
 
   const party = await buildInitialParty(humanIds);
   const state: DungeonState = {
-    scene: "던전 입구",
+    scene: "성장RPG 입구",
     party,
     enemies: [],
     goals: [],
@@ -82,7 +82,7 @@ router.post("/dungeons", requireAuth, rateLimit({ name: "create-dungeon", limit:
       .insert(chatRoomsTable)
       .values({
         type: "dungeon",
-        name: name?.trim() || "던전 탐험",
+        name: name?.trim() || "성장RPG 탐험",
         ownerId: userId,
       })
       .returning();

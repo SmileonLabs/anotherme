@@ -88,14 +88,14 @@ const GROWTH_RULES: Record<GrowthKind, GrowthRule> = {
     eventType: "dungeon_action",
     xp: 4,
     stats: {},
-    reason: "던전 모험",
+    reason: "성장RPG 모험",
   },
   dungeon_goal: {
     sourceType: "dungeon",
     eventType: "dungeon_result",
     xp: 20,
     stats: {},
-    reason: "던전 목표 달성",
+    reason: "성장RPG 목표 달성",
   },
 };
 

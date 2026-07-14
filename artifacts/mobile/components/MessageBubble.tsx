@@ -271,7 +271,7 @@ function MessageBubbleComponent({
           <View style={styles.dmHeader}>
             <Text style={styles.dmEmoji}>🎲</Text>
             <Text style={[styles.dmLabel, { color: colors.accentForeground }]}>
-              던전 마스터
+              성장RPG 마스터
             </Text>
             <Text style={[styles.dmTime, { color: colors.mutedForeground }]}>
               {time}

@@ -157,7 +157,7 @@ const STAR_STAT_META = [
 function questIcon(q: Quest): keyof typeof Feather.glyphMap {
   const s = `${q.key} ${q.title}`;
   if (/배틀|battle/i.test(s)) return "mic";
-  if (/던전|dungeon/i.test(s)) return "compass";
+  if (/성장RPG|dungeon/i.test(s)) return "compass";
   if (/팬클럽|가문|clan/i.test(s)) return "shield";
   if (/분석|analyze|persona|자아/i.test(s)) return "cpu";
   if (/대화|채팅|chat|메시지/i.test(s)) return "message-circle";

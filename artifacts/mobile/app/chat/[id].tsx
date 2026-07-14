@@ -80,7 +80,7 @@ const REVEAL_INTERVAL = 480;
 
 // Rotating flavor text shown while the AI dungeon master generates a turn.
 const DM_THINKING_LINES = [
-  "던전 마스터가 주사위를 굴리는 중...",
+  "성장RPG 마스터가 주사위를 굴리는 중...",
   "운명의 실을 엮는 중...",
   "어둠 속에서 무언가 움직인다...",
   "다음 장면을 그리는 중...",
@@ -965,8 +965,8 @@ export default function ChatScreen() {
             {isDungeon ? (
               <EmptyState
                 icon="compass"
-                title="던전의 문이 열리는 중..."
-                subtitle="던전 마스터가 첫 장면을 준비하고 있습니다."
+                title="성장RPG가 시작되는 중..."
+                subtitle="성장RPG 마스터가 첫 장면을 준비하고 있습니다."
               />
             ) : (
               <EmptyState

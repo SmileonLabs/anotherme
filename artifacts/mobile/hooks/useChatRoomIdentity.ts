@@ -19,7 +19,7 @@ export function useChatRoomIdentity(args: {
   const headerSubtitle = args.isGroupRoom
     ? `멤버 ${members.length}명`
     : args.isDungeon
-      ? "🎲 AI 던전 마스터"
+      ? "🎲 AI 성장RPG 마스터"
       : presenceLoading && !otherPresence
         ? "상태 확인 중..."
         : otherPresence?.online

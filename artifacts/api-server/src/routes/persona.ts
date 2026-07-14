@@ -114,7 +114,7 @@ router.post("/users/me/persona/analyze", requireAuth, rateLimit({ name: "persona
     case "insufficient_data":
       res.status(422).json({
         error: "insufficient_data",
-        message: "분석할 활동이 아직 부족해요. 채팅·배틀·던전으로 조금 더 활동해 보세요.",
+        message: "분석할 활동이 아직 부족해요. 채팅·배틀·성장RPG로 조금 더 활동해 보세요.",
       });
       return;
     case "ai_failed":

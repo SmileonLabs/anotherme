@@ -97,7 +97,7 @@ export function roomDisplayName(room: any, meId?: string): string {
     const other = (room.members as any[] | undefined)?.find((member) => member.id !== meId);
     return userDisplayName(other, "1:1 채팅");
   }
-  if (room?.type === "dungeon") return "AI 던전";
+  if (room?.type === "dungeon") return "AI 성장RPG";
   return "그룹 채팅";
 }
 

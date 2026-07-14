@@ -106,7 +106,7 @@ export async function collectActivity(userId: string): Promise<CollectedActivity
     const goal = typeof meta.goal === "string" ? meta.goal : null;
     if (r.eventType === "dungeon_result" && goal) return `목표 달성: ${clip(goal)}`;
     if (action) return `행동: ${clip(action)}`;
-    return r.reason ?? "던전 활동";
+    return r.reason ?? "성장RPG 활동";
   });
 
   const growth = growthRows.map((r) => {
@@ -163,7 +163,7 @@ function buildUserPrompt(data: CollectedActivity): string {
     "",
     section("최근 토크배틀 발언/결과", data.battle),
     "",
-    section("최근 던전 행동/결과", data.dungeon),
+    section("최근 성장RPG 행동/결과", data.dungeon),
     "",
     section("최근 성장 기록", data.growth),
     "",
