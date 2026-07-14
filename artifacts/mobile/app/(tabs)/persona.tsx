@@ -787,6 +787,7 @@ function MyDashboard({
           <Text style={styles.dashboardHandle}>@anotherme_{nickname.toLocaleLowerCase().replace(/\s+/g, "")}</Text>
           <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>직업</Text><Text style={styles.dashboardTagValue}>가희</Text></View>
           <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>이름</Text><Text style={styles.dashboardTagValue}>{equippedStar?.displayName ?? "비비사랑"}</Text></View>
+          <Text style={styles.identityStatus}>{equippedStar ? `장착 STAR · ${equippedStar.displayName}` : "FAN · 응원 중인 STAR 없음"}</Text>
           <Text style={styles.dashboardIntro} numberOfLines={2}>{intro}</Text>
           <View style={styles.dashboardSocialRow}>
             <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>게시물</Text><Text style={styles.dashboardSocialValue}>{activityCount}</Text></View>
@@ -1469,6 +1470,7 @@ const styles = StyleSheet.create({
   dashboardTag: { width: 126, height: 25, borderRadius: 12, borderWidth: 1, borderColor: "rgba(196,89,255,0.62)", flexDirection: "row", alignItems: "center", marginBottom: 5, overflow: "hidden" },
   dashboardTagLabel: { color: "#D7D1DE", width: 51, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(196,89,255,0.45)" },
   dashboardTagValue: { color: "#EAE6EE", flex: 1, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10 },
+  identityStatus: { color: "#C98CFF", fontFamily: "Inter_600SemiBold", fontSize: 11, marginTop: 5 },
   dashboardIntro: { color: "#C9C3D0", fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16, marginTop: 7, paddingBottom: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(121,80,160,0.25)" },
   dashboardSocialRow: { flexDirection: "row", marginTop: 8 },
   dashboardSocial: { flex: 1, alignItems: "center", borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(121,80,160,0.32)" },
