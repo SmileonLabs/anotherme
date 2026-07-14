@@ -615,7 +615,6 @@ export default function HomeScreen() {
                   <Feather name="heart" size={52} color="#E8DDFF" />
                 </View>
               )}
-              <View style={styles.playPlatform} />
             </View>
             {starLocked ? (
               <View pointerEvents="none" style={styles.starLockOverlay}>
@@ -629,15 +628,6 @@ export default function HomeScreen() {
 
           <View style={styles.playCardActions}>
             <Pressable
-              onPress={() => router.push("/profile/ranking")}
-              disabled={starLocked}
-              style={({ pressed }) => [styles.playActionGhost, starLocked && styles.playActionDisabled, { opacity: pressed ? 0.72 : 1 }]}
-            >
-              <Feather name="bar-chart-2" size={15} color="#E8DDFF" />
-              <Text style={styles.playActionGhostText}>상세 성장 리포트</Text>
-              <Feather name="chevron-right" size={15} color="#8E85B7" />
-            </Pressable>
-            <Pressable
               onPress={handlePlayPrimaryPress}
               style={({ pressed }) => [styles.playActionPrimary, { opacity: pressed ? 0.86 : 1 }]}
             >
@@ -645,6 +635,15 @@ export default function HomeScreen() {
               <Text style={styles.playActionPrimaryText} numberOfLines={1}>
                 {playPrimaryLabel}
               </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/profile/ranking")}
+              disabled={starLocked}
+              style={({ pressed }) => [styles.playActionGhost, starLocked && styles.playActionDisabled, { opacity: pressed ? 0.72 : 1 }]}
+            >
+              <Feather name="bar-chart-2" size={15} color="#E8DDFF" />
+              <Text style={styles.playActionGhostText}>상세 성장 리포트</Text>
+              <Feather name="chevron-right" size={15} color="#8E85B7" />
             </Pressable>
           </View>
         </View>
@@ -1185,16 +1184,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(139,92,246,0.24)",
     borderWidth: 2,
     borderColor: "rgba(216,180,254,0.62)",
-  },
-  playPlatform: {
-    position: "absolute",
-    bottom: 14,
-    width: 142,
-    height: 32,
-    borderRadius: 71,
-    borderWidth: 1,
-    borderColor: "rgba(139,92,246,0.62)",
-    backgroundColor: "rgba(109,53,246,0.16)",
   },
   starLockOverlay: {
     ...StyleSheet.absoluteFillObject,
