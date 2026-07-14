@@ -646,7 +646,7 @@ export default function HomeScreen() {
               accessibilityRole="button"
               accessibilityLabel="비비와의 대화 바로가기"
               onPress={() => void handleOpenBibiChat()}
-              style={({ pressed }) => [styles.bibiChatShortcut, { opacity: pressed ? 0.72 : 1 }]}
+              style={({ pressed }) => [styles.bibiChatShortcut, { display: "none", opacity: pressed ? 0.72 : 1 }]}
             >
               <LinearGradient
                 colors={["rgba(18,17,49,0.98)", "rgba(8,7,25,0.98)"]}
