@@ -52,6 +52,7 @@ import {
   useUpdateAnotherMeRoomSettings,
 } from "@/hooks/useAnotherMe";
 import { useCall } from "@/components/CallProvider";
+import { usePlayMode } from "@/hooks/usePlayMode";
 import { crossAlert } from "@/lib/crossAlert";
 import { mediaUri } from "@/lib/apiBase";
 import { userDisplayName } from "@/lib/friendNames";
@@ -428,6 +429,8 @@ export default function ChatScreen() {
     isGroupRoom,
     isDungeon,
   });
+  const { equippedStar } = usePlayMode();
+  const myChatIdentity = equippedStar ? `내 프로필 · STAR ${equippedStar.displayName}` : "내 프로필 · FAN";
   const { data: targetAnotherMeStatus, refetch: refetchTargetAnotherMeStatus } = useAnotherMeSummonStatus(
     isDirect ? id : undefined,
     otherMember?.id,
@@ -905,7 +908,7 @@ export default function ChatScreen() {
     >
       <ChatRoomHeader
         title={headerTitle}
-        subtitle={headerSubtitle}
+        subtitle={`${headerSubtitle} · ${myChatIdentity}`}
         avatarUri={otherMember?.profileImageUrl}
         isDirect={isDirect}
         isGroupRoom={isGroupRoom}

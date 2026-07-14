@@ -292,7 +292,7 @@ export default function BattleScreen() {
             ⚔️ 토크배틀
           </Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {battle.topic}
+            {battle.topic} · {equippedStar ? `STAR ${equippedStar.displayName}` : "FAN"}
           </Text>
         </View>
         <View style={styles.backBtn} />
