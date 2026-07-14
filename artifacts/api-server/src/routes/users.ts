@@ -37,6 +37,8 @@ const updateMeSchema = z.object({
 const pushTokenSchema = z.object({ token: z.string().min(1).max(8_192) }).strict();
 const userSearchSchema = z.object({ email: z.email().max(320).transform((value) => value.trim().toLowerCase()) });
 const publicProfileParams = z.object({ userId: z.string().uuid() });
+const PUBLIC_PAGE_DEFAULT_LIMIT = 30;
+const PUBLIC_PAGE_MAX_LIMIT = 100;
 
 async function isProfileBlocked(viewerUserId: string, targetUserId: string): Promise<boolean> {
   if (viewerUserId === targetUserId) return false;
@@ -129,7 +131,7 @@ router.get("/users/:userId/posts", requireAuth, async (req, res): Promise<void> 
   const parsed = publicProfileParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: "invalid", message: "Invalid user id" }); return; }
   if (await isProfileBlocked(req.dbUser!.id, parsed.data.userId)) { res.status(404).json({ error: "not_found", message: "Profile not found" }); return; }
-  const limit = z.coerce.number().int().min(1).max(100).catch(30).parse(req.query.limit);
+  const limit = z.coerce.number().int().min(1).max(PUBLIC_PAGE_MAX_LIMIT).catch(PUBLIC_PAGE_DEFAULT_LIMIT).parse(req.query.limit);
   const cursor = typeof req.query.cursor === "string" && !Number.isNaN(Date.parse(req.query.cursor)) ? req.query.cursor : undefined;
   const starProfileId = typeof req.query.starId === "string" && z.string().uuid().safeParse(req.query.starId).success ? req.query.starId : undefined;
   res.json(await listPublicStarFeedPostsByAuthor(req.dbUser!.id, parsed.data.userId, limit, starProfileId, cursor));
@@ -139,7 +141,7 @@ router.get("/users/:userId/growth-records", requireAuth, async (req, res): Promi
   const parsed = publicProfileParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: "invalid", message: "Invalid user id" }); return; }
   if (await isProfileBlocked(req.dbUser!.id, parsed.data.userId)) { res.status(404).json({ error: "not_found", message: "Profile not found" }); return; }
-  const limit = z.coerce.number().int().min(1).max(100).catch(30).parse(req.query.limit);
+  const limit = z.coerce.number().int().min(1).max(PUBLIC_PAGE_MAX_LIMIT).catch(PUBLIC_PAGE_DEFAULT_LIMIT).parse(req.query.limit);
   const cursor = typeof req.query.cursor === "string" && !Number.isNaN(Date.parse(req.query.cursor)) ? new Date(req.query.cursor) : undefined;
   const rows = await db.select({ id: starGrowthEventsTable.id, starProfileId: starGrowthEventsTable.starProfileId, eventType: starGrowthEventsTable.eventType, xpDelta: starGrowthEventsTable.xpDelta, reason: starGrowthEventsTable.reason, createdAt: starGrowthEventsTable.createdAt }).from(starGrowthEventsTable).where(and(eq(starGrowthEventsTable.userId, parsed.data.userId), ...(cursor ? [lt(starGrowthEventsTable.createdAt, cursor)] : []))).orderBy(desc(starGrowthEventsTable.createdAt)).limit(limit);
   res.json({ items: rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })), nextCursor: rows.length === limit ? rows[rows.length - 1].createdAt.toISOString() : null });
@@ -149,7 +151,7 @@ router.get("/users/:userId/battle-results", requireAuth, async (req, res): Promi
   const parsed = publicProfileParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: "invalid", message: "Invalid user id" }); return; }
   if (await isProfileBlocked(req.dbUser!.id, parsed.data.userId)) { res.status(404).json({ error: "not_found", message: "Profile not found" }); return; }
-  const limit = z.coerce.number().int().min(1).max(100).catch(30).parse(req.query.limit);
+  const limit = z.coerce.number().int().min(1).max(PUBLIC_PAGE_MAX_LIMIT).catch(PUBLIC_PAGE_DEFAULT_LIMIT).parse(req.query.limit);
   const cursor = typeof req.query.cursor === "string" && !Number.isNaN(Date.parse(req.query.cursor)) ? new Date(req.query.cursor) : undefined;
   const sessions = await db.select({ roomId: battleSessionsTable.roomId, state: battleSessionsTable.state, updatedAt: battleSessionsTable.updatedAt }).from(battleSessionsTable).innerJoin(chatRoomMembersTable, and(eq(chatRoomMembersTable.roomId, battleSessionsTable.roomId), eq(chatRoomMembersTable.userId, parsed.data.userId))).where(and(eq(battleSessionsTable.status, "ended"), ...(cursor ? [lt(battleSessionsTable.updatedAt, cursor)] : []))).orderBy(desc(battleSessionsTable.updatedAt)).limit(limit);
   res.json({ items: sessions.map(({ roomId, state, updatedAt }) => {

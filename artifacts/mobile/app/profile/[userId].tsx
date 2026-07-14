@@ -3,11 +3,17 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { useGetMe } from "@workspace/api-client-react";
+import { customFetch, useGetMe } from "@workspace/api-client-react";
 
 import { Avatar } from "@/components/Avatar";
 import { NeonBackdrop } from "@/components/NeonUI";
-import { customFetch } from "@workspace/api-client-react";
+
+const PROFILE_TABS = [
+  ["posts", "게시물"],
+  ["star", "STAR 활동"],
+  ["battle", "배틀 결과"],
+  ["growth", "성장 기록"],
+] as const;
 
 type Profile = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; fan: { level: number; xp: number }; stars: Array<{ id: string; displayName: string; imageUrl: string | null; stage: string; level: number; xp: number }>; followerCount: number; followingCount: number; followedStarIds?: string[] };
 type Post = { id: string; title: string; body: string; kind: string; createdAt: string; };
@@ -39,7 +45,7 @@ export default function PublicProfileScreen() {
       <View style={styles.actions}>{isMe ? <Pressable onPress={() => router.push("/profile/edit")} style={styles.button}><Text style={styles.buttonText}>프로필 수정</Text></Pressable> : profile.stars[0] ? <Pressable onPress={async () => { const id = profile.stars[0].id; await customFetch(`/api/star-feed/star-profiles/${id}/follow`, { method: following ? "DELETE" : "POST", responseType: "json" }); setFollowing((value) => !value); }} style={styles.button}><Text style={styles.buttonText}>{following ? "팔로잉" : "팔로우"}</Text></Pressable> : null}</View>
       <View style={styles.section}><Text style={styles.sectionTitle}>FAN 성장</Text><Text style={styles.muted}>Lv.{profile.fan.level} · {profile.fan.xp} XP</Text></View>
       {profile.stars.length ? <View style={styles.section}><Text style={styles.sectionTitle}>콘텐츠 주체 선택</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.starTabs}><Pressable onPress={() => setSelectedStarId(null)} style={[styles.starTab, !selectedStarId && styles.starTabActive]}><Text style={styles.starTabText}>FAN 전체</Text></Pressable>{profile.stars.map((star) => <Pressable key={star.id} onPress={() => setSelectedStarId(star.id)} style={[styles.starTab, selectedStarId === star.id && styles.starTabActive]}><Text style={styles.starTabText}>{star.displayName}</Text></Pressable>)}</ScrollView>{profile.stars.map((star) => <View key={star.id} style={styles.starRow}><Avatar uri={star.imageUrl} name={star.displayName} size={42} /><View style={styles.starCopy}><Text style={styles.starName}>{star.displayName}</Text><Text style={styles.muted}>{star.stage.toUpperCase()} · Lv.{star.level} · {star.xp} XP</Text></View></View>)}</View> : null}
-      <View style={styles.tabs}>{([['posts','게시물'],['star','STAR 활동'],['battle','배틀 결과'],['growth','성장 기록']] as const).map(([key,label]) => <Pressable key={key} onPress={() => setActiveTab(key)} style={[styles.tab, activeTab === key && styles.tabActive]}><Text style={styles.tabText}>{label}</Text></Pressable>)}</View>
+      <View style={styles.tabs}>{PROFILE_TABS.map(([key,label]) => <Pressable key={key} onPress={() => setActiveTab(key)} style={[styles.tab, activeTab === key && styles.tabActive]}><Text style={styles.tabText}>{label}</Text></Pressable>)}</View>
       <View style={styles.section}>{activeTab === "posts" ? <><Text style={styles.sectionTitle}>{selectedStarId ? "STAR 공개 게시물" : "공개 게시물"}</Text>{postsQuery.isLoading ? <ActivityIndicator color="#B84CFF" /> : postsQuery.data?.items.length ? postsQuery.data.items.map((post) => <View key={post.id} style={styles.post}><Text style={styles.postTitle}>{post.title}</Text><Text style={styles.postBody}>{post.body}</Text></View>) : <Text style={styles.muted}>아직 공개 게시물이 없어요.</Text>}</> : activeTab === "star" ? <><Text style={styles.sectionTitle}>STAR 활동</Text><Text style={styles.muted}>{selectedStarId ? "선택한 STAR의 활동 기록입니다." : "STAR를 선택하면 해당 활동을 확인할 수 있어요."}</Text></> : activeTab === "battle" ? <><Text style={styles.sectionTitle}>배틀 결과</Text>{battleQuery.isLoading ? <ActivityIndicator color="#B84CFF" /> : battleQuery.data?.items.length ? battleQuery.data.items.map((battle) => <View key={battle.roomId} style={styles.post}><Text style={styles.postTitle}>{battle.outcome === "win" ? "승리" : battle.outcome === "loss" ? "패배" : "무승부"} · {battle.topic}</Text><Text style={styles.postBody}>{battle.opponentName} · {battle.myScore} : {battle.opponentScore}</Text></View>) : <Text style={styles.muted}>아직 공개 배틀 결과가 없어요.</Text>}</> : <><Text style={styles.sectionTitle}>성장 기록</Text>{growthQuery.isLoading ? <ActivityIndicator color="#B84CFF" /> : growthQuery.data?.items.length ? growthQuery.data.items.map((record) => <View key={record.id} style={styles.post}><Text style={styles.postTitle}>{record.eventType}</Text><Text style={styles.postBody}>{record.reason ?? "STAR 성장 활동"} · +{record.xpDelta} XP</Text></View>) : <Text style={styles.muted}>아직 공개 성장 기록이 없어요.</Text>}</>}</View>
     </ScrollView>
   </NeonBackdrop>;
