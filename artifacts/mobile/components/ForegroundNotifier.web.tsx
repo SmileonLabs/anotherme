@@ -43,7 +43,9 @@ function claimEvent(dedupeKey: string): boolean {
 }
 
 function isVisible(): boolean {
-  return typeof document === "undefined" || document.visibilityState === "visible";
+  return (
+    typeof document === "undefined" || document.visibilityState === "visible"
+  );
 }
 
 // "Actively using" = this window is BOTH visible and focused. While true the
@@ -69,7 +71,9 @@ let audioCtx: AudioContext | null = null;
 function playChime(): void {
   try {
     const Ctx =
-      window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
     if (!Ctx) return;
     if (!audioCtx) audioCtx = new Ctx();
     const ctx = audioCtx;
@@ -101,7 +105,10 @@ function roomDisplayName(room: any, myId?: string): string {
     const other = room.members?.find((m: any) => m.id !== myId);
     return userDisplayName(other, "채팅방");
   }
-  return room.members?.map((m: any) => userDisplayName(m, "사용자")).join(", ") ?? "그룹 채팅";
+  return (
+    room.members?.map((m: any) => userDisplayName(m, "사용자")).join(", ") ??
+    "그룹 채팅"
+  );
 }
 
 function roomAvatar(room: any, myId?: string): string | null {
@@ -138,9 +145,13 @@ export function ForegroundNotifier() {
   const { data: rooms, refetch: refetchRooms } = useListRooms({
     query: { enabled: !!isSignedIn, queryKey: getListRoomsQueryKey() },
   });
-  const { data: requests, refetch: refetchRequests } = useListIncomingFriendRequests({
-    query: { enabled: !!isSignedIn, queryKey: getListIncomingFriendRequestsQueryKey() },
-  });
+  const { data: requests, refetch: refetchRequests } =
+    useListIncomingFriendRequests({
+      query: {
+        enabled: !!isSignedIn,
+        queryKey: getListIncomingFriendRequestsQueryKey(),
+      },
+    });
 
   const prevUnread = useRef<Map<string, number> | null>(null);
   const prevRequestIds = useRef<Set<string> | null>(null);
@@ -156,7 +167,8 @@ export function ForegroundNotifier() {
   // almost always exists (PushRegistrar keeps it live); the async check then
   // confirms/corrects.
   const pushReady = useRef(
-    typeof Notification !== "undefined" && Notification.permission === "granted",
+    typeof Notification !== "undefined" &&
+      Notification.permission === "granted",
   );
   useEffect(() => {
     let cancelled = false;
@@ -197,20 +209,22 @@ export function ForegroundNotifier() {
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slide = useRef(new Animated.Value(-120)).current;
 
-  // Independent polling so notifications surface no matter which tab is open.
+  // WebSocket events refresh room data immediately. Keep a slow fallback poll
+  // for reconnect gaps without hammering the expensive room-metadata endpoint.
   useEffect(() => {
     if (!isSignedIn) return;
     const t = setInterval(() => {
       refetchRooms();
       refetchRequests();
-    }, 5000);
+    }, 30000);
     return () => clearInterval(t);
   }, [isSignedIn, refetchRooms, refetchRequests]);
 
   // When the user taps an OS push notification, the service worker focuses this
   // window and posts the target URL. Navigate in-app (no reload / new window).
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
+      return;
     const onMessage = (e: MessageEvent) => {
       const data = e.data;
       if (data?.type === "data-changed") {
@@ -220,15 +234,23 @@ export function ForegroundNotifier() {
         refetchRequests();
         return;
       }
-      if (data?.type === "notification-navigate" && typeof data.url === "string") {
+      if (
+        data?.type === "notification-navigate" &&
+        typeof data.url === "string"
+      ) {
         // Avoid stacking a duplicate route when we're already on the target page.
-        if (typeof location !== "undefined" && location.pathname.endsWith(data.url)) return;
+        if (
+          typeof location !== "undefined" &&
+          location.pathname.endsWith(data.url)
+        )
+          return;
         // navigate() (not push()) so repeated taps don't pile up duplicate screens.
         router.navigate(data.url as any);
       }
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
-    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", onMessage);
   }, [router, refetchRooms, refetchRequests]);
 
   // Reset baselines on sign-out so a later sign-in doesn't replay old state.
@@ -241,7 +263,11 @@ export function ForegroundNotifier() {
 
   const dismiss = useCallback(() => {
     if (dismissTimer.current) clearTimeout(dismissTimer.current);
-    Animated.timing(slide, { toValue: -120, duration: 220, useNativeDriver: true }).start(() => {
+    Animated.timing(slide, {
+      toValue: -120,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => {
       setToast(null);
     });
   }, [slide]);
@@ -251,7 +277,11 @@ export function ForegroundNotifier() {
       toastKey.current += 1;
       setToast({ ...data, key: toastKey.current });
       slide.setValue(-120);
-      Animated.spring(slide, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
+      Animated.spring(slide, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 8,
+      }).start();
       if (dismissTimer.current) clearTimeout(dismissTimer.current);
       dismissTimer.current = setTimeout(dismiss, 5000);
     },
@@ -371,7 +401,10 @@ export function ForegroundNotifier() {
         onPress={() => {
           // navigate() de-dupes existing routes instead of stacking a new screen
           // every tap; skip entirely if we're already on the target page.
-          if (typeof location === "undefined" || !location.pathname.endsWith(toast.url)) {
+          if (
+            typeof location === "undefined" ||
+            !location.pathname.endsWith(toast.url)
+          ) {
             router.navigate(toast.url as any);
           }
           dismiss();
@@ -387,15 +420,23 @@ export function ForegroundNotifier() {
       >
         <Avatar uri={toast.avatarUri} name={toast.avatarName} size={42} />
         <View style={styles.text}>
-          <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
+          <Text
+            style={[styles.title, { color: colors.foreground }]}
+            numberOfLines={1}
+          >
             {toast.title}
           </Text>
-          <Text style={[styles.body, { color: colors.mutedForeground }]} numberOfLines={2}>
+          <Text
+            style={[styles.body, { color: colors.mutedForeground }]}
+            numberOfLines={2}
+          >
             {toast.body}
           </Text>
         </View>
         <Pressable hitSlop={10} onPress={dismiss} style={styles.close}>
-          <Text style={[styles.closeText, { color: colors.mutedForeground }]}>✕</Text>
+          <Text style={[styles.closeText, { color: colors.mutedForeground }]}>
+            ✕
+          </Text>
         </Pressable>
       </Pressable>
     </Animated.View>
