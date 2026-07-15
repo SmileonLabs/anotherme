@@ -46,7 +46,7 @@ export default function LifeQuestLobbyScreen() {
 
   const activeQuest = active?.quest ?? null;
   const promoted = !!torimia?.promoted || equippedStar?.stage === "promoted";
-  const missionLabel = promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const missionLabel = "성장 RPG";
   const themeOptions = promoted ? PROMOTED_LIFE_QUEST_THEMES : LIFE_QUEST_THEMES;
 
   const start = async (theme: LifeQuestThemeKey | null) => {
@@ -98,7 +98,7 @@ export default function LifeQuestLobbyScreen() {
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
           {promoted
             ? "공식 STAR로 무대와 팬클럽 활동을 확장해요. 팬들과 함께 세계관과 기록을 쌓아갑니다."
-            : "연습생 STAR로 꿈을 키우고 토르미아의 문을 준비해요. 문이 열리면 공식 STAR 활동과 팬클럽이 열립니다."}
+            : "장착한 NFT의 IP에 맞는 이야기와 미션으로 캐릭터를 성장시키세요."}
         </Text>
         <Text style={[styles.identityHint, { color: colors.primary }]}>{equippedStar ? `장착 STAR · ${equippedStar.displayName}` : "FAN · STAR NFT를 장착하면 STAR 미션이 열립니다"}</Text>
 
@@ -287,14 +287,14 @@ function TorimiaPanel({
         <View style={styles.torimiaTitleWrap}>
           <Text style={[styles.torimiaLabel, { color: colors.mutedForeground }]}>토르미아 시스템</Text>
           <Text style={[styles.torimiaTitle, { color: colors.foreground }]}>
-            {promoted ? `${starName} 공식 STAR 승급 완료` : `${starName}는 연습생 STAR예요`}
+            {promoted ? `${starName} 성장 단계가 열렸어요` : `${starName} 성장 RPG를 시작해보세요`}
           </Text>
         </View>
       </View>
       <Text style={[styles.torimiaBody, { color: colors.mutedForeground }]}>
         {promoted
-          ? "팬클럽 생성과 공식 STAR 미션이 열렸어요. 이제 팬들과 함께 성장할 수 있습니다."
-          : "연습생 STAR 미션을 완료하고 스탯을 키우면 토르미아의 문이 열립니다. 문이 열리면 공식 STAR로 승급해요."}
+          ? "팬들과 함께 장착한 IP의 세계관을 확장하고 캐릭터를 성장시켜 보세요."
+          : "성장 RPG 미션을 완료하면 장착한 NFT 캐릭터의 레벨과 스탯이 올라갑니다."}
       </Text>
       {requirements.length > 0 ? (
         <View style={styles.requirementList}>

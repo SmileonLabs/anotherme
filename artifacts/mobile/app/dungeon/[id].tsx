@@ -46,7 +46,7 @@ export default function LifeQuestPlayScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { equippedStar } = usePlayMode();
   const promoted = equippedStar?.stage === "promoted";
-  const missionLabel = promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const missionLabel = "성장 RPG";
 
   const { data: quest, error, isLoading, refetch } = useGetLifeQuest(id, {
     query: { queryKey: ["lifeQuest", id] },
@@ -181,7 +181,7 @@ export default function LifeQuestPlayScreen() {
         </View>
 
         <Text style={[styles.chooseLabel, { color: colors.mutedForeground }]}>
-          {promoted ? "공식 STAR로서 어떤 선택을 할까요?" : "연습생 STAR로서 어떤 선택을 할까요?"}
+          {"장착한 NFT 캐릭터로 어떤 선택을 해볼까요?"}
         </Text>
 
         {stage.choices.map((c) => {
@@ -308,7 +308,7 @@ function CompletionView({
 }) {
   const tMeta = themeMeta(quest.theme, promoted);
   const succeeded = quest.status === "completed";
-  const missionLabel = promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const missionLabel = "성장 RPG";
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader("완료")}
