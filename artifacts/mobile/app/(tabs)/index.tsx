@@ -443,8 +443,8 @@ export default function HomeScreen() {
     },
     {
       key: "daily_clan",
-      title: "팬 응원하기",
-      description: "비비에게 응원의\n메시지를 보내요",
+      title: "팬들의 이야기가 모이는 피드",
+      description: "STAR와 FAN의 활동을 공유하고\n서로 응원해 보세요.",
       icon: "heart" as const,
       color: "#F04CCB",
       gradient: ["rgba(85,8,73,0.66)", "rgba(13,5,28,0.98)", "rgba(5,4,18,1)"] as const,
