@@ -14,6 +14,7 @@ import {
   equipStarNft,
   getEquippedStarProfile,
   listStarProfiles,
+  revalidateStarProfiles,
 } from "../lib/starProfiles";
 import { ensurePlayModeState } from "../lib/fanStar";
 
@@ -31,6 +32,7 @@ const verifyBodySchema = z.object({
 
 const equipBodySchema = z.object({
   tokenId: z.string().trim().min(1).max(80),
+  collectionId: z.string().uuid().optional(),
 });
 const starProfileParamsSchema = z.object({ starProfileId: z.string().uuid() });
 
@@ -129,6 +131,10 @@ router.get("/users/me/star-profiles", requireAuth, async (req, res): Promise<voi
   res.json({ starProfiles: await listStarProfiles(req.dbUser!.id) });
 });
 
+router.post("/users/me/star-profiles/revalidate", requireAuth, async (req, res): Promise<void> => {
+  res.json({ starProfiles: await revalidateStarProfiles(req.dbUser!.id) });
+});
+
 router.post("/users/me/star-profiles/:starProfileId/activate", requireAuth, async (req, res): Promise<void> => {
   const parsed = starProfileParamsSchema.safeParse(req.params);
   if (!parsed.success) {
@@ -155,7 +161,7 @@ router.post("/users/me/star-nft/equip", requireAuth, async (req, res): Promise<v
   }
 
   try {
-    const equippedStar = await equipStarNft({ userId: req.dbUser!.id, tokenId: parsed.data.tokenId });
+    const equippedStar = await equipStarNft({ userId: req.dbUser!.id, tokenId: parsed.data.tokenId, collectionId: parsed.data.collectionId });
     res.json({ equippedStar, state: await ensurePlayModeState(req.dbUser!.id) });
   } catch (err) {
     if (handleStarProfileError(res, err)) return;

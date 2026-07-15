@@ -91,11 +91,11 @@ export function useWalletVerification() {
   });
 
   const equipMutation = useMutation({
-    mutationFn: (tokenId: string) =>
+    mutationFn: ({ tokenId, collectionId }: { tokenId: string; collectionId?: string }) =>
       customFetch<EquipStarResult>("/api/users/me/star-nft/equip", {
         method: "POST",
         responseType: "json",
-        body: JSON.stringify({ tokenId }),
+        body: JSON.stringify({ tokenId, collectionId }),
       }),
     onSuccess: (result) => {
       queryClient.setQueryData(playModeQueryKey, result.state);
@@ -110,7 +110,7 @@ export function useWalletVerification() {
     createChallenge: challengeMutation.mutateAsync,
     verifyWallet: verifyMutation.mutateAsync,
     refreshWallet: refreshMutation.mutateAsync,
-    equipStar: equipMutation.mutateAsync,
+    equipStar: (tokenId: string, collectionId?: string) => equipMutation.mutateAsync({ tokenId, collectionId }),
     isCreatingChallenge: challengeMutation.isPending,
     isVerifying: verifyMutation.isPending,
     isRefreshing: refreshMutation.isPending,

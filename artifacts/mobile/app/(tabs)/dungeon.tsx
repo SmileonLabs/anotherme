@@ -18,6 +18,7 @@ import {
 } from "@/constants/lifeQuest";
 import { usePlayMode } from "@/hooks/usePlayMode";
 import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
+import { useNftRpgContent } from "@/hooks/useNftCollections";
 
 export default function LifeQuestLobbyScreen() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function LifeQuestLobbyScreen() {
 
   const { mode, equippedStar, starUnlocked, setMode, isChanging } = usePlayMode();
   const missionReady = starUnlocked && !!equippedStar && mode === "star";
+  const { data: rpgContent } = useNftRpgContent(equippedStar?.collectionId ?? null);
   const { state: torimia, requirements, refetch: refetchTorimia, openTorimia, isOpening } = useTorimia();
   const { data: active, refetch, isRefetching } = useGetActiveLifeQuest({
     query: { enabled: missionReady, queryKey: ["activeLifeQuest", equippedStar?.id ?? "none"] },
@@ -81,6 +83,18 @@ export default function LifeQuestLobbyScreen() {
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
         }
       >
+        {missionReady && rpgContent ? (
+          <View style={[styles.rpgContentCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.rpgContentTitle, { color: colors.foreground }]}>{rpgContent.ipName} 성장 이야기</Text>
+            <Text style={[styles.rpgContentBody, { color: colors.mutedForeground }]}>{rpgContent.story.opening}</Text>
+            {rpgContent.missions.slice(0, 3).map((mission) => (
+              <View key={mission.id} style={styles.rpgMissionRow}>
+                <Feather name="target" size={15} color={colors.primary} />
+                <Text style={[styles.rpgMissionText, { color: colors.foreground }]}>{mission.title} · +{mission.xp} XP</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
           {promoted
             ? "공식 STAR로 무대와 팬클럽 활동을 확장해요. 팬들과 함께 세계관과 기록을 쌓아갑니다."
@@ -332,6 +346,11 @@ const styles = StyleSheet.create({
   brand: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, marginTop: 4, marginBottom: 14 },
   identityHint: { fontSize: 11, fontFamily: "Inter_600SemiBold", marginTop: -8, marginBottom: 12 },
+  rpgContentCard: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 16, gap: 9, marginBottom: 14 },
+  rpgContentTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  rpgContentBody: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  rpgMissionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rpgMissionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   gateCard: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,

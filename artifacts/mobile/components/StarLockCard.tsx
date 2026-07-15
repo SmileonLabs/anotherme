@@ -9,6 +9,7 @@ import { useColors } from "@/hooks/useColors";
 import { usePlayMode } from "@/hooks/usePlayMode";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { useWalletVerification, type WalletChallenge } from "@/hooks/useWalletVerification";
+import { useNftCollections } from "@/hooks/useNftCollections";
 
 function errorMessage(err: unknown, fallback: string) {
   if (err && typeof err === "object" && "data" in err) {
@@ -23,6 +24,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
   const { starUnlocked, equippedStar } = usePlayMode();
+  const { data: collections = [] } = useNftCollections();
   const {
     status,
     createChallenge,
@@ -39,6 +41,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
   const [signature, setSignature] = useState("");
   const [challenge, setChallenge] = useState<WalletChallenge | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | undefined>(equippedStar?.collectionId ?? undefined);
 
   useEffect(() => {
     if (!walletAddress && status?.walletAddress) setWalletAddress(status.walletAddress);
@@ -116,7 +119,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
     if (!value) return;
     setFeedback(null);
     try {
-      const result = await equipStar(value);
+      const result = await equipStar(value, selectedCollectionId);
       setFeedback(`${result.equippedStar.displayName} NFT를 장착했어요.`);
     } catch (err) {
       setFeedback(errorMessage(err, "NFT를 장착하지 못했어요."));
@@ -240,6 +243,22 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
 
       {starUnlocked && !equippedStar ? (
         <View style={styles.challengeBlock}>
+          {collections.length > 0 ? (
+            <View style={styles.collectionPicker}>
+              <Text style={[styles.label, { color: colors.foreground }]}>소환할 NFT 컬렉션</Text>
+              <View style={styles.collectionList}>
+                {collections.map((collection) => {
+                  const selected = selectedCollectionId === collection.id;
+                  return (
+                    <Pressable key={collection.id} onPress={() => setSelectedCollectionId(collection.id)} style={[styles.collectionChip, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + "18" : colors.background }]}>
+                      <Text style={[styles.collectionChipText, { color: selected ? colors.primary : colors.foreground }]}>{collection.ipName}</Text>
+                      <Text style={[styles.collectionChipMeta, { color: colors.mutedForeground }]}>{collection.category}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           <Text style={[styles.label, { color: colors.foreground }]}>장착할 NFT 번호</Text>
           <TextInput
             value={tokenId}
@@ -304,6 +323,11 @@ const styles = StyleSheet.create({
   },
   buttonText: { fontFamily: "Inter_700Bold", fontSize: 13 },
   challengeBlock: { gap: 10 },
+  collectionPicker: { gap: 8 },
+  collectionList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  collectionChip: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingVertical: 8 },
+  collectionChipText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  collectionChipMeta: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 2 },
   label: { fontFamily: "Inter_700Bold", fontSize: 13 },
   challengeText: { borderRadius: 14, fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 17, padding: 12 },
   secondaryButton: {

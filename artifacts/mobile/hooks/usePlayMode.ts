@@ -21,6 +21,11 @@ export interface StarProfileState {
   tokenId: string;
   contractAddress: string;
   chainId: number;
+  collectionId: string | null;
+  category: string;
+  ownershipStatus: string;
+  currentEvolutionStage: string;
+  metadata: Record<string, unknown> | null;
   imageUrl: string | null;
   stage: "aspiring" | "promoted";
   level: number;

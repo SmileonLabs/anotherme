@@ -28,3 +28,4 @@ export * from "./knowledge";
 export * from "./ontologySyncJobs";
 export * from "./dialogueEngine";
 export * from "./search";
+export * from "./nftRpg";

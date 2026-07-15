@@ -7,11 +7,13 @@ import {
   starProfilesTable,
   userPlayModesTable,
   userWalletsTable,
+  nftCollectionsTable,
   type StarProfile,
   type StarStats,
 } from "@workspace/db";
 import {
   checkNftTokenOwner,
+  checkNftTokenOwnerWithConfig,
   getNftConfig,
   getStarIdentityForToken,
   normalizeTokenId,
@@ -24,6 +26,11 @@ export interface StarProfileView {
   tokenId: string;
   contractAddress: string;
   chainId: number;
+  collectionId: string | null;
+  category: string;
+  ownershipStatus: string;
+  currentEvolutionStage: string;
+  metadata: Record<string, unknown> | null;
   imageUrl: string | null;
   stage: "aspiring" | "promoted";
   level: number;
@@ -56,6 +63,15 @@ function computeStarLevel(xp: number): number {
   return level;
 }
 
+function computeEvolutionStage(level: number): string {
+  if (level >= 50) return "ultimate";
+  if (level >= 30) return "signature";
+  if (level >= 20) return "advanced";
+  if (level >= 10) return "awakening";
+  if (level >= 5) return "growth_1";
+  return "base";
+}
+
 export function serializeStarProfile(profile: StarProfile | undefined | null): StarProfileView | null {
   if (!profile) return null;
   return {
@@ -65,6 +81,11 @@ export function serializeStarProfile(profile: StarProfile | undefined | null): S
     tokenId: profile.tokenId,
     contractAddress: profile.contractAddress,
     chainId: profile.chainId,
+    collectionId: profile.collectionId ?? null,
+    category: profile.category ?? "idol",
+    ownershipStatus: profile.ownershipStatus ?? "verified",
+    currentEvolutionStage: profile.currentEvolutionStage ?? "base",
+    metadata: profile.metadata ?? null,
     imageUrl: profile.imageUrl ?? null,
     stage: profile.stage === "promoted" ? "promoted" : "aspiring",
     level: profile.level,
@@ -102,6 +123,20 @@ export async function listStarProfiles(userId: string): Promise<StarProfileView[
     const view = serializeStarProfile(profile);
     return view ? [view] : [];
   });
+}
+
+export async function revalidateStarProfiles(userId: string): Promise<StarProfileView[]> {
+  const profiles = await db.select().from(starProfilesTable).where(eq(starProfilesTable.userId, userId));
+  for (const profile of profiles) {
+    try {
+      const owner = await checkNftTokenOwner(profile.tokenId);
+      const owned = Boolean(owner.owner && owner.owner === getAddress(profile.walletAddress));
+      await db.update(starProfilesTable).set({ ownershipStatus: owned ? "verified" : "lost", verifiedAt: owned ? new Date() : profile.verifiedAt, equippedAt: owned ? profile.equippedAt : null, updatedAt: new Date() }).where(eq(starProfilesTable.id, profile.id));
+    } catch {
+      await db.update(starProfilesTable).set({ ownershipStatus: "pending", updatedAt: new Date() }).where(eq(starProfilesTable.id, profile.id));
+    }
+  }
+  return listStarProfiles(userId);
 }
 
 export async function activateStarProfile(params: {
@@ -145,6 +180,7 @@ async function setStarUnlocked(userId: string): Promise<void> {
 export async function equipStarNft(params: {
   userId: string;
   tokenId: string;
+  collectionId?: string;
 }): Promise<StarProfileView> {
   let tokenId: string;
   try {
@@ -163,14 +199,25 @@ export async function equipStarNft(params: {
     throw new StarProfileError("wallet_required", "먼저 지갑을 인증해 주세요.");
   }
 
-  const config = getNftConfig();
+  let collection: (typeof nftCollectionsTable.$inferSelect & { rpcUrl?: string | null }) | null = null;
+  if (params.collectionId) {
+    const [selected] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, params.collectionId)).limit(1) as Array<typeof nftCollectionsTable.$inferSelect & { rpcUrl?: string | null }>;
+    if (!selected || !["approved", "published"].includes(selected.status)) {
+      throw new StarProfileError("config_missing", "승인된 NFT 컬렉션만 소환할 수 있어요.");
+    }
+    collection = selected;
+  }
+  const envConfig = getNftConfig();
+  const config = collection
+    ? { configured: Boolean(collection.rpcUrl && collection.contractAddress && collection.chainId), rpcUrl: collection.rpcUrl ?? null, contractAddress: (() => { try { return getAddress(collection!.contractAddress) as `0x${string}`; } catch { return null; } })(), chainId: collection.chainId }
+    : envConfig;
   if (!config.configured || !config.contractAddress || !config.chainId) {
     throw new StarProfileError("config_missing", "NFT 컨트랙트 설정 후 장착할 수 있어요.");
   }
 
   let owner;
   try {
-    owner = await checkNftTokenOwner(tokenId);
+    owner = await checkNftTokenOwnerWithConfig(tokenId, config);
   } catch {
     throw new StarProfileError("nft_check_failed", "NFT 소유자를 확인하지 못했어요.");
   }
@@ -183,7 +230,9 @@ export async function equipStarNft(params: {
     throw new StarProfileError("token_not_owned", "인증한 지갑이 이 NFT를 보유하고 있지 않아요.");
   }
 
-  const identity = getStarIdentityForToken(tokenId);
+  const identity = collection
+    ? { starKey: `${collection.ipName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${tokenId}`, displayName: `${collection.ipName} #${tokenId}` }
+    : getStarIdentityForToken(tokenId);
   const now = new Date();
   const [profile] = await db.transaction(async (tx) => {
     await tx
@@ -198,6 +247,9 @@ export async function equipStarNft(params: {
         walletAddress,
         chainId: config.chainId!,
         contractAddress: config.contractAddress!,
+        collectionId: collection?.id ?? null,
+        category: collection?.category ?? "idol",
+        metadata: collection ? { ipName: collection.ipName, worldStyle: collection.worldStyle, roleName: collection.roleName } : null,
         tokenId,
         starKey: identity.starKey,
         displayName: identity.displayName,
@@ -209,6 +261,9 @@ export async function equipStarNft(params: {
         set: {
           userId: params.userId,
           walletAddress,
+          collectionId: collection?.id ?? null,
+          category: collection?.category ?? "idol",
+          metadata: collection ? { ipName: collection.ipName, worldStyle: collection.worldStyle, roleName: collection.roleName } : null,
           starKey: identity.starKey,
           displayName: identity.displayName,
           verifiedAt: now,
@@ -299,7 +354,7 @@ export async function recordStarActivity(params: {
 
     await tx
       .update(starProfilesTable)
-      .set({ xp: afterXp, level: afterLevel, stats: nextStats })
+      .set({ xp: afterXp, level: afterLevel, currentEvolutionStage: computeEvolutionStage(afterLevel), stats: nextStats })
       .where(eq(starProfilesTable.id, locked.id));
     granted = true;
   });

@@ -133,3 +133,18 @@ export async function checkNftTokenOwner(tokenId: string): Promise<{
   });
   return { configured: true, owner: getAddress(owner) };
 }
+
+export async function checkNftTokenOwnerWithConfig(tokenId: string, config: NftConfig): Promise<{
+  configured: boolean;
+  owner: Address | null;
+}> {
+  const client = getClient(config);
+  if (!client || !config.contractAddress) return { configured: false, owner: null };
+  const owner = await client.readContract({
+    address: config.contractAddress,
+    abi: erc721Abi,
+    functionName: "ownerOf",
+    args: [BigInt(normalizeTokenId(tokenId))],
+  });
+  return { configured: true, owner: getAddress(owner) };
+}

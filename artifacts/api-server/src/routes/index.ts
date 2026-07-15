@@ -29,6 +29,7 @@ import fanCommunitiesRouter from "./fanCommunities";
 import fanCommunityProgramsRouter from "./fanCommunityPrograms";
 import starFeedAdminRouter from "./starFeedAdmin";
 import searchAdminRouter from "./searchAdmin";
+import nftCollectionsRouter from "./nftCollections";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(fanCommunitiesRouter);
 router.use(fanCommunityProgramsRouter);
 router.use(starFeedAdminRouter);
 router.use(searchAdminRouter);
+router.use(nftCollectionsRouter);
 
 export default router;

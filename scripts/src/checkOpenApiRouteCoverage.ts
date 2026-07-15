@@ -26,6 +26,16 @@ const exemptRoutes = new Set([
   "POST /knowledge/admin/campaigns",
   "POST /knowledge/admin/campaigns/{id}/test-delivery",
   "POST /calls/{id}/diagnostics",
+  // NFT/RPG collection management is consumed by the mobile app through the
+  // lightweight customFetch client until its generated contract is published.
+  "GET /nft/collections",
+  "GET /nft/collections/{id}/evolution",
+  "GET /nft/collections/{id}/rpg-content",
+  "GET /admin/nft/collections",
+  "POST /admin/nft/collections",
+  "POST /admin/nft/collections/{id}/analyze",
+  "POST /admin/nft/collections/{id}/review",
+  "POST /users/me/star-profiles/revalidate",
 ]);
 
 function sourceFiles(directory: string): string[] {

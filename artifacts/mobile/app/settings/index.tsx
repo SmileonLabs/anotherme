@@ -234,6 +234,13 @@ export default function SettingsScreen() {
                 }
                 last
               />
+              <SettingsRow
+                icon="box"
+                label="NFT 컬렉션 관리"
+                sublabel="허용 IP 등록과 성장 RPG 초안 검토"
+                onPress={() => router.push("/settings/nft-admin" as never)}
+                last
+              />
             </View>
           </>
         ) : null}

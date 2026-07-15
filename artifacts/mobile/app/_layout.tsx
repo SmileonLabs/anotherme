@@ -272,6 +272,10 @@ function RootStackNav() {
       />
       <Stack.Screen name="settings/ontology" options={{ headerShown: false }} />
       <Stack.Screen
+        name="settings/nft-admin"
+        options={{ title: "NFT 컬렉션 관리", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
         name="settings/knowledge-admin"
         options={{ title: "AI 지식 관리자", headerBackTitle: "Back" }}
       />
