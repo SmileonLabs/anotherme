@@ -8,11 +8,12 @@ import {
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { Platform, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -101,6 +102,7 @@ function ApiAuthBridge({ children }: { children: React.ReactNode }) {
 function RootStackNav() {
   const colors = useColors();
   const { scheme } = useThemeMode();
+  const router = useRouter();
   const [isIOSStandalonePwa, setIsIOSStandalonePwa] = useState(() => getIsIOSStandalonePwa());
 
   useEffect(() => {
@@ -131,6 +133,19 @@ function RootStackNav() {
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.foreground,
         headerTitleStyle: { color: colors.foreground },
+        headerShadowVisible: false,
+        headerLeft: ({ canGoBack }) =>
+          canGoBack ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="뒤로가기"
+              hitSlop={10}
+              onPress={() => router.back()}
+              style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1, marginLeft: 4 })}
+            >
+              <Feather name="chevron-left" size={27} color={colors.foreground} />
+            </Pressable>
+          ) : null,
         contentStyle: { backgroundColor: colors.background },
       }}
     >

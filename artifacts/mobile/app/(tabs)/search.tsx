@@ -245,7 +245,7 @@ export default function SearchScreen() {
             style={({ pressed }) => [styles.heroCrop, pressed && styles.pressed]}
           >
             <Image
-              source={require("../../assets/images/search-mockup.png")}
+              source={require("../../assets/images/search-star-banner.png")}
               style={styles.heroSprite}
               contentFit="cover"
               contentPosition={{ top: "15%" }}
@@ -413,6 +413,7 @@ const styles = StyleSheet.create({
   starResultCard: { flex: 1, minWidth: "46%", minHeight: 58, paddingHorizontal: 7, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 12, backgroundColor: "rgba(6,6,18,0.78)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(126,72,198,0.25)" },
   starResultMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 },
   starResultImage: { width: 44, height: 44, borderRadius: 10, backgroundColor: "#111020" },
+  personCopy: { flex: 1, minWidth: 0, gap: 2 },
   followButton: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "rgba(123,53,255,0.20)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(164,111,255,0.55)" },
   followButtonText: { color: neon.text, fontFamily: "Inter_500Medium", fontSize: 9 },
   personCard: {
