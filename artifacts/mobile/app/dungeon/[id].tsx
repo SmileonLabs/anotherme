@@ -100,7 +100,7 @@ export default function LifeQuestPlayScreen() {
   const renderHeader = (title: string) => (
     <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
       <Pressable onPress={goBack} hitSlop={10} style={styles.headerBtn}>
-        <Feather name="chevron-left" size={26} color={colors.foreground} />
+        <Feather name="chevron-left" size={26} color={colors.primary} />
       </Pressable>
       <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
         {title}

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import {
   db,
   fanProfilesTable,
@@ -6,6 +6,8 @@ import {
   type FanProfile,
   type PlayMode,
   type UserPlayMode,
+  starProfileFollowsTable,
+  starProfilesTable,
 } from "@workspace/db";
 import { listStarProfiles, type StarProfileView } from "./starProfiles";
 
@@ -17,6 +19,10 @@ export interface PlayModeState {
     xp: number;
     stats: FanProfile["stats"];
   };
+  social: {
+    followerCount: number;
+    followingCount: number;
+  };
   equippedStar: StarProfileView | null;
   starProfiles: StarProfileView[];
 }
@@ -27,6 +33,15 @@ function normalizeMode(value: string | null | undefined): PlayMode {
 
 async function serialize(mode: UserPlayMode, fanProfile: FanProfile): Promise<PlayModeState> {
   const starProfiles = await listStarProfiles(mode.userId);
+  const [followers] = await db
+    .select({ value: count() })
+    .from(starProfileFollowsTable)
+    .innerJoin(starProfilesTable, eq(starProfilesTable.id, starProfileFollowsTable.starProfileId))
+    .where(eq(starProfilesTable.userId, mode.userId));
+  const [following] = await db
+    .select({ value: count() })
+    .from(starProfileFollowsTable)
+    .where(eq(starProfileFollowsTable.followerUserId, mode.userId));
   const equippedStar = starProfiles.find((profile) => profile.equippedAt !== null) ?? null;
   const starUnlocked = starProfiles.length > 0;
   const currentMode = starUnlocked ? normalizeMode(mode.currentMode) : "fan";
@@ -37,6 +52,10 @@ async function serialize(mode: UserPlayMode, fanProfile: FanProfile): Promise<Pl
       level: fanProfile.level,
       xp: fanProfile.xp,
       stats: fanProfile.stats,
+    },
+    social: {
+      followerCount: Number(followers?.value ?? 0),
+      followingCount: Number(following?.value ?? 0),
     },
     equippedStar,
     starProfiles,

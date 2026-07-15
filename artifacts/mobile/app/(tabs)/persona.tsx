@@ -18,6 +18,7 @@ import { NeonBackdrop } from "@/components/NeonUI";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { usePlayMode, type FanProfileState } from "@/hooks/usePlayMode";
+import { FAN_STAT_META as CANONICAL_FAN_STAT_META } from "@/constants/fanStats";
 import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
 import { useWalletVerification, type WalletStatus } from "@/hooks/useWalletVerification";
 import { usePersonaAnalysis } from "@/hooks/usePersonaAnalysis";
@@ -191,6 +192,7 @@ export function PersonaScreen({
   const {
     mode,
     fanProfile,
+    social,
     starUnlocked,
     equippedStar,
     starProfiles,
@@ -248,7 +250,7 @@ export function PersonaScreen({
             onPress={() => router.back()}
             style={({ pressed }) => [styles.screenBackButton, pressed && { opacity: 0.55 }]}
           >
-            <Feather name="chevron-left" size={26} color={colors.foreground} />
+            <Feather name="chevron-left" size={26} color={colors.primary} />
           </Pressable>
         ) : null}
         <Text style={[styles.screenTitle, { color: colors.foreground }]}>
@@ -282,6 +284,7 @@ export function PersonaScreen({
                 level={fanLevel}
                 xp={fanProfile?.xp ?? 0}
                 stats={fanProfile?.stats}
+                social={social}
                 activityCount={recentEvents.length}
                 walletStatus={walletStatus}
                 mode={mode}
@@ -610,7 +613,7 @@ export function PersonaScreen({
               xp={fanProfile?.xp ?? 0}
               xpLabel="FAN XP"
               stats={fanProfile?.stats}
-              statMeta={FAN_STAT_META}
+              statMeta={CANONICAL_FAN_STAT_META}
             />
 
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>STAR 성장</Text>
@@ -765,6 +768,7 @@ function MyDashboard({
   onNotifications,
   onAccount,
   onAnalyze,
+  social,
 }: {
   nickname: string;
   avatarUri?: string | null;
@@ -772,6 +776,7 @@ function MyDashboard({
   level: number;
   xp: number;
   stats?: FanProfileState["stats"];
+  social: { followerCount: number; followingCount: number };
   activityCount: number;
   walletStatus?: WalletStatus;
   mode: "fan" | "star";
@@ -802,12 +807,7 @@ function MyDashboard({
         { icon: "link" as const, label: "유대", value: equippedStar?.stats.bond ?? 0, color: "#39D9FF" },
         { icon: "book-open" as const, label: "세계관", value: equippedStar?.stats.lore ?? 0, color: "#D679FF" },
       ]
-    : [
-        { icon: "heart" as const, label: "팬심", value: stats?.fanPower ?? 0, color: "#FF62B6" },
-        { icon: "volume-2" as const, label: "응원력", value: stats?.supportPower ?? 0, color: "#39D9FF" },
-        { icon: "message-circle" as const, label: "공감력", value: stats?.empathy ?? 0, color: "#54E8DF" },
-        { icon: "book-open" as const, label: "스토리", value: stats?.story ?? 0, color: "#D679FF" },
-      ];
+    : CANONICAL_FAN_STAT_META.map((stat) => ({ ...stat, value: stats?.[stat.key] ?? 0 }));
   const inventoryItems = [
     {
       key: "fan",
@@ -846,8 +846,8 @@ function MyDashboard({
           <Text style={styles.dashboardIntro} numberOfLines={2}>{intro}</Text>
           <View style={styles.dashboardSocialRow}>
             <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>게시물</Text><Text style={styles.dashboardSocialValue}>{activityCount}</Text></View>
-            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>팔로워</Text><Text style={styles.dashboardSocialValue}>{stats?.fanPower ?? 0}</Text></View>
-            <View style={[styles.dashboardSocial, styles.dashboardSocialLast]}><Text style={styles.dashboardSocialLabel}>팔로잉</Text><Text style={styles.dashboardSocialValue}>{stats?.supportPower ?? 0}</Text></View>
+            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>팔로워</Text><Text style={styles.dashboardSocialValue}>{social.followerCount}</Text></View>
+            <View style={[styles.dashboardSocial, styles.dashboardSocialLast]}><Text style={styles.dashboardSocialLabel}>팔로잉</Text><Text style={styles.dashboardSocialValue}>{social.followingCount}</Text></View>
           </View>
         </View>
       </LinearGradient>

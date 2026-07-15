@@ -41,6 +41,10 @@ export interface PlayModeState {
   currentMode: PlayMode;
   starUnlocked: boolean;
   fanProfile: FanProfileState;
+  social: {
+    followerCount: number;
+    followingCount: number;
+  };
   equippedStar: StarProfileState | null;
   starProfiles: StarProfileState[];
 }
@@ -80,6 +84,7 @@ export function usePlayMode() {
     state: query.data,
     mode: query.data?.currentMode ?? "fan",
     fanProfile: query.data?.fanProfile,
+    social: query.data?.social ?? { followerCount: 0, followingCount: 0 },
     equippedStar: query.data?.equippedStar ?? null,
     starProfiles: query.data?.starProfiles ?? [],
     starUnlocked: query.data?.starUnlocked ?? false,

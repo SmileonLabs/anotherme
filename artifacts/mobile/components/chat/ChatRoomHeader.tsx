@@ -51,7 +51,7 @@ export function ChatRoomHeader({
         hitSlop={10}
         style={({ pressed }) => [styles.headerBack, { opacity: pressed ? 0.6 : 1 }]}
       >
-        <Feather name="chevron-left" size={28} color={colors.foreground} />
+        <Feather name="chevron-left" size={28} color={colors.primary} />
       </Pressable>
 
       <View style={styles.headerCenter}>

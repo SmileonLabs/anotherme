@@ -285,7 +285,7 @@ export default function BattleScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
         <Pressable onPress={goBack} hitSlop={8} style={styles.backBtn}>
-          <Feather name="chevron-left" size={26} color={colors.foreground} />
+          <Feather name="chevron-left" size={26} color={colors.primary} />
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>

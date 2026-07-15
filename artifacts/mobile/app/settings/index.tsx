@@ -126,7 +126,7 @@ export default function SettingsScreen() {
             { opacity: pressed ? 0.5 : 1 },
           ]}
         >
-          <Feather name="chevron-left" size={26} color={colors.foreground} />
+          <Feather name="chevron-left" size={26} color={colors.primary} />
         </Pressable>
         <Text style={[styles.title, { color: colors.foreground }]}>설정</Text>
       </View>

@@ -33,6 +33,7 @@ import { usePlayMode } from "@/hooks/usePlayMode";
 import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
 import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
 import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
+import { FAN_STAT_META } from "@/constants/fanStats";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 const FAN_CHARACTER_IMAGE = require("../../assets/images/fan-slime.png");
@@ -388,13 +389,7 @@ export default function HomeScreen() {
         { label: "유대", value: equippedStar?.stats.bond ?? 0, icon: "message-circle" as const, color: "#38BDF8" },
         { label: "세계관", value: equippedStar?.stats.lore ?? 0, icon: "book-open" as const, color: "#FACC15" },
       ]
-    : [
-        { label: "친밀도", value: fanProfile?.level ?? 1, icon: "heart" as const, color: "#F472B6" },
-        { label: "팬심", value: fanProfile?.stats.fanPower ?? 0, icon: "star" as const, color: "#A78BFA" },
-        { label: "응원력", value: fanProfile?.stats.supportPower ?? 0, icon: "volume-2" as const, color: "#38BDF8" },
-        { label: "공감력", value: fanProfile?.stats.empathy ?? 0, icon: "message-circle" as const, color: "#5EEAD4" },
-        { label: "스토리", value: fanProfile?.stats.story ?? 0, icon: "book-open" as const, color: "#FACC15" },
-      ];
+    : FAN_STAT_META.map((stat) => ({ ...stat, value: fanProfile?.stats[stat.key] ?? 0 }));
   const openStarRegistration = () => {
     router.push({ pathname: "/(tabs)/persona", params: { focus: "star-nft" } } as never);
   };
@@ -478,7 +473,6 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.brand}>Another Me</Text>
           <Text
             style={[styles.greeting, { color: colors.foreground }]}
             numberOfLines={1}
@@ -505,7 +499,7 @@ export default function HomeScreen() {
             accessibilityLabel="친구"
             hitSlop={8}
             onPress={() => router.push("/friends")}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
+            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1, display: "none" }]}
           >
             <Feather name="users" size={22} color={colors.foreground} />
           </Pressable>
@@ -1063,14 +1057,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 18,
-    paddingBottom: 14,
+    paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(157, 99, 255, 0.18)",
   },
   headerLeft: { flex: 1, paddingRight: 12 },
-  brand: { color: neon.cyan, fontFamily: "Inter_800ExtraBold", fontSize: 24, marginBottom: 18, letterSpacing: -0.7, textShadowColor: "rgba(125,211,252,0.38)", textShadowRadius: 12 },
   greeting: { fontSize: 22, fontFamily: "Inter_500Medium", letterSpacing: -0.5 },
-  greetingSub: { fontSize: 13.5, fontFamily: "Inter_500Medium", marginTop: 7 },
+  greetingSub: { fontSize: 13.5, fontFamily: "Inter_500Medium", marginTop: 4 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   iconBtn: { padding: 6 },
   iconDot: {

@@ -108,18 +108,18 @@ export default function ChatsScreen() {
           <Pressable
             accessibilityLabel="새 토크배틀"
             hitSlop={8}
-            onPress={() => router.push("/battle/create")}
+            onPress={() => router.push("/friends")}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
           >
-            <Feather name="mic" size={22} color={colors.primary} />
+            <Feather name="user-plus" size={22} color={colors.foreground} />
           </Pressable>
           <Pressable
             accessibilityLabel="STAR 미션"
             hitSlop={8}
-            onPress={() => router.push("/(tabs)/dungeon")}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
+            onPress={() => router.push("/group/create")}
+            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1, display: "none" }]}
           >
-            <Feather name="compass" size={22} color={colors.primary} />
+            <Feather name="users" size={22} color={colors.foreground} />
           </Pressable>
           <Pressable
             accessibilityLabel="새 그룹 채팅"

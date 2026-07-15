@@ -123,7 +123,7 @@ export default function FriendsScreen() {
             onPress={() => router.back()}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
           >
-            <Feather name="chevron-left" size={26} color={colors.foreground} />
+            <Feather name="chevron-left" size={26} color={colors.primary} />
           </Pressable>
           <Text style={[styles.brand, { color: colors.foreground }]}>친구</Text>
         </View>

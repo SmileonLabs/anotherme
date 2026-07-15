@@ -51,7 +51,7 @@
       "shortName": "anotherme",
       "description": "AI가 판정하는 말빨 배틀!",
       "backgroundColor": "#0A0A0A",
-      "themeColor": "#00F7AF",
+      "themeColor": "#000000",
       "lang": "ko",
       "display": "standalone",
       "orientation": "portrait"

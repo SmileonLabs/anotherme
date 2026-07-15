@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Avatar } from "@/components/Avatar";
@@ -19,6 +19,14 @@ import { customFetch } from "@workspace/api-client-react";
 type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean };
 type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; displayName: string; imageUrl: string | null; stage: string; ownerId: string | null; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
 type TrendingResponse = { items: Array<{ term: string; rank: number; change: number; resultCount: number }>; generatedAt: string };
+type SearchType = "all" | "users" | "stars" | "posts";
+
+const SEARCH_FILTERS: Array<{ key: SearchType; label: string; icon: React.ComponentProps<typeof Feather>["name"] }> = [
+  { key: "all", label: "전체", icon: "search" },
+  { key: "users", label: "사용자", icon: "user" },
+  { key: "stars", label: "STAR", icon: "star" },
+  { key: "posts", label: "게시물", icon: "file-text" },
+];
 
 const POST_TAGS: Record<StarFeedPostKind, string[]> = {
   official: ["Another Me", "공식"],
@@ -159,6 +167,9 @@ export default function SearchScreen() {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [debouncedQuery, setDebouncedQuery] = React.useState("");
+  const [searchType, setSearchType] = React.useState<SearchType>("all");
+  const [pendingSearchType, setPendingSearchType] = React.useState<SearchType>("all");
+  const [filterOpen, setFilterOpen] = React.useState(false);
   React.useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => clearTimeout(timer);
@@ -172,9 +183,9 @@ export default function SearchScreen() {
     onSuccess: (result, variables) => setFollowOverrides((current) => ({ ...current, [variables.id]: result.following })),
   });
   const searchQuery = useQuery({
-    queryKey: ["global-search", normalized],
+    queryKey: ["global-search", normalized, searchType],
     enabled: normalized.length >= 2,
-    queryFn: () => customFetch<SearchResponse>(`/api/search?q=${encodeURIComponent(normalized)}&type=all&limit=20`, { responseType: "json" }),
+    queryFn: () => customFetch<SearchResponse>(`/api/search?q=${encodeURIComponent(normalized)}&type=${searchType}&limit=20`, { responseType: "json" }),
     staleTime: 30_000,
   });
   const trendingQuery = useQuery({
@@ -190,9 +201,15 @@ export default function SearchScreen() {
     [normalized, searchQuery.data?.users, users],
   );
   const matchedPosts = React.useMemo(
-    () => posts.filter((post) => !normalized || `${post.title} ${post.body} ${post.author.nickname}`.toLocaleLowerCase().includes(normalized)).slice(0, 6),
-    [normalized, posts],
+    () => searchType === "all" ? posts.filter((post) => !normalized || `${post.title} ${post.body} ${post.author.nickname}`.toLocaleLowerCase().includes(normalized)).slice(0, 6) : [],
+    [normalized, posts, searchType],
   );
+
+  const selectedFilterLabel = SEARCH_FILTERS.find((item) => item.key === searchType)?.label ?? "전체";
+  const applyFilter = () => {
+    setSearchType(pendingSearchType);
+    setFilterOpen(false);
+  };
 
   return (
     <NeonBackdrop>
@@ -212,8 +229,11 @@ export default function SearchScreen() {
             autoCapitalize="none"
             returnKeyType="search"
           />
-          <Pressable accessibilityRole="button" accessibilityLabel="검색 필터" onPress={() => query && setQuery("")} hitSlop={12}>
-            <Feather name={query ? "x" : "sliders"} size={19} color="#B14CFF" />
+          {query ? <Pressable accessibilityRole="button" accessibilityLabel="검색어 지우기" onPress={() => setQuery("")} hitSlop={12}>
+            <Feather name="x" size={19} color="#B14CFF" />
+          </Pressable> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={`검색 필터: ${selectedFilterLabel}`} onPress={() => { setPendingSearchType(searchType); setFilterOpen(true); }} hitSlop={12}>
+            <Feather name="sliders" size={19} color="#B14CFF" />
           </Pressable>
         </View>
 
@@ -221,7 +241,7 @@ export default function SearchScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="연습생 STAR 미션으로 이동"
-            onPress={() => router.push("/(tabs)/dungeon" as never)}
+            onPress={() => router.push("/(tabs)/persona" as never)}
             style={({ pressed }) => [styles.heroCrop, pressed && styles.pressed]}
           >
             <Image
@@ -230,6 +250,14 @@ export default function SearchScreen() {
               contentFit="cover"
               contentPosition={{ top: "15%" }}
             />
+            <View pointerEvents="none" style={styles.heroBannerOverlay}>
+              <View style={styles.heroBannerCopy}>
+                <View style={styles.heroBannerEyebrow}><Feather name="star" size={14} color="#FFD84D" /><Text style={styles.heroBannerEyebrowText}>STAR 성장 시스템</Text></View>
+                <Text style={styles.heroBannerTitle}>NFT로 STAR 소환</Text>
+                <Text style={styles.heroBannerSubtitle}>나만의 STAR를 성장 시키세요.</Text>
+                <View style={styles.heroBannerCta}><Text style={styles.heroBannerCtaText}>STAR 등록하기</Text><Feather name="arrow-right" size={14} color="#FFFFFF" /></View>
+              </View>
+            </View>
           </Pressable>
         ) : null}
 
@@ -251,24 +279,27 @@ export default function SearchScreen() {
 
         <SearchSection
           icon="star"
-          title="추천 STAR / FAN"
+          title={normalized ? "검색 결과" : "추천 STAR / FAN"}
           action={<Pressable onPress={() => router.push("/friends/add")}><Text style={styles.more}>더보기 〉</Text></Pressable>}
         >
           {usersLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : (
-            <View style={styles.peopleRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.peopleRow}
+              keyboardShouldPersistTaps="handled"
+            >
               {matchedUsers.map((user) => (
                 <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ({ pathname: "/profile/[userId]", params: { userId: user.id } } as never))} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
-                  <Avatar uri={user.profileImageUrl} name={user.nickname} size={46} />
-                  <View style={styles.personCopy}>
-                    <View style={styles.personNameRow}>
-                      <Text style={styles.personName} numberOfLines={1}>{user.nickname}</Text>
-                      <View style={styles.verified}><Feather name="check" size={8} color="#FFFFFF" /></View>
-                    </View>
-                    <Text style={styles.personRole}>{user.isMe ? "내 프로필" : "사용자"}</Text>
+                  <View style={styles.personAvatarWrap}>
+                    <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
+                    <View style={styles.verified}><Feather name="check" size={8} color="#FFFFFF" /></View>
                   </View>
+                  <Text style={styles.personName} numberOfLines={1}>{user.nickname}</Text>
+                  <Text style={styles.personRole}>{user.isMe ? "내 프로필" : "사용자"}</Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
           )}
           {normalized.length >= 2 && searchQuery.isFetching ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : null}
           {normalized.length >= 2 && searchQuery.data?.starProfiles.length ? (
@@ -293,14 +324,34 @@ export default function SearchScreen() {
           ) : null}
         </SearchSection>
 
-        {normalized.length >= 2 && searchQuery.data?.posts.length ? (
+        {normalized.length >= 2 ? searchQuery.isLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : searchQuery.data?.posts.length ? (
           <View style={styles.feedList}>{searchQuery.data.posts.slice(0, 6).map((post) => <SearchPostCard key={post.id} post={post} onPress={() => router.push({ pathname: "/(tabs)/feed", params: { postId: post.id } } as never)} />)}</View>
-        ) : feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
+        ) : <Text style={styles.empty}>{selectedFilterLabel} 검색 결과가 없어요.</Text> : feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
           <View style={styles.feedList}>
             {matchedPosts.map((post) => <FeedPreview key={post.id} post={post} onPress={() => router.push("/(tabs)/feed" as never)} />)}
           </View>
         ) : <Text style={styles.empty}>검색 결과가 없습니다.</Text>}
       </CustomScrollView>
+      <Modal visible={filterOpen} transparent animationType="slide" onRequestClose={() => setFilterOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterOpen(false)} accessibilityLabel="필터 닫기" />
+          <View style={styles.filterSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>검색 필터</Text>
+              <Pressable onPress={() => setFilterOpen(false)} hitSlop={12}><Feather name="x" size={20} color={neon.muted} /></Pressable>
+            </View>
+            {SEARCH_FILTERS.map((filter) => {
+              const active = pendingSearchType === filter.key;
+              return <Pressable key={filter.key} onPress={() => setPendingSearchType(filter.key)} style={[styles.filterOption, active && styles.filterOptionActive]}>
+                <View style={styles.filterOptionLabel}><Feather name={filter.icon} size={17} color={active ? neon.purple : neon.muted} /><Text style={[styles.filterOptionText, active && styles.filterOptionTextActive]}>{filter.label}</Text></View>
+                <Feather name={active ? "check-circle" : "circle"} size={18} color={active ? neon.purple : neon.muted} />
+              </Pressable>;
+            })}
+            <Pressable onPress={applyFilter} style={styles.applyFilterButton}><Text style={styles.applyFilterText}>적용</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
     </NeonBackdrop>
   );
 }
@@ -329,6 +380,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#050410",
   },
   heroSprite: { width: "100%", height: "100%" },
+  heroBannerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "center", paddingHorizontal: 18, backgroundColor: "rgba(5,4,16,0.32)" },
+  heroBannerCopy: { gap: 4 },
+  heroBannerEyebrow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  heroBannerEyebrowText: { color: "#FFD84D", fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  heroBannerTitle: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 21, letterSpacing: -0.4 },
+  heroBannerSubtitle: { color: "#D8D0EC", fontFamily: "Inter_400Regular", fontSize: 12 },
+  heroBannerCta: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, marginTop: 7, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 12, backgroundColor: "#7138FF" },
+  heroBannerCtaText: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 10 },
   sectionCard: {
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
@@ -349,7 +408,7 @@ const styles = StyleSheet.create({
   trendingItem: { minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 2 },
   trendingRank: { color: neon.magenta, fontFamily: "Inter_700Bold", fontSize: 11 },
   trendingText: { color: "#B9B5C1", fontFamily: "Inter_400Regular", fontSize: 10, flexShrink: 1 },
-  peopleRow: { flexDirection: "row", gap: 6, marginTop: 4 },
+  peopleRow: { flexDirection: "row", gap: 8, paddingRight: 2, paddingTop: 4 },
   starResultRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   starResultCard: { flex: 1, minWidth: "46%", minHeight: 58, paddingHorizontal: 7, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 12, backgroundColor: "rgba(6,6,18,0.78)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(126,72,198,0.25)" },
   starResultMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 },
@@ -357,23 +416,22 @@ const styles = StyleSheet.create({
   followButton: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "rgba(123,53,255,0.20)", borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(164,111,255,0.55)" },
   followButtonText: { color: neon.text, fontFamily: "Inter_500Medium", fontSize: 9 },
   personCard: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 57,
-    paddingHorizontal: 6,
-    flexDirection: "row",
+    width: 68,
+    minHeight: 88,
+    paddingHorizontal: 4,
+    paddingVertical: 7,
     alignItems: "center",
-    gap: 7,
+    justifyContent: "flex-start",
+    gap: 3,
     borderRadius: 12,
     backgroundColor: "rgba(6,6,18,0.78)",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(126,72,198,0.25)",
   },
-  personCopy: { flex: 1, minWidth: 0 },
-  personNameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  personName: { color: neon.text, fontFamily: "Inter_500Medium", fontSize: 10, flexShrink: 1 },
-  personRole: { color: neon.magenta, fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 4 },
-  verified: { width: 12, height: 12, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#7B35FF" },
+  personAvatarWrap: { position: "relative", width: 44, height: 44, marginBottom: 1 },
+  personName: { width: "100%", color: neon.text, fontFamily: "Inter_500Medium", fontSize: 9, textAlign: "center" },
+  personRole: { color: neon.magenta, fontFamily: "Inter_500Medium", fontSize: 8, textAlign: "center" },
+  verified: { position: "absolute", right: -2, top: -2, width: 12, height: 12, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#7B35FF" },
   loader: { minHeight: 56, justifyContent: "center" },
   feedList: { gap: 8 },
   postPressable: { borderRadius: 13 },
@@ -406,4 +464,16 @@ const styles = StyleSheet.create({
   postCount: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 9, marginRight: 7 },
   moreIcon: { position: "absolute", right: 9, top: 7 },
   empty: { color: neon.muted, textAlign: "center", paddingVertical: 28 },
+  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.62)" },
+  filterSheet: { paddingHorizontal: 18, paddingTop: 9, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: "#0B0A18", borderWidth: 1, borderColor: "rgba(139,82,229,0.38)" },
+  sheetHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: 2, backgroundColor: "rgba(218,205,255,0.28)", marginBottom: 16 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  sheetTitle: { color: neon.text, fontFamily: "Inter_700Bold", fontSize: 17 },
+  filterOption: { minHeight: 50, paddingHorizontal: 13, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7, borderWidth: 1, borderColor: "rgba(126,72,198,0.16)" },
+  filterOptionActive: { backgroundColor: "rgba(123,53,255,0.16)", borderColor: "rgba(164,111,255,0.62)" },
+  filterOptionLabel: { flexDirection: "row", alignItems: "center", gap: 10 },
+  filterOptionText: { color: neon.muted, fontFamily: "Inter_500Medium", fontSize: 13 },
+  filterOptionTextActive: { color: neon.text },
+  applyFilterButton: { minHeight: 48, marginTop: 18, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: neon.purple },
+  applyFilterText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 14 },
 });

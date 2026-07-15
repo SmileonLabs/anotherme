@@ -5033,7 +5033,7 @@ components:
 
     PlayModeState:
       type: object
-      required: [currentMode, starUnlocked, fanProfile, starProfiles]
+      required: [currentMode, starUnlocked, fanProfile, social, starProfiles]
       properties:
         currentMode:
           type: string
@@ -5042,6 +5042,16 @@ components:
           type: boolean
         fanProfile:
           $ref: "#/components/schemas/FanProfile"
+        social:
+          type: object
+          required: [followerCount, followingCount]
+          properties:
+            followerCount:
+              type: integer
+              minimum: 0
+            followingCount:
+              type: integer
+              minimum: 0
         equippedStar:
           oneOf:
             - $ref: "#/components/schemas/StarProfile"

@@ -734,6 +734,10 @@ export interface PlayModeState {
   currentMode: PlayModeStateCurrentMode;
   starUnlocked: boolean;
   fanProfile: FanProfile;
+  social: {
+    followerCount: number;
+    followingCount: number;
+  };
   equippedStar?: StarProfile | null;
   starProfiles: StarProfile[];
 }
@@ -2689,4 +2693,3 @@ export type PostFanCommunitiesIdBroadcastsBody = { [key: string]: unknown };
 export type GetFanCommunitiesIdMissions200Item = { [key: string]: unknown };
 
 export type PostFanCommunitiesIdMissionsBody = { [key: string]: unknown };
-
