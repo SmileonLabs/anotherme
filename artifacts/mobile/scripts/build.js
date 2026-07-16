@@ -54,18 +54,33 @@ function patchExportedHtml(indexHtmlPath) {
   try {
     let html = fs.readFileSync(indexHtmlPath, "utf8");
 
-    // Inject the root overflow clamp once, just before </head>. This stops the
-    // iOS standalone (home-screen) PWA from getting stuck scrolled to the right
-    // when any element is a few px wider than the viewport.
-    //
-    // NOTE: we intentionally do NOT add `viewport-fit=cover`. With cover, iOS
-    // stops auto-insetting the layout within the safe area, so the bottom tab
-    // bar + message composer slide under the home indicator and get clipped.
-    // The default viewport (no cover) keeps content inside the safe area, which
-    // is what we want here.
+    // Keep browser chrome and the standalone iOS PWA on the same dark surface.
+    // Expo's generated head varies by SDK version, so normalize the viewport
+    // and inject the iOS-specific metadata at build time rather than relying on
+    // each screen to compensate independently.
+    const viewport =
+      '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">';
+    html = html.replace(/<meta\s+name=["']viewport["'][^>]*>/i, viewport);
+    if (!html.includes('name="viewport"')) html = html.replace("</head>", `    ${viewport}\n  </head>`);
+
+    const headMeta = [
+      '<meta name="theme-color" content="#05040D">',
+      '<meta name="apple-mobile-web-app-capable" content="yes">',
+      '<meta name="apple-mobile-web-app-status-bar-style" content="black">',
+      '<meta name="mobile-web-app-capable" content="yes">',
+    ];
+    for (const meta of headMeta) {
+      const name = meta.match(/name="([^"]+)"/)?.[1];
+      if (name && !new RegExp(`<meta\\s+name=["']${name}["']`, "i").test(html)) {
+        html = html.replace("</head>", `    ${meta}\n  </head>`);
+      }
+    }
+
+    // Prevent the document itself from rubber-band scrolling. Individual
+    // ScrollView/FlatList screens remain scrollable inside this fixed shell.
     const MARKER = "anotherme-pwa-layout-fix";
     if (!html.includes(MARKER) && html.includes("</head>")) {
-      const style = `    <style id="${MARKER}">\n      html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }\n      body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }\n    </style>\n  </head>`;
+      const style = `    <style id="${MARKER}">\n      :root { background: #05040D; color-scheme: dark; }\n      html, body, #root { width: 100%; max-width: 100%; height: 100%; min-height: 100dvh; margin: 0; overflow: hidden; }\n      body { background: #05040D; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior: none; }\n      #root { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }\n    </style>\n  </head>`;
       html = html.replace("</head>", style);
     }
 
