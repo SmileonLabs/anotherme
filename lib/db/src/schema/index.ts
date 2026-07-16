@@ -29,3 +29,6 @@ export * from "./ontologySyncJobs";
 export * from "./dialogueEngine";
 export * from "./search";
 export * from "./nftRpg";
+export * from "./officialAi";
+export * from "./adminAudit";
+export * from "./adminRoles";

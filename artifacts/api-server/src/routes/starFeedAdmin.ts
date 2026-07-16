@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
-import { db, starFeedPostsTable, starFeedReportsTable, usersTable } from "@workspace/db";
+import { adminAuditLogsTable, db, starFeedPostsTable, starFeedReportsTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { isKnowledgeAdmin } from "../lib/knowledge/validation";
 
@@ -23,6 +23,7 @@ router.post("/star-feed/admin/reports/:id/resolve", requireAuth, async (req, res
   const [report] = await db.update(starFeedReportsTable).set({ status: parsed.data.action === "remove" ? "RESOLVED_REMOVE" : "RESOLVED_KEEP", reviewedAt: new Date() }).where(and(eq(starFeedReportsTable.id, reportId), eq(starFeedReportsTable.status, "OPEN"))).returning({ postId: starFeedReportsTable.postId });
   if (!report) { res.status(404).json({ error: "not_found" }); return; }
   await db.update(starFeedPostsTable).set({ status: parsed.data.action === "remove" ? "REMOVED" : "PUBLISHED" }).where(eq(starFeedPostsTable.id, report.postId));
+  await db.insert(adminAuditLogsTable).values({ actorUserId: req.dbUser!.id, action: parsed.data.action === "remove" ? "moderation_remove" : "moderation_keep", targetType: "star_feed_report", targetId: reportId, afterJson: { postId: report.postId, action: parsed.data.action } });
   res.json({ resolved: true, action: parsed.data.action });
 });
 export default router;

@@ -30,6 +30,10 @@ import fanCommunityProgramsRouter from "./fanCommunityPrograms";
 import starFeedAdminRouter from "./starFeedAdmin";
 import searchAdminRouter from "./searchAdmin";
 import nftCollectionsRouter from "./nftCollections";
+import adminMembersRouter from "./adminMembers";
+import adminAuditRouter from "./adminAudit";
+import adminRolesRouter from "./adminRoles";
+import adminOperationsRouter from "./adminOperations";
 
 const router: IRouter = Router();
 
@@ -64,5 +68,9 @@ router.use(fanCommunityProgramsRouter);
 router.use(starFeedAdminRouter);
 router.use(searchAdminRouter);
 router.use(nftCollectionsRouter);
+router.use(adminMembersRouter);
+router.use(adminAuditRouter);
+router.use(adminRolesRouter);
+router.use(adminOperationsRouter);
 
 export default router;

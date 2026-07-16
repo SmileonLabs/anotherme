@@ -1,0 +1,7 @@
+import React from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { useColors } from "@/hooks/useColors";
+import { useAdminRoles } from "@/hooks/useAdminRoles";
+export default function AdminRolesScreen() { const colors = useColors(); const { data = [], isLoading } = useAdminRoles(); return <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}><Text style={[styles.title, { color: colors.foreground }]}>관리자 권한</Text><Text style={[styles.subtitle, { color: colors.mutedForeground }]}>관리자별 역할과 접근 범위를 확인합니다.</Text>{isLoading ? <ActivityIndicator color={colors.primary} /> : data.length === 0 ? <Text style={{ color: colors.mutedForeground }}>등록된 역할이 없습니다.</Text> : data.map((row) => <View key={row.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="shield" size={18} color={colors.primary} /><Text style={[styles.name, { color: colors.foreground }]}>{row.nickname ?? row.email ?? row.userId}</Text><Text style={[styles.role, { color: colors.primary }]}>{row.role}</Text></View>)}</ScrollView>; }
+const styles = StyleSheet.create({ container: { padding: 18, gap: 12 }, title: { fontSize: 23, fontWeight: "800" }, subtitle: { fontSize: 12 }, card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 7 }, name: { fontSize: 14, fontWeight: "700" }, role: { fontSize: 12 } });

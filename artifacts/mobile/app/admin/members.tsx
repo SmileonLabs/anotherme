@@ -1,0 +1,16 @@
+import React from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useColors } from "@/hooks/useColors";
+import { useAdminMembers } from "@/hooks/useAdminMembers";
+
+export default function AdminMembersScreen() {
+  const colors = useColors();
+  const router = useRouter();
+  const [query, setQuery] = React.useState("");
+  const [submitted, setSubmitted] = React.useState("");
+  const { data, isLoading, isError, refetch } = useAdminMembers(submitted);
+  return <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}><Text style={[styles.title, { color: colors.foreground }]}>회원 관리</Text><Text style={[styles.subtitle, { color: colors.mutedForeground }]}>회원 기본 정보와 운영 상태를 확인합니다.</Text><View style={styles.search}><TextInput value={query} onChangeText={setQuery} onSubmitEditing={() => setSubmitted(query.trim())} placeholder="닉네임 검색" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} /><Pressable onPress={() => setSubmitted(query.trim())} style={[styles.button, { backgroundColor: colors.primary }]}><Feather name="search" size={16} color={colors.primaryForeground} /></Pressable></View>{isLoading ? <ActivityIndicator color={colors.primary} /> : isError ? <View style={styles.empty}><Text style={{ color: colors.foreground }}>회원을 불러오지 못했습니다.</Text><Pressable onPress={() => void refetch()}><Text style={{ color: colors.primary }}>다시 시도</Text></Pressable></View> : (data ?? []).map((member) => <Pressable key={member.id} onPress={() => router.push(`/admin/members/${member.id}` as never)} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.row}><View style={[styles.avatar, { backgroundColor: colors.primary + "22" }]}><Feather name="user" size={18} color={colors.primary} /></View><View style={styles.main}><Text style={[styles.name, { color: colors.foreground }]}>{member.nickname}</Text><Text style={[styles.email, { color: colors.mutedForeground }]}>{member.email}</Text></View><Feather name="chevron-right" size={17} color={colors.mutedForeground} /></View><Text style={[styles.meta, { color: colors.mutedForeground }]}>가입 {new Date(member.createdAt).toLocaleDateString("ko-KR")}</Text></Pressable>)}</ScrollView>;
+}
+const styles = StyleSheet.create({ container: { padding: 18, gap: 12 }, title: { fontSize: 23, fontWeight: "800" }, subtitle: { fontSize: 12 }, search: { flexDirection: "row", gap: 8 }, input: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 10, paddingHorizontal: 11 }, button: { width: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" }, card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 9 }, row: { flexDirection: "row", alignItems: "center", gap: 10 }, avatar: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" }, main: { flex: 1, gap: 3 }, name: { fontSize: 15, fontWeight: "700" }, email: { fontSize: 11 }, meta: { fontSize: 11 }, empty: { minHeight: 150, alignItems: "center", justifyContent: "center", gap: 10 } });

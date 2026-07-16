@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
@@ -45,15 +45,24 @@ router.get("/nft/collections", async (_req, res): Promise<void> => {
 
 router.get("/nft/collections/:id/evolution", async (req, res): Promise<void> => {
   const rows = await db.select().from(nftEvolutionStagesTable).where(eq(nftEvolutionStagesTable.collectionId, String(req.params.id))).orderBy(nftEvolutionStagesTable.minLevel);
-  res.json(rows.filter((stage) => stage.status === "published" || stage.status === "approved"));
+  res.json(rows.filter((stage) => stage.status === "published"));
 });
 
 router.get("/nft/collections/:id/rpg-content", async (req, res): Promise<void> => {
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, String(req.params.id))).limit(1);
-  if (!collection || !["approved", "published"].includes(collection.status)) { res.status(404).json({ error: "not_found" }); return; }
+  if (!collection || collection.status !== "published") { res.status(404).json({ error: "not_found" }); return; }
   const blueprint = collection.rpgBlueprint ?? {};
   const missions = Array.isArray(blueprint.missions) ? blueprint.missions.map((title, index) => ({ id: `${collection.id}:mission:${index}`, title: String(title), description: `${collection.ipName}의 ${String(title)} 활동을 완료해 보세요.`, xp: 10 + index * 5 })) : [];
   res.json({ collectionId: collection.id, ipName: collection.ipName, category: collection.category, roleName: collection.roleName ?? "캐릭터", worldStyle: collection.worldStyle ?? "", missions, story: { opening: `${collection.ipName}의 새로운 성장 이야기가 시작됩니다.`, next: `${collection.roleName ?? "캐릭터"}로서 다음 장면을 준비해 보세요.` } });
+});
+
+router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", requireAuth, async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const parsed = z.object({ minLevel: z.number().int().min(1).max(100).optional(), title: z.string().trim().min(1).max(120).optional(), description: z.string().trim().min(1).max(500).optional(), imageUrl: z.string().url().nullable().optional(), status: z.enum(["draft", "approved", "published", "archived"]).optional() }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
+  const [updated] = await db.update(nftEvolutionStagesTable).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(nftEvolutionStagesTable.collectionId, String(req.params.collectionId)), eq(nftEvolutionStagesTable.stageKey, String(req.params.stageKey)))).returning();
+  if (!updated) { res.status(404).json({ error: "not_found" }); return; }
+  res.json(updated);
 });
 
 router.get("/admin/nft/collections", requireAuth, async (req, res): Promise<void> => {
