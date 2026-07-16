@@ -3,11 +3,13 @@ import { getOpenAI } from "./aiClient";
 
 const MODEL = "gpt-5-mini";
 const analyzerSchema = z.object({
-  roleName: z.string().min(1).max(80),
-  worldStyle: z.string().min(1).max(300),
-  stats: z.array(z.string().min(1).max(40)).min(4).max(6),
-  missions: z.array(z.object({ title: z.string().min(1).max(80), description: z.string().min(1).max(240), xp: z.number().int().min(5).max(100) })).min(3).max(8),
-  stages: z.array(z.object({ stageKey: z.string().regex(/^[a-z0-9_-]+$/).max(40), minLevel: z.number().int().min(1).max(100), title: z.string().min(1).max(80), description: z.string().min(1).max(240), imagePrompt: z.string().min(1).max(500), retainedTraits: z.array(z.string().min(1).max(60)).min(1).max(8) })).length(6),
+  // The model may localize stage keys or slightly exceed editorial limits.
+  // Validate structure here; editorial normalization happens before persistence.
+  roleName: z.string().min(1),
+  worldStyle: z.string().min(1),
+  stats: z.array(z.string().min(1)).min(4).max(6),
+  missions: z.array(z.object({ title: z.string().min(1), description: z.string().min(1), xp: z.coerce.number().int().min(1) })).min(3).max(8),
+  stages: z.array(z.object({ stageKey: z.string().min(1), minLevel: z.coerce.number().int().min(1), title: z.string().min(1), description: z.string().min(1), imagePrompt: z.string().min(1), retainedTraits: z.array(z.string().min(1)).min(1).max(8) })).length(6),
 });
 export type NftRpgAnalysis = z.infer<typeof analyzerSchema>;
 
