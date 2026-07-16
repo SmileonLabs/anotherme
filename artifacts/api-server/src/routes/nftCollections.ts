@@ -102,6 +102,27 @@ router.post("/admin/nft/collections/:id/analyze", requireAuth, async (req, res):
   }
 });
 
+// Explicit second step: regenerate only the growth RPG blueprint after the IP review.
+router.post("/admin/nft/collections/:id/rpg-analyze", requireAuth, async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const id = String(req.params.id);
+  const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
+  if (!collection) { res.status(404).json({ error: "not_found" }); return; }
+  if (!collection.aiAnalyzedAt) { res.status(409).json({ error: "ip_analysis_required" }); return; }
+  try {
+    const analysis = await analyzeNftRpg({ name: collection.name, ipName: collection.ipName, category: collection.category, chainId: collection.chainId, contractAddress: collection.contractAddress, officialUrl: collection.officialUrl, metadataUrl: collection.metadataUrl });
+    const result = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(nftCollectionsTable).set({ roleName: analysis.roleName, worldStyle: analysis.worldStyle, rpgBlueprint: { ...analysis, generatedBy: "openai", model: "gpt-5-mini" }, updatedAt: new Date() }).where(eq(nftCollectionsTable.id, id)).returning();
+      for (const stage of analysis.stages) await tx.insert(nftEvolutionStagesTable).values({ collectionId: id, stageKey: stage.stageKey, minLevel: stage.minLevel, title: stage.title, description: stage.description, retainedTraits: stage.retainedTraits, status: "draft" }).onConflictDoUpdate({ target: [nftEvolutionStagesTable.collectionId, nftEvolutionStagesTable.stageKey], set: { minLevel: stage.minLevel, title: stage.title, description: stage.description, retainedTraits: stage.retainedTraits, status: "draft", updatedAt: new Date() } });
+      return updated;
+    });
+    res.json(result);
+  } catch (error) {
+    req.log.error({ err: error, collectionId: id }, "NFT growth RPG AI analysis failed");
+    res.status(502).json({ error: "rpg_analysis_failed", message: "성장 RPG 테마 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." });
+  }
+});
+
 // Legacy deterministic fallback is kept below for rollback safety.
 router.post("/admin/nft/collections/:id/analyze-legacy", requireAuth, async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
