@@ -74,6 +74,7 @@
     },
     { "idx": 10, "version": "7", "when": 1784006000000, "tag": "0010_broadcast_missions", "breakpoints": true },
     { "idx": 11, "version": "7", "when": 1784007000000, "tag": "0011_fan_star_identity", "breakpoints": true },
-    { "idx": 12, "version": "7", "when": 1784008000000, "tag": "0012_search_trending", "breakpoints": true }
+    { "idx": 12, "version": "7", "when": 1784008000000, "tag": "0012_search_trending", "breakpoints": true },
+    { "idx": 13, "version": "7", "when": 1784010000000, "tag": "0013_nft_rpg_foundation", "breakpoints": true }
   ]
 }

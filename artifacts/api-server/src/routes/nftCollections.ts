@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { isKnowledgeAdmin } from "../lib/knowledge/validation";
+import { analyzeNftRpg } from "../lib/nftRpgAnalyzer";
 
 const router: IRouter = Router();
 const categorySchema = z.enum(["idol", "sports", "comic", "character", "other"]);
@@ -71,7 +72,29 @@ router.post("/admin/nft/collections", requireAuth, async (req, res): Promise<voi
   res.status(201).json(row);
 });
 
+// OpenAI-backed analysis handler. It is registered before the legacy fallback below.
 router.post("/admin/nft/collections/:id/analyze", requireAuth, async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const id = String(req.params.id);
+  const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
+  if (!collection) { res.status(404).json({ error: "not_found" }); return; }
+  try {
+    const analysis = await analyzeNftRpg({ name: collection.name, ipName: collection.ipName, category: collection.category, chainId: collection.chainId, contractAddress: collection.contractAddress, officialUrl: collection.officialUrl, metadataUrl: collection.metadataUrl });
+    const result = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(nftCollectionsTable).set({ status: "review_required", roleName: analysis.roleName, worldStyle: analysis.worldStyle, rpgBlueprint: { ...analysis, generatedBy: "openai", model: "gpt-5-mini" }, aiAnalysis: { generatedBy: "openai", model: "gpt-5-mini", generatedAt: new Date().toISOString(), confidence: "draft" }, aiAnalyzedAt: new Date(), updatedAt: new Date() }).where(eq(nftCollectionsTable.id, id)).returning();
+      for (const stage of analysis.stages) await tx.insert(nftEvolutionStagesTable).values({ collectionId: id, stageKey: stage.stageKey, minLevel: stage.minLevel, title: stage.title, description: stage.description, retainedTraits: stage.retainedTraits, status: "draft" }).onConflictDoUpdate({ target: [nftEvolutionStagesTable.collectionId, nftEvolutionStagesTable.stageKey], set: { minLevel: stage.minLevel, title: stage.title, description: stage.description, retainedTraits: stage.retainedTraits, status: "draft", updatedAt: new Date() } });
+      return updated;
+    });
+    res.json(result);
+  } catch (error) {
+    req.log.error({ err: error, collectionId: id }, "NFT RPG AI analysis failed");
+    const message = error instanceof Error && error.message.includes("API key") ? "OpenAI API 키가 설정되지 않았어요." : "AI 분석에 실패했어요. 잠시 후 다시 시도해 주세요.";
+    res.status(502).json({ error: "ai_analysis_failed", message });
+  }
+});
+
+// Legacy deterministic fallback is kept below for rollback safety.
+router.post("/admin/nft/collections/:id/analyze-legacy", requireAuth, async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const id = String(req.params.id);
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);

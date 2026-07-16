@@ -20,6 +20,7 @@ export type AdminNftCollection = {
 };
 
 const key = ["admin", "nft-collections"] as const;
+const analyzeInFlight = new Map<string, Promise<AdminNftCollection>>();
 
 export function useNftAdmin() {
   const admin = useKnowledgeAdminMe();
@@ -35,7 +36,13 @@ export function useNftAdmin() {
     onSuccess: () => client.invalidateQueries({ queryKey: key }),
   });
   const analyze = useMutation({
-    mutationFn: (id: string) => customFetch<AdminNftCollection>(`/api/admin/nft/collections/${id}/analyze`, { method: "POST", responseType: "json" }),
+    mutationFn: (id: string) => {
+      const existing = analyzeInFlight.get(id);
+      if (existing) return existing;
+      const request = customFetch<AdminNftCollection>(`/api/admin/nft/collections/${id}/analyze`, { method: "POST", responseType: "json" }).finally(() => analyzeInFlight.delete(id));
+      analyzeInFlight.set(id, request);
+      return request;
+    },
     onSuccess: () => client.invalidateQueries({ queryKey: key }),
   });
   const review = useMutation({
