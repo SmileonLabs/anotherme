@@ -81,7 +81,7 @@ router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", require
 router.post(
   "/admin/nft/collections/:collectionId/evolution/:stageKey/generate-avatar",
   requireAuth,
-  rateLimit({ name: "nft-stage-avatar", limit: 12, windowSeconds: 3600, requireRedis: true }),
+  rateLimit({ name: "nft-stage-avatar", limit: 12, windowSeconds: 3600 }),
   async (req, res): Promise<void> => {
     if (!(await requireAdmin(req, res))) return;
     const parsed = z.object({ regenerate: z.boolean().optional().default(false) }).safeParse(req.body ?? {});
