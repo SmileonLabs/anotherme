@@ -1,4 +1,6 @@
 import React from "react";
+import { useAuth } from "@clerk/expo";
+import { Redirect } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { useNftAdmin } from "@/hooks/useNftAdmin";
@@ -13,6 +15,7 @@ function RpgBlueprintSummary({ blueprint, colors }: { blueprint: Record<string, 
 }
 
 export default function NftAdminScreen() {
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
   const colors = useColors();
   const { admin, collections, isLoading, create, analyze, rpgAnalyze, review } = useNftAdmin();
   const [form, setForm] = React.useState({ chainId: "56", contractAddress: "", rpcUrl: "", name: "", ipName: "", category: "character", officialUrl: "" });
@@ -25,6 +28,8 @@ export default function NftAdminScreen() {
     if (!form.contractAddress.trim() || !form.name.trim() || !form.ipName.trim()) return;
     try { await create.mutateAsync({ ...form, chainId: Number(form.chainId) || 1 }); setMessage("컬렉션을 등록했어요. AI 분석을 실행해 주세요."); setForm((value) => ({ ...value, contractAddress: "", name: "", ipName: "" })); } catch { setMessage("컬렉션 등록에 실패했어요."); }
   };
+  if (!isAuthLoaded) return <View style={[styles.center, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
+  if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
   if (admin && !admin.isAdmin) return <View style={[styles.center, { backgroundColor: colors.background }]}><Text style={{ color: colors.foreground }}>관리자 권한이 필요합니다.</Text></View>;
   return <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
     <Text style={[styles.title, { color: colors.foreground }]}>NFT 컬렉션 관리</Text>

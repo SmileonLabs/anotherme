@@ -1,4 +1,6 @@
 import { Feather } from "@expo/vector-icons";
+import { useAuth } from "@clerk/expo";
+import { Redirect } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { CustomScrollView } from "@/components/CustomScroll";
@@ -57,6 +59,7 @@ function sourceErrorText(error: string) {
 }
 
 export default function KnowledgeAdminScreen() {
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
   const colors = useColors();
   const { data: admin, isLoading: isAdminLoading } = useKnowledgeAdminMe();
   const enabled = !!admin?.isAdmin;
@@ -152,6 +155,14 @@ export default function KnowledgeAdminScreen() {
       },
     ]);
   };
+
+  if (!isAuthLoaded) {
+    return <View style={[styles.loading, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /></View>;
+  }
+
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
 
   if (isAdminLoading) {
     return (
