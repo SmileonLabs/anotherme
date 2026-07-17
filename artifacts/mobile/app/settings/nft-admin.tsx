@@ -5,13 +5,69 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useColors } from "@/hooks/useColors";
 import { useNftAdmin } from "@/hooks/useNftAdmin";
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown, fallback = "-"): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
 function RpgBlueprintSummary({ blueprint, colors }: { blueprint: Record<string, unknown> | null; colors: ReturnType<typeof useColors> }) {
+  const [expanded, setExpanded] = React.useState(false);
   if (!blueprint) {
     return <Text style={{ color: colors.mutedForeground }}>아직 성장 RPG 테마가 생성되지 않았습니다.</Text>;
   }
-  const missions = Array.isArray(blueprint.missions) ? blueprint.missions : [];
-  const stages = Array.isArray(blueprint.stages) ? blueprint.stages : [];
-  return <View style={{ gap: 4 }}><Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>성장 RPG 생성 완료</Text><Text style={{ color: colors.mutedForeground }}>미션 {missions.length}개 · 성장 단계 {stages.length}개</Text></View>;
+
+  const stats = Array.isArray(blueprint.stats) ? blueprint.stats.map((item) => stringValue(item)).filter((item) => item !== "-") : [];
+  const missions = Array.isArray(blueprint.missions) ? blueprint.missions.map(recordValue) : [];
+  const stages = Array.isArray(blueprint.stages) ? blueprint.stages.map(recordValue) : [];
+
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>성장 RPG 생성 완료</Text>
+      <Text style={{ color: colors.mutedForeground }}>스탯 {stats.length}개 · 미션 {missions.length}개 · 성장 단계 {stages.length}개</Text>
+      <Pressable onPress={() => setExpanded((value) => !value)} style={[styles.small, { alignSelf: "flex-start", backgroundColor: colors.secondary }]}>
+        <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold" }}>{expanded ? "생성 내용 접기" : "생성 내용 전체 보기"}</Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ gap: 14 }}>
+          <View style={{ gap: 7 }}>
+            <Text style={[styles.detailSectionTitle, { color: colors.foreground }]}>성장 스탯</Text>
+            <View style={styles.chipRow}>
+              {stats.map((stat) => <View key={stat} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.background }]}><Text style={{ color: colors.foreground }}>{stat}</Text></View>)}
+            </View>
+          </View>
+          <View style={{ gap: 8 }}>
+            <Text style={[styles.detailSectionTitle, { color: colors.foreground }]}>미션</Text>
+            {missions.map((mission, index) => (
+              <View key={`${stringValue(mission.title)}-${index}`} style={[styles.detailCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                <View style={styles.detailHeader}>
+                  <Text style={[styles.detailTitle, { color: colors.foreground }]}>{index + 1}. {stringValue(mission.title)}</Text>
+                  <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>+{Number(mission.xp ?? 0)} XP</Text>
+                </View>
+                <Text style={[styles.detailBody, { color: colors.mutedForeground }]}>{stringValue(mission.description)}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={{ gap: 8 }}>
+            <Text style={[styles.detailSectionTitle, { color: colors.foreground }]}>레벨별 성장 단계</Text>
+            {stages.map((stage, index) => {
+              const traits = Array.isArray(stage.retainedTraits) ? stage.retainedTraits.map((item) => stringValue(item)).filter((item) => item !== "-") : [];
+              return (
+                <View key={`${stringValue(stage.stageKey)}-${index}`} style={[styles.detailCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                  <Text style={[styles.detailTitle, { color: colors.foreground }]}>Lv.{Number(stage.minLevel ?? 0)} · {stringValue(stage.title)}</Text>
+                  <Text style={[styles.detailBody, { color: colors.mutedForeground }]}>{stringValue(stage.description)}</Text>
+                  {traits.length ? <Text style={[styles.detailMeta, { color: colors.primary }]}>유지 특성: {traits.join(" · ")}</Text> : null}
+                  {stage.imagePrompt ? <Text style={[styles.detailMeta, { color: colors.mutedForeground }]}>외형 생성 프롬프트: {stringValue(stage.imagePrompt)}</Text> : null}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export default function NftAdminScreen() {
@@ -48,4 +104,4 @@ export default function NftAdminScreen() {
   </ScrollView>;
 }
 
-const styles = StyleSheet.create({ container: { flex: 1, padding: 18, gap: 12, position: "relative" }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, title: { fontSize: 22, fontFamily: "Inter_700Bold" }, subtitle: { fontSize: 12, lineHeight: 18 }, card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 9 }, resultCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 }, resultTitle: { fontSize: 18, fontFamily: "Inter_700Bold" }, busyOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 10, alignItems: "center", justifyContent: "center", gap: 10, padding: 24 }, input: { minHeight: 42, borderWidth: 1, borderRadius: 10, paddingHorizontal: 11 }, primary: { borderRadius: 10, minHeight: 42, alignItems: "center", justifyContent: "center" }, message: { fontSize: 12 }, itemTitle: { fontSize: 15, fontFamily: "Inter_700Bold" }, itemMeta: { fontSize: 11 }, actions: { flexDirection: "row", gap: 8 }, small: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8 } });
+const styles = StyleSheet.create({ container: { flex: 1, padding: 18, gap: 12, position: "relative" }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, title: { fontSize: 22, fontFamily: "Inter_700Bold" }, subtitle: { fontSize: 12, lineHeight: 18 }, card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 9 }, resultCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 }, resultTitle: { fontSize: 18, fontFamily: "Inter_700Bold" }, busyOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 10, alignItems: "center", justifyContent: "center", gap: 10, padding: 24 }, input: { minHeight: 42, borderWidth: 1, borderRadius: 10, paddingHorizontal: 11 }, primary: { borderRadius: 10, minHeight: 42, alignItems: "center", justifyContent: "center" }, message: { fontSize: 12 }, itemTitle: { fontSize: 15, fontFamily: "Inter_700Bold" }, itemMeta: { fontSize: 11 }, actions: { flexDirection: "row", gap: 8 }, small: { borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8 }, detailSectionTitle: { fontSize: 15, fontFamily: "Inter_700Bold" }, chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }, detailCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 7 }, detailHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }, detailTitle: { flex: 1, fontSize: 14, fontFamily: "Inter_700Bold" }, detailBody: { fontSize: 12, lineHeight: 18 }, detailMeta: { fontSize: 11, lineHeight: 16 } });
