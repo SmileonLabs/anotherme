@@ -3,6 +3,15 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useColors } from "@/hooks/useColors";
 import { useNftAdmin } from "@/hooks/useNftAdmin";
 
+function RpgBlueprintSummary({ blueprint, colors }: { blueprint: Record<string, unknown> | null; colors: ReturnType<typeof useColors> }) {
+  if (!blueprint) {
+    return <Text style={{ color: colors.mutedForeground }}>아직 성장 RPG 테마가 생성되지 않았습니다.</Text>;
+  }
+  const missions = Array.isArray(blueprint.missions) ? blueprint.missions : [];
+  const stages = Array.isArray(blueprint.stages) ? blueprint.stages : [];
+  return <View style={{ gap: 4 }}><Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>성장 RPG 생성 완료</Text><Text style={{ color: colors.mutedForeground }}>미션 {missions.length}개 · 성장 단계 {stages.length}개</Text></View>;
+}
+
 export default function NftAdminScreen() {
   const colors = useColors();
   const { admin, collections, isLoading, create, analyze, rpgAnalyze, review } = useNftAdmin();
@@ -27,8 +36,10 @@ export default function NftAdminScreen() {
     </View>
     {isLoading ? <ActivityIndicator color={colors.primary} /> : collections.map((item) => <View key={item.id} style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}><Text style={[styles.itemTitle, { color: colors.foreground }]}>{item.ipName} · {item.category}</Text><Text style={[styles.itemMeta, { color: colors.mutedForeground }]}>{item.status} · {item.contractAddress}</Text><View style={styles.actions}><Pressable onPress={() => void analyze.mutateAsync(item.id)} style={[styles.small, { backgroundColor: colors.secondary }]}><Text style={{ color: colors.foreground }}>AI 분석</Text></Pressable>{item.status === "review_required" ? <Pressable onPress={() => void review.mutateAsync({ id: item.id, action: "approve" })} style={[styles.small, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>승인</Text></Pressable> : null}{item.status === "approved" ? <Pressable onPress={() => void review.mutateAsync({ id: item.id, action: "publish" })} style={[styles.small, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>게시</Text></Pressable> : null}</View></View>)}
     {analysisResult ? <View style={[styles.resultCard, { borderColor: colors.primary, backgroundColor: colors.card }]}><Text style={[styles.resultTitle, { color: colors.foreground }]}>AI 분석 결과</Text><Text style={{ color: colors.foreground }}>역할: {analysisResult.roleName ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>세계관: {analysisResult.worldStyle ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>상태: {analysisResult.status}</Text><Pressable onPress={() => setAnalysisResult(null)} style={[styles.small, { backgroundColor: colors.secondary }]}><Text style={{ color: colors.foreground }}>목록으로 돌아가기</Text></Pressable></View> : null}
-    {collections.filter((item) => item.aiAnalyzedAt).map((item) => <View key={`analysis-${item.id}`} style={[styles.resultCard, { borderColor: colors.primary, backgroundColor: colors.card }]}><Text style={[styles.resultTitle, { color: colors.foreground }]}>저장된 AI 분석 · {item.ipName}</Text><Text style={{ color: colors.foreground }}>역할: {item.roleName ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>세계관: {item.worldStyle ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>분석일: {item.aiAnalyzedAt}</Text><Pressable disabled={rpgAnalyze.isPending} onPress={() => void rpgAnalyze.mutateAsync(item.id)} style={[styles.primary, { backgroundColor: colors.primary, opacity: rpgAnalyze.isPending ? 0.5 : 1 }]}><Text style={{ color: colors.primaryForeground }}>{rpgAnalyze.isPending ? "성장 RPG 생성 중…" : "성장 RPG 테마 생성"}</Text></Pressable></View>)}
+    {collections.filter((item) => item.aiAnalyzedAt).map((item) => <View key={`analysis-${item.id}`} style={[styles.resultCard, { borderColor: colors.primary, backgroundColor: colors.card }]}><Text style={[styles.resultTitle, { color: colors.foreground }]}>저장된 AI 분석 · {item.ipName}</Text><Text style={{ color: colors.foreground }}>역할: {item.roleName ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>세계관: {item.worldStyle ?? "-"}</Text><Text style={{ color: colors.mutedForeground }}>분석일: {item.aiAnalyzedAt}</Text><RpgBlueprintSummary blueprint={item.rpgBlueprint} colors={colors} /><Pressable disabled={rpgAnalyze.isPending} onPress={() => void rpgAnalyze.mutateAsync(item.id)} style={[styles.primary, { backgroundColor: colors.primary, opacity: rpgAnalyze.isPending ? 0.5 : 1 }]}><Text style={{ color: colors.primaryForeground }}>{rpgAnalyze.isPending ? "성장 RPG 생성 중…" : "성장 RPG 테마 생성"}</Text></Pressable></View>)}
     {analyze.isPending ? <View style={[styles.busyOverlay, { backgroundColor: colors.background }]}><ActivityIndicator color={colors.primary} /><Text style={{ color: colors.foreground }}>AI가 NFT IP와 성장 RPG를 분석 중입니다…</Text><Text style={{ color: colors.mutedForeground }}>완료될 때까지 잠시만 기다려 주세요.</Text></View> : null}
+    {rpgAnalyze.isSuccess ? <Text style={[styles.message, { color: colors.primary }]}>성장 RPG 테마가 저장되었습니다. 아래 카드에서 미션과 성장 단계를 확인하세요.</Text> : null}
+    {rpgAnalyze.isError ? <Text style={[styles.message, { color: colors.foreground }]}>성장 RPG 테마 생성에 실패했습니다. 잠시 후 다시 시도하세요.</Text> : null}
   </ScrollView>;
 }
 
