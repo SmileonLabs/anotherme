@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
-import { db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
+import { adminAuditLogsTable, db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { hasAdminAccess } from "../lib/adminRbac";
 import { analyzeNftRpg } from "../lib/nftRpgAnalyzer";
+import { generateNftStageAvatar } from "../lib/nftAvatarGenerator";
+import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 const categorySchema = z.enum(["idol", "sports", "comic", "character", "other"]);
@@ -19,6 +21,9 @@ const createSchema = z.object({
   metadataUrl: z.string().url().optional(),
   rightsStatus: z.enum(["review_required", "verified", "rejected"]).default("review_required"),
 });
+const internalObjectPathSchema = z.string().regex(/^\/objects\/[A-Za-z0-9._~!$&'()*+,;=:@/-]+$/);
+const stageImageUrlSchema = z.union([z.string().url(), internalObjectPathSchema]).nullable();
+const avatarJobs = new Set<string>();
 
 async function requireAdmin(req: Parameters<typeof requireAuth>[0], res: Parameters<typeof requireAuth>[1]): Promise<boolean> {
   if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return false; }
@@ -48,6 +53,14 @@ router.get("/nft/collections/:id/evolution", async (req, res): Promise<void> => 
   res.json(rows.filter((stage) => stage.status === "published"));
 });
 
+router.get("/admin/nft/collections/:id/evolution", requireAuth, async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+  const rows = await db.select().from(nftEvolutionStagesTable)
+    .where(eq(nftEvolutionStagesTable.collectionId, String(req.params.id)))
+    .orderBy(nftEvolutionStagesTable.minLevel);
+  res.json(rows);
+});
+
 router.get("/nft/collections/:id/rpg-content", async (req, res): Promise<void> => {
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, String(req.params.id))).limit(1);
   if (!collection || collection.status !== "published") { res.status(404).json({ error: "not_found" }); return; }
@@ -58,12 +71,81 @@ router.get("/nft/collections/:id/rpg-content", async (req, res): Promise<void> =
 
 router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", requireAuth, async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
-  const parsed = z.object({ minLevel: z.number().int().min(1).max(100).optional(), title: z.string().trim().min(1).max(120).optional(), description: z.string().trim().min(1).max(500).optional(), imageUrl: z.string().url().nullable().optional(), status: z.enum(["draft", "approved", "published", "archived"]).optional() }).safeParse(req.body);
+  const parsed = z.object({ minLevel: z.number().int().min(1).max(100).optional(), title: z.string().trim().min(1).max(120).optional(), description: z.string().trim().min(1).max(500).optional(), imageUrl: stageImageUrlSchema.optional(), status: z.enum(["draft", "approved", "published", "archived"]).optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
   const [updated] = await db.update(nftEvolutionStagesTable).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(nftEvolutionStagesTable.collectionId, String(req.params.collectionId)), eq(nftEvolutionStagesTable.stageKey, String(req.params.stageKey)))).returning();
   if (!updated) { res.status(404).json({ error: "not_found" }); return; }
   res.json(updated);
 });
+
+router.post(
+  "/admin/nft/collections/:collectionId/evolution/:stageKey/generate-avatar",
+  requireAuth,
+  rateLimit({ name: "nft-stage-avatar", limit: 12, windowSeconds: 3600, requireRedis: true }),
+  async (req, res): Promise<void> => {
+    if (!(await requireAdmin(req, res))) return;
+    const parsed = z.object({ regenerate: z.boolean().optional().default(false) }).safeParse(req.body ?? {});
+    if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
+
+    const collectionId = String(req.params.collectionId);
+    const stageKey = String(req.params.stageKey);
+    const jobKey = `${collectionId}:${stageKey}`;
+    if (avatarJobs.has(jobKey)) {
+      res.status(409).json({ error: "avatar_generation_in_progress" });
+      return;
+    }
+
+    const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, collectionId)).limit(1);
+    const [stage] = await db.select().from(nftEvolutionStagesTable)
+      .where(and(eq(nftEvolutionStagesTable.collectionId, collectionId), eq(nftEvolutionStagesTable.stageKey, stageKey)))
+      .limit(1);
+    if (!collection || !stage) { res.status(404).json({ error: "not_found" }); return; }
+    if (stage.imageUrl && !parsed.data.regenerate) {
+      res.status(409).json({ error: "avatar_already_exists" });
+      return;
+    }
+
+    const blueprint = collection.rpgBlueprint && typeof collection.rpgBlueprint === "object"
+      ? collection.rpgBlueprint
+      : {};
+    const blueprintStages = Array.isArray(blueprint.stages) ? blueprint.stages : [];
+    const blueprintStage = blueprintStages.find((candidate) =>
+      candidate && typeof candidate === "object" && "stageKey" in candidate && candidate.stageKey === stageKey
+    ) as { imagePrompt?: unknown } | undefined;
+
+    avatarJobs.add(jobKey);
+    try {
+      const imageUrl = await generateNftStageAvatar({
+        ipName: collection.ipName,
+        roleName: collection.roleName,
+        worldStyle: collection.worldStyle,
+        stageTitle: stage.title,
+        stageDescription: stage.description,
+        stageImagePrompt: typeof blueprintStage?.imagePrompt === "string" ? blueprintStage.imagePrompt : undefined,
+        minLevel: stage.minLevel,
+        retainedTraits: Array.isArray(stage.retainedTraits) ? stage.retainedTraits : [],
+      });
+      const [updated] = await db.update(nftEvolutionStagesTable)
+        .set({ imageUrl, updatedAt: new Date() })
+        .where(and(eq(nftEvolutionStagesTable.collectionId, collectionId), eq(nftEvolutionStagesTable.stageKey, stageKey)))
+        .returning();
+      await db.insert(adminAuditLogsTable).values({
+        actorUserId: req.dbUser!.id,
+        action: stage.imageUrl ? "nft_stage_avatar_regenerate" : "nft_stage_avatar_generate",
+        targetType: "nft_evolution_stage",
+        targetId: stage.id,
+        beforeJson: stage.imageUrl ? { imageUrl: stage.imageUrl } : null,
+        afterJson: { imageUrl, collectionId, stageKey },
+      });
+      res.status(201).json(updated);
+    } catch (error) {
+      req.log.error({ err: error, collectionId, stageKey }, "NFT stage avatar generation failed");
+      res.status(502).json({ error: "avatar_generation_failed", message: "아바타 이미지 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." });
+    } finally {
+      avatarJobs.delete(jobKey);
+    }
+  },
+);
 
 router.get("/admin/nft/collections", requireAuth, async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
