@@ -3,25 +3,25 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, searchTrendingBlocksTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { isKnowledgeAdmin } from "../lib/knowledge/validation";
+import { hasAdminAccess } from "../lib/adminRbac";
 import { invalidateTrendingSearchCache, normalizeSearchTerm } from "../lib/searchTrending";
 
 const router: IRouter = Router();
 const blockSchema = z.object({ term: z.string().trim().min(2).max(80), reason: z.string().trim().max(200).optional() }).strict();
 
-function requireAdmin(req: Parameters<typeof requireAuth>[0], res: Parameters<typeof requireAuth>[1]): boolean {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return false; }
+async function requireAdmin(req: Parameters<typeof requireAuth>[0], res: Parameters<typeof requireAuth>[1]): Promise<boolean> {
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return false; }
   return true;
 }
 
 router.get("/search/admin/blocks", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const rows = await db.select().from(searchTrendingBlocksTable).orderBy(desc(searchTrendingBlocksTable.createdAt));
   res.json(rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() })));
 });
 
 router.post("/search/admin/blocks", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const parsed = blockSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid_term" }); return; }
   const term = normalizeSearchTerm(parsed.data.term);
@@ -32,7 +32,7 @@ router.post("/search/admin/blocks", requireAuth, async (req, res): Promise<void>
 });
 
 router.delete("/search/admin/blocks/:term", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const term = normalizeSearchTerm(req.params.term);
   if (!term) { res.status(400).json({ error: "invalid_term" }); return; }
   await db.delete(searchTrendingBlocksTable).where(eq(searchTrendingBlocksTable.normalizedTerm, term));

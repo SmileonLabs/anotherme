@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { isKnowledgeAdmin } from "../lib/knowledge/validation";
+import { hasAdminAccess } from "../lib/adminRbac";
 import { analyzeNftRpg } from "../lib/nftRpgAnalyzer";
 
 const router: IRouter = Router();
@@ -20,8 +20,8 @@ const createSchema = z.object({
   rightsStatus: z.enum(["review_required", "verified", "rejected"]).default("review_required"),
 });
 
-function requireAdmin(req: Parameters<typeof requireAuth>[0], res: Parameters<typeof requireAuth>[1]): boolean {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return false; }
+async function requireAdmin(req: Parameters<typeof requireAuth>[0], res: Parameters<typeof requireAuth>[1]): Promise<boolean> {
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return false; }
   return true;
 }
 
@@ -57,7 +57,7 @@ router.get("/nft/collections/:id/rpg-content", async (req, res): Promise<void> =
 });
 
 router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const parsed = z.object({ minLevel: z.number().int().min(1).max(100).optional(), title: z.string().trim().min(1).max(120).optional(), description: z.string().trim().min(1).max(500).optional(), imageUrl: z.string().url().nullable().optional(), status: z.enum(["draft", "approved", "published", "archived"]).optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
   const [updated] = await db.update(nftEvolutionStagesTable).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(nftEvolutionStagesTable.collectionId, String(req.params.collectionId)), eq(nftEvolutionStagesTable.stageKey, String(req.params.stageKey)))).returning();
@@ -66,12 +66,12 @@ router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", require
 });
 
 router.get("/admin/nft/collections", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   res.json(await db.select().from(nftCollectionsTable).orderBy(desc(nftCollectionsTable.createdAt)));
 });
 
 router.post("/admin/nft/collections", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
   const [row] = await db.insert(nftCollectionsTable).values(parsed.data).onConflictDoUpdate({
@@ -83,7 +83,7 @@ router.post("/admin/nft/collections", requireAuth, async (req, res): Promise<voi
 
 // OpenAI-backed analysis handler. It is registered before the legacy fallback below.
 router.post("/admin/nft/collections/:id/analyze", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const id = String(req.params.id);
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
   if (!collection) { res.status(404).json({ error: "not_found" }); return; }
@@ -104,7 +104,7 @@ router.post("/admin/nft/collections/:id/analyze", requireAuth, async (req, res):
 
 // Explicit second step: regenerate only the growth RPG blueprint after the IP review.
 router.post("/admin/nft/collections/:id/rpg-analyze", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const id = String(req.params.id);
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
   if (!collection) { res.status(404).json({ error: "not_found" }); return; }
@@ -125,7 +125,7 @@ router.post("/admin/nft/collections/:id/rpg-analyze", requireAuth, async (req, r
 
 // Legacy deterministic fallback is kept below for rollback safety.
 router.post("/admin/nft/collections/:id/analyze-legacy", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const id = String(req.params.id);
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
   if (!collection) { res.status(404).json({ error: "not_found" }); return; }
@@ -143,7 +143,7 @@ router.post("/admin/nft/collections/:id/analyze-legacy", requireAuth, async (req
 });
 
 router.post("/admin/nft/collections/:id/review", requireAuth, async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const parsed = z.object({ action: z.enum(["approve", "reject", "publish", "suspend"]), roleName: z.string().trim().max(80).optional(), worldStyle: z.string().trim().max(300).optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid" }); return; }
   const status = parsed.data.action === "approve" ? "approved" : parsed.data.action === "publish" ? "published" : parsed.data.action === "suspend" ? "suspended" : "rejected";

@@ -177,6 +177,9 @@ export function useKnowledgeAdminMe() {
   return useQuery({
     queryKey: knowledgeAdminMeQueryKey,
     queryFn: () => customFetch<KnowledgeAdminState>("/api/knowledge/admin/me", { responseType: "json" }),
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: 1,
   });
 }
 

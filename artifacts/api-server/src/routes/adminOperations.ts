@@ -2,11 +2,11 @@ import { Router, type IRouter } from "express";
 import { count, desc } from "drizzle-orm";
 import { callsTable, chatRoomsTable, db, searchQueryLogsTable, starFeedPostsTable, starFeedReportsTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { isKnowledgeAdmin } from "../lib/knowledge/validation";
+import { hasAdminAccess } from "../lib/adminRbac";
 
 const router: IRouter = Router();
 router.get("/admin/operations/overview", requireAuth, async (req, res): Promise<void> => {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return; }
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return; }
   const [[posts], [reports], [rooms], [calls], [searches]] = await Promise.all([
     db.select({ value: count() }).from(starFeedPostsTable),
     db.select({ value: count() }).from(starFeedReportsTable),

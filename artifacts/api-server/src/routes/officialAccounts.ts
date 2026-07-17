@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { db } from "@workspace/db";
 import { officialAiAccountsTable } from "../../../../lib/db/src/schema/officialAi";
 import { requireAuth } from "../lib/auth";
-import { isKnowledgeAdmin } from "../lib/knowledge/validation";
+import { hasAdminAccess } from "../lib/adminRbac";
 import { ensureBibiFriendshipForUser, getBibiOfficialProfile, getOrCreateBibiDirectRoom } from "../lib/officialAccounts";
 import { roomWithMeta } from "./rooms";
 
@@ -21,12 +21,12 @@ router.get("/official-ai-accounts/:slug/runtime", requireAuth, async (req, res):
 });
 
 router.get("/admin/official-ai-accounts", requireAuth, async (req, res): Promise<void> => {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return; }
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return; }
   res.json(await db.select().from(officialAiAccountsTable).orderBy(desc(officialAiAccountsTable.updatedAt)));
 });
 
 router.post("/admin/official-ai-accounts", requireAuth, async (req, res): Promise<void> => {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return; }
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return; }
   const parsed = z.object({
     slug: z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,48}$/),
     displayName: z.string().trim().min(1).max(100),
@@ -46,7 +46,7 @@ router.post("/admin/official-ai-accounts", requireAuth, async (req, res): Promis
 });
 
 router.post("/admin/official-ai-accounts/:id/review", requireAuth, async (req, res): Promise<void> => {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return; }
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return; }
   const parsed = z.object({ action: z.enum(["approve", "publish", "suspend", "archive"]) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid" }); return; }
   const status = parsed.data.action === "approve" ? "approved" : parsed.data.action === "publish" ? "published" : parsed.data.action === "suspend" ? "suspended" : "archived";
@@ -56,7 +56,7 @@ router.post("/admin/official-ai-accounts/:id/review", requireAuth, async (req, r
 });
 
 router.patch("/admin/official-ai-accounts/:id", requireAuth, async (req, res): Promise<void> => {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) { res.status(403).json({ error: "admin_required" }); return; }
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) { res.status(403).json({ error: "admin_required" }); return; }
   const parsed = z.object({
     displayName: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().max(500).nullable().optional(),
