@@ -13,7 +13,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import { Feather } from "@expo/vector-icons";
-import { Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -80,21 +80,40 @@ function PresenceHeartbeat() {
 
 function ApiAuthBridge({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const authState = !isLoaded ? null : isSignedIn ? "signed-in" : "signed-out";
+  const [readyState, setReadyState] = useState<"signed-in" | "signed-out" | null>(null);
 
   useEffect(() => {
     if (!isLoaded) {
       setAuthTokenGetter(null);
+      setReadyState(null);
       return;
     }
 
     if (!isSignedIn) {
       setAuthTokenGetter(null);
+      setReadyState("signed-out");
       return;
     }
 
+    // Descendant queries can start as soon as they mount. Do not render them
+    // until the bearer-token getter is installed, otherwise the first wave of
+    // /users/me and /admin requests races this effect and receives 401.
     setAuthTokenGetter(() => getToken());
-    return () => setAuthTokenGetter(null);
+    setReadyState("signed-in");
+    return () => {
+      setAuthTokenGetter(null);
+      setReadyState(null);
+    };
   }, [isLoaded, isSignedIn, getToken]);
+
+  if (!authState || readyState !== authState) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color="#8B5CF6" />
+      </View>
+    );
+  }
 
   return <>{children}</>;
 }
