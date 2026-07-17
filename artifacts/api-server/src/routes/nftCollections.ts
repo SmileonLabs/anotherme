@@ -6,6 +6,7 @@ import { requireAuth } from "../lib/auth";
 import { hasAdminAccess } from "../lib/adminRbac";
 import { analyzeNftRpg } from "../lib/nftRpgAnalyzer";
 import { generateNftStageAvatar } from "../lib/nftAvatarGenerator";
+import { resolveNftReferenceImage } from "../lib/nftReferenceImage";
 import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
@@ -84,7 +85,10 @@ router.post(
   rateLimit({ name: "nft-stage-avatar", limit: 12, windowSeconds: 3600 }),
   async (req, res): Promise<void> => {
     if (!(await requireAdmin(req, res))) return;
-    const parsed = z.object({ regenerate: z.boolean().optional().default(false) }).safeParse(req.body ?? {});
+    const parsed = z.object({
+      regenerate: z.boolean().optional().default(false),
+      referenceTokenId: z.string().regex(/^\d{1,78}$/).optional().default("1"),
+    }).safeParse(req.body ?? {});
     if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
 
     const collectionId = String(req.params.collectionId);
@@ -115,6 +119,13 @@ router.post(
 
     avatarJobs.add(jobKey);
     try {
+      const referenceImage = await resolveNftReferenceImage({
+        chainId: collection.chainId,
+        contractAddress: collection.contractAddress,
+        rpcUrl: collection.rpcUrl,
+        metadataUrl: collection.metadataUrl,
+        tokenId: parsed.data.referenceTokenId,
+      });
       const imageUrl = await generateNftStageAvatar({
         ipName: collection.ipName,
         roleName: collection.roleName,
@@ -124,6 +135,7 @@ router.post(
         stageImagePrompt: typeof blueprintStage?.imagePrompt === "string" ? blueprintStage.imagePrompt : undefined,
         minLevel: stage.minLevel,
         retainedTraits: Array.isArray(stage.retainedTraits) ? stage.retainedTraits : [],
+        referenceImage,
       });
       const [updated] = await db.update(nftEvolutionStagesTable)
         .set({ imageUrl, updatedAt: new Date() })
@@ -135,7 +147,7 @@ router.post(
         targetType: "nft_evolution_stage",
         targetId: stage.id,
         beforeJson: stage.imageUrl ? { imageUrl: stage.imageUrl } : null,
-        afterJson: { imageUrl, collectionId, stageKey },
+        afterJson: { imageUrl, collectionId, stageKey, referenceTokenId: parsed.data.referenceTokenId },
       });
       res.status(201).json(updated);
     } catch (error) {
