@@ -858,7 +858,28 @@ export interface WalletNftInventory {
   hasEligibleNft: boolean;
   /** @minimum 0 */
   configuredCollectionCount: number;
+  /** @minimum 0 */
+  failedCollectionCount: number;
+  partial: boolean;
   checkedAt: string;
+}
+
+export interface PublicNftCollection {
+  id: string;
+  /** @minimum 1 */
+  chainId: number;
+  contractAddress: string;
+  name: string;
+  ipName: string;
+  category: string;
+  /** @nullable */
+  officialUrl?: string | null;
+  /** @nullable */
+  roleName?: string | null;
+  /** @nullable */
+  worldStyle?: string | null;
+  status: 'published';
+  updatedAt: string;
 }
 
 export interface EquippedStarProfileResponse {
@@ -871,6 +892,7 @@ export interface EquipStarNftInput {
      * @maxLength 80
      */
   tokenId: string;
+  collectionId?: string;
 }
 
 export interface EquipStarNftResult {

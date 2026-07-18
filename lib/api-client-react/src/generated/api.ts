@@ -141,6 +141,7 @@ import type {
   PresenceUsersResponse,
   ProfilePostsPage,
   ProfileUpdateHistoryItem,
+  PublicNftCollection,
   PublicProfile,
   PublicUser,
   PushTokenInput,
@@ -11263,6 +11264,83 @@ export const useUpdateMyPlayMode = <TError = ErrorType<ApiError | PlayModeError>
       > => {
       return useMutation(getUpdateMyPlayModeMutationOptions(options));
     }
+
+export const getListPublishedNftCollectionsUrl = () => {
+
+
+
+
+  return `/api/nft/collections`
+}
+
+/**
+ * @summary List published NFT collections available for STAR summon
+ */
+export const listPublishedNftCollections = async ( options?: RequestInit): Promise<PublicNftCollection[]> => {
+
+  return customFetch<PublicNftCollection[]>(getListPublishedNftCollectionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublishedNftCollectionsQueryKey = () => {
+    return [
+    `/api/nft/collections`
+    ] as const;
+    }
+
+
+export const getListPublishedNftCollectionsQueryOptions = <TData = Awaited<ReturnType<typeof listPublishedNftCollections>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftCollections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublishedNftCollectionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublishedNftCollections>>> = ({ signal }) => listPublishedNftCollections({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftCollections>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublishedNftCollectionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPublishedNftCollections>>>
+export type ListPublishedNftCollectionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List published NFT collections available for STAR summon
+ */
+
+export function useListPublishedNftCollections<TData = Awaited<ReturnType<typeof listPublishedNftCollections>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftCollections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublishedNftCollectionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetMyWalletStatusUrl = () => {
 

@@ -15,5 +15,8 @@ export interface WalletNftInventory {
   hasEligibleNft: boolean;
   /** @minimum 0 */
   configuredCollectionCount: number;
+  /** @minimum 0 */
+  failedCollectionCount: number;
+  partial: boolean;
   checkedAt: Date;
 }

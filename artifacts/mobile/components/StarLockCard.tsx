@@ -386,6 +386,14 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
       {status?.walletVerified && !equippedStar ? (
         <View style={styles.challengeBlock}>
           <Text style={[styles.label, { color: colors.foreground }]}>소환 가능한 내 NFT</Text>
+          {inventory?.partial ? (
+            <View style={[styles.notice, { backgroundColor: colors.background }]}>
+              <Feather name="alert-circle" size={15} color={colors.primary} />
+              <Text style={[styles.noticeText, { color: colors.mutedForeground }]}>
+                일부 컬렉션의 소유권 조회가 지연되고 있어요. 잠시 후 다시 확인해 주세요.
+              </Text>
+            </View>
+          ) : null}
           {isLoadingInventory ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.primary} />

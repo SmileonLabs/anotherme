@@ -45,7 +45,23 @@ function blueprint(category: z.infer<typeof categorySchema>, ipName: string) {
 }
 
 router.get("/nft/collections", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.status, "published")).orderBy(desc(nftCollectionsTable.updatedAt));
+  const rows = await db
+    .select({
+      id: nftCollectionsTable.id,
+      chainId: nftCollectionsTable.chainId,
+      contractAddress: nftCollectionsTable.contractAddress,
+      name: nftCollectionsTable.name,
+      ipName: nftCollectionsTable.ipName,
+      category: nftCollectionsTable.category,
+      officialUrl: nftCollectionsTable.officialUrl,
+      roleName: nftCollectionsTable.roleName,
+      worldStyle: nftCollectionsTable.worldStyle,
+      status: nftCollectionsTable.status,
+      updatedAt: nftCollectionsTable.updatedAt,
+    })
+    .from(nftCollectionsTable)
+    .where(eq(nftCollectionsTable.status, "published"))
+    .orderBy(desc(nftCollectionsTable.updatedAt));
   res.json(rows);
 });
 

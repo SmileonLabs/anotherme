@@ -33,8 +33,16 @@ export interface WalletNftInventoryView {
   totalOwned: number;
   hasEligibleNft: boolean;
   configuredCollectionCount: number;
+  failedCollectionCount: number;
+  partial: boolean;
   checkedAt: string;
 }
+
+type InventoryCheckResult =
+  | { kind: "owned"; collection: WalletNftCollectionView }
+  | { kind: "empty" }
+  | { kind: "skipped" }
+  | { kind: "failed" };
 
 export async function getVerifiedWalletAddress(userId: string): Promise<Address | null> {
   const [wallet] = await db
@@ -74,12 +82,12 @@ export async function listAddressNftInventory(
   }).length;
 
   const results = await Promise.all(
-    collections.map(async (collection): Promise<WalletNftCollectionView | null> => {
+    collections.map(async (collection): Promise<InventoryCheckResult> => {
       let contractAddress: Address;
       try {
         contractAddress = getAddress(collection.contractAddress);
       } catch {
-        return null;
+        return { kind: "skipped" };
       }
       const config: NftConfig = {
         configured: Boolean(collection.rpcUrl),
@@ -87,46 +95,58 @@ export async function listAddressNftInventory(
         contractAddress,
         chainId: collection.chainId,
       };
-      if (!config.configured) return null;
+      if (!config.configured) return { kind: "skipped" };
 
       try {
         const ownership = await listOwnedErc721TokensWithConfig(walletAddress, config);
-        if (!ownership.configured || ownership.balance == null || ownership.balance === 0n) return null;
+        if (!ownership.configured) return { kind: "failed" };
+        if (ownership.balance == null || ownership.balance === 0n) return { kind: "empty" };
         return {
-          collectionId: collection.id,
-          chainId: collection.chainId,
-          contractAddress,
-          collectionName: collection.name,
-          ipName: collection.ipName,
-          category: collection.category,
-          balance: ownership.balance.toString(),
-          enumerable: ownership.enumerable,
-          truncated: ownership.truncated,
-          requiresTokenId: !ownership.enumerable,
-          tokens: ownership.tokenIds.map((tokenId) => ({
+          kind: "owned",
+          collection: {
             collectionId: collection.id,
             chainId: collection.chainId,
             contractAddress,
             collectionName: collection.name,
             ipName: collection.ipName,
             category: collection.category,
-            tokenId,
-          })),
+            balance: ownership.balance.toString(),
+            enumerable: ownership.enumerable,
+            truncated: ownership.truncated,
+            requiresTokenId: !ownership.enumerable,
+            tokens: ownership.tokenIds.map((tokenId) => ({
+              collectionId: collection.id,
+              chainId: collection.chainId,
+              contractAddress,
+              collectionName: collection.name,
+              ipName: collection.ipName,
+              category: collection.category,
+              tokenId,
+            })),
+          },
         };
       } catch (error) {
         if (options.failFast) throw error;
-        return null;
+        return { kind: "failed" };
       }
     }),
   );
 
-  const ownedCollections = results.filter((value): value is WalletNftCollectionView => value != null);
+  const ownedCollections = results.flatMap((result) =>
+    result.kind === "owned" ? [result.collection] : [],
+  );
+  const failedCollectionCount = results.filter((result) => result.kind === "failed").length;
+  if (failedCollectionCount > 0 && ownedCollections.length === 0) {
+    throw new Error("nft_inventory_unavailable");
+  }
   return {
     walletAddress,
     collections: ownedCollections,
     totalOwned: ownedCollections.reduce((sum, collection) => sum + Number(collection.balance), 0),
     hasEligibleNft: ownedCollections.length > 0,
     configuredCollectionCount,
+    failedCollectionCount,
+    partial: failedCollectionCount > 0,
     checkedAt: new Date().toISOString(),
   };
 }

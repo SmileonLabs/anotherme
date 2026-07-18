@@ -12,11 +12,11 @@ import {
   type StarStats,
 } from "@workspace/db";
 import {
-  checkNftTokenOwner,
   checkNftTokenOwnerWithConfig,
   getNftConfig,
   getStarIdentityForToken,
   normalizeTokenId,
+  type NftConfig,
 } from "./nft";
 
 export interface StarProfileView {
@@ -98,6 +98,63 @@ export function serializeStarProfile(profile: StarProfile | undefined | null): S
   };
 }
 
+function unconfiguredNftConfig(chainId: number | null = null): NftConfig {
+  return { configured: false, rpcUrl: null, contractAddress: null, chainId };
+}
+
+function collectionNftConfig(collection: typeof nftCollectionsTable.$inferSelect): NftConfig {
+  let contractAddress: `0x${string}` | null = null;
+  try {
+    contractAddress = getAddress(collection.contractAddress);
+  } catch {
+    return unconfiguredNftConfig(collection.chainId);
+  }
+  return {
+    configured: Boolean(collection.rpcUrl && collection.chainId > 0),
+    rpcUrl: collection.rpcUrl,
+    contractAddress,
+    chainId: collection.chainId,
+  };
+}
+
+async function resolveProfileNftConfig(profile: StarProfile): Promise<{
+  config: NftConfig;
+  published: boolean;
+}> {
+  let profileContract: `0x${string}`;
+  try {
+    profileContract = getAddress(profile.contractAddress);
+  } catch {
+    return { config: unconfiguredNftConfig(profile.chainId), published: false };
+  }
+
+  if (profile.collectionId) {
+    const [collection] = await db
+      .select()
+      .from(nftCollectionsTable)
+      .where(eq(nftCollectionsTable.id, profile.collectionId))
+      .limit(1);
+    if (!collection) {
+      return { config: unconfiguredNftConfig(profile.chainId), published: false };
+    }
+    const config = collectionNftConfig(collection);
+    const matchesProfile =
+      config.chainId === profile.chainId && config.contractAddress === profileContract;
+    return {
+      config: matchesProfile ? config : unconfiguredNftConfig(profile.chainId),
+      published: collection.status === "published",
+    };
+  }
+
+  const config = getNftConfig();
+  const matchesProfile =
+    config.chainId === profile.chainId && config.contractAddress === profileContract;
+  return {
+    config: matchesProfile ? config : unconfiguredNftConfig(profile.chainId),
+    published: matchesProfile,
+  };
+}
+
 export async function getEquippedStarProfile(userId: string): Promise<StarProfileView | null> {
   const [profile] = await db
     .select()
@@ -129,9 +186,16 @@ export async function revalidateStarProfiles(userId: string): Promise<StarProfil
   const profiles = await db.select().from(starProfilesTable).where(eq(starProfilesTable.userId, userId));
   for (const profile of profiles) {
     try {
-      const owner = await checkNftTokenOwner(profile.tokenId);
+      const { config, published } = await resolveProfileNftConfig(profile);
+      if (!config.configured) throw new Error("nft_config_missing");
+      const owner = await checkNftTokenOwnerWithConfig(profile.tokenId, config);
       const owned = Boolean(owner.owner && owner.owner === getAddress(profile.walletAddress));
-      await db.update(starProfilesTable).set({ ownershipStatus: owned ? "verified" : "lost", verifiedAt: owned ? new Date() : profile.verifiedAt, equippedAt: owned ? profile.equippedAt : null, updatedAt: new Date() }).where(eq(starProfilesTable.id, profile.id));
+      await db.update(starProfilesTable).set({
+        ownershipStatus: owned ? "verified" : "lost",
+        verifiedAt: owned ? new Date() : profile.verifiedAt,
+        equippedAt: owned && published ? profile.equippedAt : null,
+        updatedAt: new Date(),
+      }).where(eq(starProfilesTable.id, profile.id));
     } catch {
       await db.update(starProfilesTable).set({ ownershipStatus: "pending", updatedAt: new Date() }).where(eq(starProfilesTable.id, profile.id));
     }
@@ -152,6 +216,29 @@ export async function activateStarProfile(params: {
     throw new StarProfileError("star_not_owned", "선택한 STAR 프로필을 찾을 수 없어요.");
   }
 
+  const resolved = await resolveProfileNftConfig(owned);
+  if (!resolved.published || !resolved.config.configured) {
+    throw new StarProfileError("config_missing", "현재 공개 중인 NFT 컬렉션만 활성화할 수 있어요.");
+  }
+
+  let currentOwner;
+  try {
+    currentOwner = await checkNftTokenOwnerWithConfig(owned.tokenId, resolved.config);
+  } catch {
+    await db
+      .update(starProfilesTable)
+      .set({ ownershipStatus: "pending", equippedAt: null, updatedAt: new Date() })
+      .where(eq(starProfilesTable.id, owned.id));
+    throw new StarProfileError("nft_check_failed", "NFT 소유자를 확인하지 못했어요.");
+  }
+  if (!currentOwner.owner || currentOwner.owner !== getAddress(owned.walletAddress)) {
+    await db
+      .update(starProfilesTable)
+      .set({ ownershipStatus: "lost", equippedAt: null, updatedAt: new Date() })
+      .where(eq(starProfilesTable.id, owned.id));
+    throw new StarProfileError("token_not_owned", "현재 인증한 지갑이 이 NFT를 보유하고 있지 않아요.");
+  }
+
   const now = new Date();
   await db.transaction(async (tx) => {
     await tx
@@ -160,7 +247,7 @@ export async function activateStarProfile(params: {
       .where(eq(starProfilesTable.userId, params.userId));
     await tx
       .update(starProfilesTable)
-      .set({ equippedAt: now, updatedAt: now })
+      .set({ ownershipStatus: "verified", verifiedAt: now, equippedAt: now, updatedAt: now })
       .where(and(eq(starProfilesTable.id, params.starProfileId), eq(starProfilesTable.userId, params.userId)));
   });
 
@@ -202,8 +289,8 @@ export async function equipStarNft(params: {
   let collection: (typeof nftCollectionsTable.$inferSelect & { rpcUrl?: string | null }) | null = null;
   if (params.collectionId) {
     const [selected] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, params.collectionId)).limit(1) as Array<typeof nftCollectionsTable.$inferSelect & { rpcUrl?: string | null }>;
-    if (!selected || !["approved", "published"].includes(selected.status)) {
-      throw new StarProfileError("config_missing", "승인된 NFT 컬렉션만 소환할 수 있어요.");
+    if (!selected || selected.status !== "published") {
+      throw new StarProfileError("config_missing", "공개된 NFT 컬렉션만 소환할 수 있어요.");
     }
     collection = selected;
   }

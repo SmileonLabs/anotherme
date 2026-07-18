@@ -222,6 +222,7 @@ export * from './profileUpdateHistoryItem';
 export * from './profileUpdateHistoryItemKind';
 export * from './publicBattleResult';
 export * from './publicBattleResultOutcome';
+export * from './publicNftCollection';
 export * from './publicProfile';
 export * from './publicProfileFan';
 export * from './publicProfileStarsItem';

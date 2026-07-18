@@ -3678,6 +3678,28 @@ export const UpdateMyPlayModeResponse = zod.object({
 
 
 /**
+ * @summary List published NFT collections available for STAR summon
+ */
+
+
+
+export const ListPublishedNftCollectionsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "chainId": zod.number().min(1),
+  "contractAddress": zod.string(),
+  "name": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "officialUrl": zod.string().url().nullish(),
+  "roleName": zod.string().nullish(),
+  "worldStyle": zod.string().nullish(),
+  "status": zod.literal("published"),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPublishedNftCollectionsResponse = zod.array(ListPublishedNftCollectionsResponseItem)
+
+
+/**
  * @summary Get my wallet and NFT verification status
  */
 export const GetMyWalletStatusResponse = zod.object({
@@ -3930,6 +3952,8 @@ export const getMyWalletNftInventoryResponseTotalOwnedMin = 0;
 
 export const getMyWalletNftInventoryResponseConfiguredCollectionCountMin = 0;
 
+export const getMyWalletNftInventoryResponseFailedCollectionCountMin = 0;
+
 
 
 export const GetMyWalletNftInventoryResponse = zod.object({
@@ -3958,6 +3982,8 @@ export const GetMyWalletNftInventoryResponse = zod.object({
   "totalOwned": zod.number().min(getMyWalletNftInventoryResponseTotalOwnedMin),
   "hasEligibleNft": zod.boolean(),
   "configuredCollectionCount": zod.number().min(getMyWalletNftInventoryResponseConfiguredCollectionCountMin),
+  "failedCollectionCount": zod.number().min(getMyWalletNftInventoryResponseFailedCollectionCountMin),
+  "partial": zod.boolean(),
   "checkedAt": zod.coerce.date()
 })
 
@@ -3970,7 +3996,8 @@ export const equipStarNftBodyTokenIdMax = 80;
 
 
 export const EquipStarNftBody = zod.object({
-  "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax)
+  "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax),
+  "collectionId": zod.string().uuid().optional()
 })
 
 export const equipStarNftResponseStateSocialFollowerCountMin = 0;

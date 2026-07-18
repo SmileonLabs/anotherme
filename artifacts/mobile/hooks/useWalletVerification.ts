@@ -69,6 +69,8 @@ export interface WalletNftInventory {
   totalOwned: number;
   hasEligibleNft: boolean;
   configuredCollectionCount: number;
+  failedCollectionCount: number;
+  partial: boolean;
   checkedAt: string;
 }
 

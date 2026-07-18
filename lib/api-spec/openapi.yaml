@@ -28,6 +28,8 @@ tags:
     description: Realtime connection setup
   - name: quests
     description: Daily/weekly quests & achievements
+  - name: nft
+    description: Published NFT collection and ownership operations
 paths:
   /healthz:
     get:
@@ -3757,6 +3759,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
 
+  /nft/collections:
+    get:
+      operationId: listPublishedNftCollections
+      tags: [nft]
+      summary: List published NFT collections available for STAR summon
+      responses:
+        "200":
+          description: Published collections with public metadata only
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicNftCollection"
+
   /users/me/wallet:
     get:
       operationId: getMyWalletStatus
@@ -5241,7 +5258,7 @@ components:
 
     WalletNftInventory:
       type: object
-      required: [walletAddress, collections, totalOwned, hasEligibleNft, configuredCollectionCount, checkedAt]
+      required: [walletAddress, collections, totalOwned, hasEligibleNft, configuredCollectionCount, failedCollectionCount, partial, checkedAt]
       properties:
         walletAddress: { type: string }
         collections:
@@ -5251,7 +5268,27 @@ components:
         totalOwned: { type: integer, minimum: 0 }
         hasEligibleNft: { type: boolean }
         configuredCollectionCount: { type: integer, minimum: 0 }
+        failedCollectionCount: { type: integer, minimum: 0 }
+        partial: { type: boolean }
         checkedAt: { type: string, format: date-time }
+
+    PublicNftCollection:
+      type: object
+      required: [id, chainId, contractAddress, name, ipName, category, status, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        chainId: { type: integer, minimum: 1 }
+        contractAddress: { type: string }
+        name: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        officialUrl: { type: ["string", "null"], format: uri }
+        roleName: { type: ["string", "null"] }
+        worldStyle: { type: ["string", "null"] }
+        status:
+          type: string
+          const: published
+        updatedAt: { type: string, format: date-time }
 
     EquippedStarProfileResponse:
       type: object
@@ -5270,6 +5307,9 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        collectionId:
+          type: string
+          format: uuid
 
     EquipStarNftResult:
       type: object
