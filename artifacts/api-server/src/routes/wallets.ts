@@ -17,11 +17,14 @@ import {
   revalidateStarProfiles,
 } from "../lib/starProfiles";
 import { ensurePlayModeState } from "../lib/fanStar";
+import { rateLimit } from "../lib/rateLimit";
+import { listWalletNftInventory } from "../lib/nftInventory";
 
 const router: IRouter = Router();
 
 const challengeBodySchema = z.object({
   walletAddress: z.string().trim().min(1).max(120),
+  chainId: z.number().int().positive().max(2_147_483_647).optional(),
 });
 
 const verifyBodySchema = z.object({
@@ -72,7 +75,11 @@ router.get("/users/me/wallet", requireAuth, async (req, res): Promise<void> => {
   res.json(await getWalletStatus(req.dbUser!.id));
 });
 
-router.post("/users/me/wallet/challenge", requireAuth, async (req, res): Promise<void> => {
+router.post(
+  "/users/me/wallet/challenge",
+  requireAuth,
+  rateLimit({ name: "wallet-challenge", limit: 10, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
   const parsed = challengeBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "지갑 주소를 입력해 주세요." });
@@ -84,15 +91,21 @@ router.post("/users/me/wallet/challenge", requireAuth, async (req, res): Promise
       await createWalletChallenge({
         userId: req.dbUser!.id,
         walletAddress: parsed.data.walletAddress,
+        chainId: parsed.data.chainId,
       }),
     );
   } catch (err) {
     if (handleWalletError(res, err)) return;
     throw err;
   }
-});
+  },
+);
 
-router.post("/users/me/wallet/verify", requireAuth, async (req, res): Promise<void> => {
+router.post(
+  "/users/me/wallet/verify",
+  requireAuth,
+  rateLimit({ name: "wallet-verify", limit: 10, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
   const parsed = verifyBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "서명 정보를 확인해 주세요." });
@@ -112,7 +125,8 @@ router.post("/users/me/wallet/verify", requireAuth, async (req, res): Promise<vo
     if (handleWalletError(res, err)) return;
     throw err;
   }
-});
+  },
+);
 
 router.post("/users/me/wallet/refresh", requireAuth, async (req, res): Promise<void> => {
   try {
@@ -120,6 +134,18 @@ router.post("/users/me/wallet/refresh", requireAuth, async (req, res): Promise<v
   } catch (err) {
     if (handleWalletError(res, err)) return;
     throw err;
+  }
+});
+
+router.get("/users/me/wallet/nfts", requireAuth, async (req, res): Promise<void> => {
+  try {
+    res.json(await listWalletNftInventory(req.dbUser!.id));
+  } catch (err) {
+    if (err instanceof Error && err.message === "wallet_required") {
+      res.status(409).json({ error: "wallet_required", message: "먼저 지갑을 인증해 주세요." });
+      return;
+    }
+    res.status(502).json({ error: "nft_check_failed", message: "NFT 목록을 불러오지 못했어요." });
   }
 });
 

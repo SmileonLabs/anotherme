@@ -15,3 +15,27 @@ if (fs.existsSync(barrel)) {
   for (const [marker, replacement] of markers) next = next.replace(marker, replacement);
   if (next !== source) fs.writeFileSync(barrel, next);
 }
+
+// Orval/Prettier can leave an extra blank line at EOF in split outputs. That
+// makes `git diff --check` fail even though a second generation is otherwise
+// identical. Normalize generated TypeScript files to one final newline.
+const generatedRoots = [
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../lib/api-client-react/src/generated"),
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../lib/api-zod/src/generated"),
+];
+for (const root of generatedRoots) {
+  if (!fs.existsSync(root)) continue;
+  const pending = [root];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const target = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(target);
+      else if (entry.isFile() && entry.name.endsWith(".ts")) {
+        const source = fs.readFileSync(target, "utf8");
+        const normalized = `${source.trimEnd()}\n`;
+        if (normalized !== source) fs.writeFileSync(target, normalized);
+      }
+    }
+  }
+}

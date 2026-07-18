@@ -730,14 +730,18 @@ export const PlayModeStateCurrentMode = {
   star: 'star',
 } as const;
 
+export type PlayModeStateSocial = {
+  /** @minimum 0 */
+  followerCount: number;
+  /** @minimum 0 */
+  followingCount: number;
+};
+
 export interface PlayModeState {
   currentMode: PlayModeStateCurrentMode;
   starUnlocked: boolean;
   fanProfile: FanProfile;
-  social: {
-    followerCount: number;
-    followingCount: number;
-  };
+  social: PlayModeStateSocial;
   equippedStar?: StarProfile | null;
   starProfiles: StarProfile[];
 }
@@ -778,6 +782,11 @@ export interface WalletChallengeInput {
      * @maxLength 120
      */
   walletAddress: string;
+  /**
+     * @minimum 1
+     * @maximum 2147483647
+     */
+  chainId?: number;
 }
 
 export interface WalletChallenge {
@@ -789,6 +798,9 @@ export interface WalletChallenge {
   nftContractAddress?: string | null;
   /** @nullable */
   nftChainId?: number | null;
+  chainId: number;
+  domain: string;
+  uri: string;
 }
 
 export interface WalletVerificationInput {
@@ -812,6 +824,41 @@ export interface WalletVerificationResult {
   /** @nullable */
   balance?: string | null;
   configMissing: boolean;
+}
+
+export interface WalletNftToken {
+  collectionId: string;
+  chainId: number;
+  contractAddress: string;
+  collectionName: string;
+  ipName: string;
+  category: string;
+  tokenId: string;
+}
+
+export interface WalletNftCollection {
+  collectionId: string;
+  chainId: number;
+  contractAddress: string;
+  collectionName: string;
+  ipName: string;
+  category: string;
+  balance: string;
+  enumerable: boolean;
+  truncated: boolean;
+  requiresTokenId: boolean;
+  tokens: WalletNftToken[];
+}
+
+export interface WalletNftInventory {
+  walletAddress: string;
+  collections: WalletNftCollection[];
+  /** @minimum 0 */
+  totalOwned: number;
+  hasEligibleNft: boolean;
+  /** @minimum 0 */
+  configuredCollectionCount: number;
+  checkedAt: string;
 }
 
 export interface EquippedStarProfileResponse {

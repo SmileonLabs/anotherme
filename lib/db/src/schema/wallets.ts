@@ -34,6 +34,9 @@ export const walletVerificationChallengesTable = pgTable(
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
     walletAddress: text("wallet_address").notNull(),
+    chainId: integer("chain_id").notNull().default(56),
+    domain: text("domain").notNull().default("anothermeai.app"),
+    uri: text("uri").notNull().default("https://anothermeai.app"),
     nonce: text("nonce").notNull().unique(),
     message: text("message").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

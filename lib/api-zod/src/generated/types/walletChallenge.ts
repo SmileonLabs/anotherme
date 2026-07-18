@@ -15,4 +15,7 @@ export interface WalletChallenge {
   nftContractAddress?: string | null;
   /** @nullable */
   nftChainId?: number | null;
+  chainId: number;
+  domain: string;
+  uri: string;
 }

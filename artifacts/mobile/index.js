@@ -1,3 +1,7 @@
+// WalletConnect compatibility globals must be installed before any application
+// module (including expo-router) imports a wallet SDK.
+import "@walletconnect/react-native-compat";
+
 // Runtime globals must be installed before expo-router evaluates route modules.
 import "./lib/runtimePolyfills";
 

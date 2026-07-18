@@ -3922,6 +3922,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /users/me/wallet/nfts:
+    get:
+      operationId: getMyWalletNftInventory
+      tags: [users]
+      summary: List eligible NFTs owned by my verified wallet
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Eligible NFT inventory across approved collections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletNftInventory"
+        "409":
+          description: Wallet verification is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: NFT ownership check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /users/me/star-nft/equip:
     post:
       operationId: equipStarNft
@@ -5120,10 +5146,14 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        chainId:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
 
     WalletChallenge:
       type: object
-      required: [id, walletAddress, message, expiresAt]
+      required: [id, walletAddress, message, expiresAt, chainId, domain, uri]
       properties:
         id:
           type: string
@@ -5138,6 +5168,13 @@ components:
           type: ["string", "null"]
         nftChainId:
           type: ["integer", "null"]
+        chainId:
+          type: integer
+        domain:
+          type: string
+        uri:
+          type: string
+          format: uri
 
     WalletVerificationInput:
       type: object
@@ -5170,6 +5207,51 @@ components:
           type: ["string", "null"]
         configMissing:
           type: boolean
+
+    WalletNftToken:
+      type: object
+      required: [collectionId, chainId, contractAddress, collectionName, ipName, category, tokenId]
+      properties:
+        collectionId: { type: string, format: uuid }
+        chainId: { type: integer }
+        contractAddress: { type: string }
+        collectionName: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        tokenId: { type: string }
+
+    WalletNftCollection:
+      type: object
+      required: [collectionId, chainId, contractAddress, collectionName, ipName, category, balance, enumerable, truncated, requiresTokenId, tokens]
+      properties:
+        collectionId: { type: string, format: uuid }
+        chainId: { type: integer }
+        contractAddress: { type: string }
+        collectionName: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        balance: { type: string }
+        enumerable: { type: boolean }
+        truncated: { type: boolean }
+        requiresTokenId: { type: boolean }
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletNftToken"
+
+    WalletNftInventory:
+      type: object
+      required: [walletAddress, collections, totalOwned, hasEligibleNft, configuredCollectionCount, checkedAt]
+      properties:
+        walletAddress: { type: string }
+        collections:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletNftCollection"
+        totalOwned: { type: integer, minimum: 0 }
+        hasEligibleNft: { type: boolean }
+        configuredCollectionCount: { type: integer, minimum: 0 }
+        checkedAt: { type: string, format: date-time }
 
     EquippedStarProfileResponse:
       type: object

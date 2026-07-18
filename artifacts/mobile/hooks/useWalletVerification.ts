@@ -21,6 +21,9 @@ export interface WalletChallenge {
   expiresAt: string;
   nftContractAddress: string | null;
   nftChainId: number | null;
+  chainId: number;
+  domain: string;
+  uri: string;
 }
 
 export interface VerifyWalletResult {
@@ -36,7 +39,41 @@ export interface EquipStarResult {
   state: PlayModeState;
 }
 
+export interface WalletNftToken {
+  collectionId: string;
+  chainId: number;
+  contractAddress: string;
+  collectionName: string;
+  ipName: string;
+  category: string;
+  tokenId: string;
+}
+
+export interface WalletNftCollection {
+  collectionId: string;
+  chainId: number;
+  contractAddress: string;
+  collectionName: string;
+  ipName: string;
+  category: string;
+  balance: string;
+  enumerable: boolean;
+  truncated: boolean;
+  requiresTokenId: boolean;
+  tokens: WalletNftToken[];
+}
+
+export interface WalletNftInventory {
+  walletAddress: string;
+  collections: WalletNftCollection[];
+  totalOwned: number;
+  hasEligibleNft: boolean;
+  configuredCollectionCount: number;
+  checkedAt: string;
+}
+
 export const walletStatusQueryKey = ["wallet-status"] as const;
+export const walletNftInventoryQueryKey = ["wallet-nft-inventory"] as const;
 
 export function useWalletVerification() {
   const queryClient = useQueryClient();
@@ -47,13 +84,21 @@ export function useWalletVerification() {
         responseType: "json",
       }),
   });
+  const inventoryQuery = useQuery({
+    queryKey: walletNftInventoryQueryKey,
+    queryFn: () =>
+      customFetch<WalletNftInventory>("/api/users/me/wallet/nfts", {
+        responseType: "json",
+      }),
+    enabled: statusQuery.data?.walletVerified === true,
+  });
 
   const challengeMutation = useMutation({
-    mutationFn: (walletAddress: string) =>
+    mutationFn: ({ walletAddress, chainId }: { walletAddress: string; chainId?: number }) =>
       customFetch<WalletChallenge>("/api/users/me/wallet/challenge", {
         method: "POST",
         responseType: "json",
-        body: JSON.stringify({ walletAddress }),
+        body: JSON.stringify({ walletAddress, chainId }),
       }),
   });
 
@@ -74,6 +119,7 @@ export function useWalletVerification() {
       }),
     onSuccess: (result) => {
       queryClient.setQueryData(walletStatusQueryKey, result.status);
+      queryClient.invalidateQueries({ queryKey: walletNftInventoryQueryKey });
       queryClient.invalidateQueries({ queryKey: playModeQueryKey });
     },
   });
@@ -86,6 +132,7 @@ export function useWalletVerification() {
       }),
     onSuccess: (result) => {
       queryClient.setQueryData(walletStatusQueryKey, result.status);
+      queryClient.invalidateQueries({ queryKey: walletNftInventoryQueryKey });
       queryClient.invalidateQueries({ queryKey: playModeQueryKey });
     },
   });
@@ -100,14 +147,19 @@ export function useWalletVerification() {
     onSuccess: (result) => {
       queryClient.setQueryData(playModeQueryKey, result.state);
       queryClient.invalidateQueries({ queryKey: walletStatusQueryKey });
+      queryClient.invalidateQueries({ queryKey: walletNftInventoryQueryKey });
     },
   });
 
   return {
     status: statusQuery.data,
+    inventory: inventoryQuery.data,
     isLoadingStatus: statusQuery.isLoading,
+    isLoadingInventory: inventoryQuery.isLoading,
     refetchStatus: statusQuery.refetch,
-    createChallenge: challengeMutation.mutateAsync,
+    refetchInventory: inventoryQuery.refetch,
+    createChallenge: (walletAddress: string, chainId?: number) =>
+      challengeMutation.mutateAsync({ walletAddress, chainId }),
     verifyWallet: verifyMutation.mutateAsync,
     refreshWallet: refreshMutation.mutateAsync,
     equipStar: (tokenId: string, collectionId?: string) => equipMutation.mutateAsync({ tokenId, collectionId }),

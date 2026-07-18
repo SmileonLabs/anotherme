@@ -30,6 +30,7 @@ import { useColors } from "@/hooks/useColors";
 import { getApiBase } from "@/lib/apiBase";
 import { useRealtimeInvalidation } from "@/lib/realtime";
 import { usePresenceHeartbeat } from "@/hooks/usePresence";
+import { WalletConnectionProvider } from "@/lib/walletConnection";
 
 const apiBase = getApiBase();
 if (apiBase) setBaseUrl(apiBase);
@@ -367,8 +368,9 @@ export default function RootLayout() {
           <ApiAuthBridge>
             <SafeAreaProvider>
               <QueryClientProvider client={queryClient}>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <CallProvider>
+                <WalletConnectionProvider>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <CallProvider>
                     <RealtimeInvalidator />
                     <PresenceHeartbeat />
                     <UnreadBadgeSync />
@@ -384,8 +386,9 @@ export default function RootLayout() {
                         <RootLayoutNav />
                       </KeyboardProvider>
                     )}
-                  </CallProvider>
-                </GestureHandlerRootView>
+                    </CallProvider>
+                  </GestureHandlerRootView>
+                </WalletConnectionProvider>
               </QueryClientProvider>
             </SafeAreaProvider>
           </ApiAuthBridge>

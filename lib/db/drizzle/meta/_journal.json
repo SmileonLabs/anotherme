@@ -78,6 +78,7 @@
     { "idx": 13, "version": "7", "when": 1784010000000, "tag": "0013_nft_rpg_foundation", "breakpoints": true },
     { "idx": 14, "version": "7", "when": 1784011000000, "tag": "0014_official_ai_accounts", "breakpoints": true },
     { "idx": 15, "version": "7", "when": 1784012000000, "tag": "0015_admin_audit_logs", "breakpoints": true },
-    { "idx": 16, "version": "7", "when": 1784013000000, "tag": "0016_admin_roles", "breakpoints": true }
+    { "idx": 16, "version": "7", "when": 1784013000000, "tag": "0016_admin_roles", "breakpoints": true },
+    { "idx": 17, "version": "7", "when": 1784332800000, "tag": "0017_wallet_challenge_context", "breakpoints": true }
   ]
 }

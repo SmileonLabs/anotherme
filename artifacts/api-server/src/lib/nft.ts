@@ -21,6 +21,16 @@ const erc721Abi = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ name: "owner", type: "address" }],
   },
+  {
+    type: "function",
+    name: "tokenOfOwnerByIndex",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ name: "tokenId", type: "uint256" }],
+  },
 ] as const;
 
 export interface NftConfig {
@@ -147,4 +157,56 @@ export async function checkNftTokenOwnerWithConfig(tokenId: string, config: NftC
     args: [BigInt(normalizeTokenId(tokenId))],
   });
   return { configured: true, owner: getAddress(owner) };
+}
+
+export async function listOwnedErc721TokensWithConfig(
+  walletAddress: Address,
+  config: NftConfig,
+  limit = 50,
+): Promise<{
+  configured: boolean;
+  balance: bigint | null;
+  tokenIds: string[];
+  enumerable: boolean;
+  truncated: boolean;
+}> {
+  const client = getClient(config);
+  if (!client || !config.contractAddress) {
+    return { configured: false, balance: null, tokenIds: [], enumerable: false, truncated: false };
+  }
+
+  const balance = await client.readContract({
+    address: config.contractAddress,
+    abi: erc721Abi,
+    functionName: "balanceOf",
+    args: [walletAddress],
+  });
+  if (balance === 0n) {
+    return { configured: true, balance, tokenIds: [], enumerable: true, truncated: false };
+  }
+
+  const count = Number(balance > BigInt(limit) ? BigInt(limit) : balance);
+  try {
+    const tokenIds = await Promise.all(
+      Array.from({ length: count }, (_, index) =>
+        client.readContract({
+          address: config.contractAddress!,
+          abi: erc721Abi,
+          functionName: "tokenOfOwnerByIndex",
+          args: [walletAddress, BigInt(index)],
+        }),
+      ),
+    );
+    return {
+      configured: true,
+      balance,
+      tokenIds: tokenIds.map((tokenId) => tokenId.toString()),
+      enumerable: true,
+      truncated: balance > BigInt(limit),
+    };
+  } catch {
+    // ERC-721Enumerable is optional. The caller can offer a token-id ownership
+    // check without pretending that a non-enumerable collection is empty.
+    return { configured: true, balance, tokenIds: [], enumerable: false, truncated: false };
+  }
 }

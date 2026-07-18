@@ -3530,6 +3530,12 @@ export const GetPublicStorageObjectParams = zod.object({
 /**
  * @summary Get my FAN or STAR play mode state
  */
+export const getMyPlayModeResponseSocialFollowerCountMin = 0;
+
+export const getMyPlayModeResponseSocialFollowingCountMin = 0;
+
+
+
 export const GetMyPlayModeResponse = zod.object({
   "currentMode": zod.enum(['fan', 'star']),
   "starUnlocked": zod.boolean(),
@@ -3542,6 +3548,10 @@ export const GetMyPlayModeResponse = zod.object({
   "empathy": zod.number(),
   "story": zod.number()
 })
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(getMyPlayModeResponseSocialFollowerCountMin),
+  "followingCount": zod.number().min(getMyPlayModeResponseSocialFollowingCountMin)
 }),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
@@ -3597,6 +3607,12 @@ export const UpdateMyPlayModeBody = zod.object({
   "mode": zod.enum(['fan', 'star'])
 })
 
+export const updateMyPlayModeResponseSocialFollowerCountMin = 0;
+
+export const updateMyPlayModeResponseSocialFollowingCountMin = 0;
+
+
+
 export const UpdateMyPlayModeResponse = zod.object({
   "currentMode": zod.enum(['fan', 'star']),
   "starUnlocked": zod.boolean(),
@@ -3609,6 +3625,10 @@ export const UpdateMyPlayModeResponse = zod.object({
   "empathy": zod.number(),
   "story": zod.number()
 })
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(updateMyPlayModeResponseSocialFollowerCountMin),
+  "followingCount": zod.number().min(updateMyPlayModeResponseSocialFollowingCountMin)
 }),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
@@ -3678,10 +3698,13 @@ export const GetMyWalletStatusResponse = zod.object({
  */
 export const createWalletChallengeBodyWalletAddressMax = 120;
 
+export const createWalletChallengeBodyChainIdMax = 2147483647;
+
 
 
 export const CreateWalletChallengeBody = zod.object({
-  "walletAddress": zod.string().min(1).max(createWalletChallengeBodyWalletAddressMax)
+  "walletAddress": zod.string().min(1).max(createWalletChallengeBodyWalletAddressMax),
+  "chainId": zod.number().min(1).max(createWalletChallengeBodyChainIdMax).optional()
 })
 
 
@@ -3806,6 +3829,12 @@ export const ActivateMyStarProfileParams = zod.object({
   "starProfileId": zod.coerce.string().uuid()
 })
 
+export const activateMyStarProfileResponseStateSocialFollowerCountMin = 0;
+
+export const activateMyStarProfileResponseStateSocialFollowingCountMin = 0;
+
+
+
 export const ActivateMyStarProfileResponse = zod.object({
   "equippedStar": zod.object({
   "id": zod.string(),
@@ -3841,6 +3870,10 @@ export const ActivateMyStarProfileResponse = zod.object({
   "empathy": zod.number(),
   "story": zod.number()
 })
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(activateMyStarProfileResponseStateSocialFollowerCountMin),
+  "followingCount": zod.number().min(activateMyStarProfileResponseStateSocialFollowingCountMin)
 }),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
@@ -3891,6 +3924,45 @@ export const ActivateMyStarProfileResponse = zod.object({
 
 
 /**
+ * @summary List eligible NFTs owned by my verified wallet
+ */
+export const getMyWalletNftInventoryResponseTotalOwnedMin = 0;
+
+export const getMyWalletNftInventoryResponseConfiguredCollectionCountMin = 0;
+
+
+
+export const GetMyWalletNftInventoryResponse = zod.object({
+  "walletAddress": zod.string(),
+  "collections": zod.array(zod.object({
+  "collectionId": zod.string().uuid(),
+  "chainId": zod.number(),
+  "contractAddress": zod.string(),
+  "collectionName": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "balance": zod.string(),
+  "enumerable": zod.boolean(),
+  "truncated": zod.boolean(),
+  "requiresTokenId": zod.boolean(),
+  "tokens": zod.array(zod.object({
+  "collectionId": zod.string().uuid(),
+  "chainId": zod.number(),
+  "contractAddress": zod.string(),
+  "collectionName": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "tokenId": zod.string()
+}))
+})),
+  "totalOwned": zod.number().min(getMyWalletNftInventoryResponseTotalOwnedMin),
+  "hasEligibleNft": zod.boolean(),
+  "configuredCollectionCount": zod.number().min(getMyWalletNftInventoryResponseConfiguredCollectionCountMin),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Equip an owned STAR NFT
  */
 export const equipStarNftBodyTokenIdMax = 80;
@@ -3900,6 +3972,12 @@ export const equipStarNftBodyTokenIdMax = 80;
 export const EquipStarNftBody = zod.object({
   "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax)
 })
+
+export const equipStarNftResponseStateSocialFollowerCountMin = 0;
+
+export const equipStarNftResponseStateSocialFollowingCountMin = 0;
+
+
 
 export const EquipStarNftResponse = zod.object({
   "equippedStar": zod.object({
@@ -3936,6 +4014,10 @@ export const EquipStarNftResponse = zod.object({
   "empathy": zod.number(),
   "story": zod.number()
 })
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(equipStarNftResponseStateSocialFollowerCountMin),
+  "followingCount": zod.number().min(equipStarNftResponseStateSocialFollowingCountMin)
 }),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
@@ -4408,5 +4490,3 @@ export const PostFanCommunitiesIdMissionsBody = zod.object({
 export const PostFanMissionsIdJoinParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
-
-

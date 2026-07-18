@@ -245,6 +245,18 @@ export default function SettingsScreen() {
           </>
         ) : null}
 
+        {knowledgeAdmin?.isAdmin ? (
+          <View style={[styles.section, { backgroundColor: colors.background }]}>
+            <SettingsRow
+              icon="grid"
+              label="관리자 콘솔"
+              sublabel="회원·공식 AI·IP·콘텐츠 운영"
+              onPress={() => router.push("/admin" as never)}
+              last
+            />
+          </View>
+        ) : null}
+
         {/* Account section */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
           계정

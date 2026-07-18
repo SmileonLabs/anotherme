@@ -176,6 +176,7 @@ import type {
   UserProfileUpdate,
   WalletChallenge,
   WalletChallengeInput,
+  WalletNftInventory,
   WalletStatus,
   WalletVerificationInput,
   WalletVerificationResult
@@ -11776,6 +11777,83 @@ export const useActivateMyStarProfile = <TError = ErrorType<ApiError>,
       return useMutation(getActivateMyStarProfileMutationOptions(options));
     }
 
+export const getGetMyWalletNftInventoryUrl = () => {
+
+
+
+
+  return `/api/users/me/wallet/nfts`
+}
+
+/**
+ * @summary List eligible NFTs owned by my verified wallet
+ */
+export const getMyWalletNftInventory = async ( options?: RequestInit): Promise<WalletNftInventory> => {
+
+  return customFetch<WalletNftInventory>(getGetMyWalletNftInventoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyWalletNftInventoryQueryKey = () => {
+    return [
+    `/api/users/me/wallet/nfts`
+    ] as const;
+    }
+
+
+export const getGetMyWalletNftInventoryQueryOptions = <TData = Awaited<ReturnType<typeof getMyWalletNftInventory>>, TError = ErrorType<ApiError>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyWalletNftInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyWalletNftInventoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyWalletNftInventory>>> = ({ signal }) => getMyWalletNftInventory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyWalletNftInventory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyWalletNftInventoryQueryResult = NonNullable<Awaited<ReturnType<typeof getMyWalletNftInventory>>>
+export type GetMyWalletNftInventoryQueryError = ErrorType<ApiError>
+
+
+/**
+ * @summary List eligible NFTs owned by my verified wallet
+ */
+
+export function useGetMyWalletNftInventory<TData = Awaited<ReturnType<typeof getMyWalletNftInventory>>, TError = ErrorType<ApiError>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyWalletNftInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyWalletNftInventoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getEquipStarNftUrl = () => {
 
 
@@ -13078,4 +13156,3 @@ export const usePostFanMissionsIdJoin = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getPostFanMissionsIdJoinMutationOptions(options));
     }
-
