@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const tables = {
     challenges: { id: "challenge.id", userId: "challenge.userId", walletAddress: "challenge.walletAddress", consumedAt: "challenge.consumedAt" },
     wallets: { id: "wallet.id", userId: "wallet.userId", walletAddress: "wallet.walletAddress", verifiedAt: "wallet.verifiedAt", updatedAt: "wallet.updatedAt" },
+    collections: { status: "collection.status", contractAddress: "collection.contractAddress", chainId: "collection.chainId", rpcUrl: "collection.rpcUrl", updatedAt: "collection.updatedAt" },
   };
   const state = {
       challenge: null as Record<string, any> | null,
@@ -96,6 +97,7 @@ vi.mock("@workspace/db", () => ({
   db: mocks.db,
   userWalletsTable: mocks.tables.wallets,
   walletVerificationChallengesTable: mocks.tables.challenges,
+  nftCollectionsTable: mocks.tables.collections,
 }));
 
 vi.mock("./fanStar", () => ({

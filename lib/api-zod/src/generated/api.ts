@@ -3700,6 +3700,61 @@ export const ListPublishedNftCollectionsResponse = zod.array(ListPublishedNftCol
 
 
 /**
+ * @summary List published avatar evolution stages for a collection
+ */
+export const ListPublishedNftEvolutionStagesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+export const ListPublishedNftEvolutionStagesResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "collectionId": zod.string().uuid(),
+  "stageKey": zod.string(),
+  "minLevel": zod.number().min(1),
+  "title": zod.string(),
+  "description": zod.string(),
+  "retainedTraits": zod.array(zod.string()).optional(),
+  "imageUrl": zod.string().nullish(),
+  "status": zod.literal("published"),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPublishedNftEvolutionStagesResponse = zod.array(ListPublishedNftEvolutionStagesResponseItem)
+
+
+/**
+ * @summary Get reviewed RPG mission content for a published collection
+ */
+export const GetPublishedNftRpgContentParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+export const GetPublishedNftRpgContentResponse = zod.object({
+  "collectionId": zod.string().uuid(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "roleName": zod.string(),
+  "worldStyle": zod.string(),
+  "missions": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "xp": zod.number().min(1)
+})),
+  "story": zod.object({
+  "opening": zod.string(),
+  "next": zod.string()
+})
+})
+
+
+/**
  * @summary Get my wallet and NFT verification status
  */
 export const GetMyWalletStatusResponse = zod.object({

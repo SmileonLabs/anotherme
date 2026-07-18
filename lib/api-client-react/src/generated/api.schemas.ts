@@ -882,6 +882,45 @@ export interface PublicNftCollection {
   updatedAt: string;
 }
 
+export interface NftEvolutionStage {
+  id: string;
+  collectionId: string;
+  stageKey: string;
+  /** @minimum 1 */
+  minLevel: number;
+  title: string;
+  description: string;
+  retainedTraits?: string[];
+  /** @nullable */
+  imageUrl?: string | null;
+  status: 'published';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NftRpgMission {
+  id: string;
+  title: string;
+  description: string;
+  /** @minimum 1 */
+  xp: number;
+}
+
+export type NftRpgContentStory = {
+  opening: string;
+  next: string;
+};
+
+export interface NftRpgContent {
+  collectionId: string;
+  ipName: string;
+  category: string;
+  roleName: string;
+  worldStyle: string;
+  missions: NftRpgMission[];
+  story: NftRpgContentStory;
+}
+
 export interface EquippedStarProfileResponse {
   equippedStar: StarProfile | null;
 }

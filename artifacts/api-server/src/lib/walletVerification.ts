@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   db,
+  nftCollectionsTable,
   userWalletsTable,
   walletVerificationChallengesTable,
   type UserWallet,
@@ -84,8 +85,42 @@ function normalizeWalletAddress(value: string): Address {
   }
 }
 
-function serializeWalletStatus(row: UserWallet | undefined, starUnlocked: boolean): WalletStatus {
-  const config = getNftConfig();
+async function getPublishedNftSummary(): Promise<{
+  configured: boolean;
+  contractAddress: string | null;
+  chainId: number | null;
+}> {
+  const collections = await db.select({
+    contractAddress: nftCollectionsTable.contractAddress,
+    chainId: nftCollectionsTable.chainId,
+    rpcUrl: nftCollectionsTable.rpcUrl,
+  }).from(nftCollectionsTable)
+    .where(eq(nftCollectionsTable.status, "published"))
+    .orderBy(desc(nftCollectionsTable.updatedAt))
+    .limit(100);
+  const configured = collections.filter((collection) =>
+    Boolean(collection.rpcUrl && collection.contractAddress && collection.chainId > 0)
+  );
+  if (configured.length === 0) {
+    const legacy = getNftConfig();
+    return {
+      configured: legacy.configured,
+      contractAddress: legacy.contractAddress,
+      chainId: legacy.chainId,
+    };
+  }
+  return {
+    configured: true,
+    contractAddress: configured.length === 1 ? configured[0]!.contractAddress : null,
+    chainId: configured.length === 1 ? configured[0]!.chainId : null,
+  };
+}
+
+function serializeWalletStatus(
+  row: UserWallet | undefined,
+  starUnlocked: boolean,
+  config: Awaited<ReturnType<typeof getPublishedNftSummary>>,
+): WalletStatus {
   return {
     walletAddress: row?.walletAddress ?? null,
     chainId: row?.chainId ?? config.chainId,
@@ -106,8 +141,11 @@ export async function getWalletStatus(userId: string): Promise<WalletStatus> {
     .where(eq(userWalletsTable.userId, userId))
     .orderBy(desc(userWalletsTable.updatedAt))
     .limit(1);
-  const playMode = await ensurePlayModeState(userId);
-  return serializeWalletStatus(wallet, playMode.starUnlocked);
+  const [playMode, config] = await Promise.all([
+    ensurePlayModeState(userId),
+    getPublishedNftSummary(),
+  ]);
+  return serializeWalletStatus(wallet, playMode.starUnlocked, config);
 }
 
 export async function createWalletChallenge(params: {
@@ -116,7 +154,7 @@ export async function createWalletChallenge(params: {
   chainId?: number;
 }): Promise<WalletChallengeView> {
   const walletAddress = normalizeWalletAddress(params.walletAddress);
-  const config = getNftConfig();
+  const config = await getPublishedNftSummary();
   const chainId = params.chainId ?? config.chainId ?? DEFAULT_CHAIN_ID;
   if (!Number.isInteger(chainId) || chainId <= 0 || chainId > 2_147_483_647) {
     throw new WalletVerificationError("invalid_wallet", "지원하지 않는 네트워크입니다.");

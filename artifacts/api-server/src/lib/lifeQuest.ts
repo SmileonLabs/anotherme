@@ -93,6 +93,11 @@ export interface LifeQuestScenario {
 export interface LifeQuestScenarioContext {
   starName?: string | null;
   promoted?: boolean;
+  ipName?: string | null;
+  category?: string | null;
+  roleName?: string | null;
+  worldStyle?: string | null;
+  missions?: Array<{ title: string; description: string; xp: number }>;
 }
 
 function pickRandomTheme(): LifeQuestTheme {
@@ -157,20 +162,33 @@ const scenarioSchema = {
   },
 } as const;
 
-function buildSystemPrompt(theme: LifeQuestTheme, context: LifeQuestScenarioContext = {}): string {
+export function buildSystemPrompt(theme: LifeQuestTheme, context: LifeQuestScenarioContext = {}): string {
   const starName = context.starName?.trim() || "장착한 STAR";
-  const missionName = context.promoted ? "공식 STAR 미션" : "연습생 STAR 미션";
+  const missionName = context.promoted ? "공식 STAR 미션" : "성장 RPG 미션";
   const themeLabel = context.promoted ? PROMOTED_THEME_LABELS[theme] : LIFE_QUEST_THEME_LABELS[theme];
   const themeHint = context.promoted ? PROMOTED_THEME_HINTS[theme] : THEME_HINTS[theme];
+  const ipName = context.ipName?.trim() || starName;
+  const category = context.category?.trim() || "character";
+  const roleName = context.roleName?.trim() || "캐릭터";
+  const worldStyle = context.worldStyle?.trim() || "해당 NFT의 원작 정체성과 분위기";
+  const missionBriefs = (context.missions ?? [])
+    .slice(0, 8)
+    .map((mission, index) => `${index + 1}. ${mission.title}: ${mission.description}`)
+    .join("\n");
   const phase = context.promoted
     ? "토르미아의 문이 열린 공식 STAR 활동 단계"
     : "토르미아의 문을 열기 전, 연습생 STAR로 꿈을 키우는 준비 단계";
   return [
     `너는 '어나더미(Another Me)'라는 한국어 STAR 성장 앱의 '${missionName}' 시나리오 작가다.`,
     `이번 미션의 주인공은 '${starName}'이며, 현재 단계는 '${phase}'이다.`,
+    `장착 NFT IP는 '${ipName}', 분류는 '${category}', 역할은 '${roleName}'이다.`,
+    `세계관 방향은 '${worldStyle}'이다. 아이돌로 고정하지 말고 이 분류와 역할에 맞는 활동으로 구성한다.`,
+    missionBriefs
+      ? `관리자가 검토한 성장 RPG 미션 소재 중 적어도 하나를 자연스럽게 반영한다:\n${missionBriefs}`
+      : "관리자 미션 소재가 없으면 NFT의 분류·역할·세계관에 맞는 안전한 성장 활동을 만든다.",
     context.promoted
       ? "공식 STAR 미션은 팬클럽과 무대, 콘텐츠, 세계관을 키우며 공식 STAR 활동을 확장하는 선택형 성장 미션이다."
-      : "연습생 STAR 미션은 공식 STAR가 되기 전, 작은 연습과 첫 반응을 쌓아 토르미아의 문을 준비하는 선택형 성장 미션이다.",
+      : "성장 RPG 미션은 장착한 NFT의 역할과 세계관에 맞는 활동을 통해 캐릭터를 성장시키는 선택형 미션이다.",
     "",
     `## 이번 미션 테마: ${themeLabel}`,
     themeHint,
@@ -179,7 +197,7 @@ function buildSystemPrompt(theme: LifeQuestTheme, context: LifeQuestScenarioCont
     "- 전체 시나리오(4~6개 스테이지, 각 스테이지 3~4개 선택지)를 한 번에 완성한다.",
     context.promoted
       ? "- 각 스테이지는 공식 STAR 활동과 직접 연결된 현실적인 상황(situation)과 짧은 제목(title)을 가진다."
-      : "- 각 스테이지는 연습생 STAR가 공식 활동 전 준비를 쌓는 현실적인 상황(situation)과 짧은 제목(title)을 가진다.",
+      : "- 각 스테이지는 장착 NFT의 역할과 세계관에 맞는 성장 상황(situation)과 짧은 제목(title)을 가진다.",
     "- 각 선택지에는 label(짧은 행동 요약), description(한 줄 부연), resultText(선택 후 벌어지는 결과 묘사)를 쓴다.",
     "- 선택지는 서로 '성향'이 달라야 한다. 정답/오답은 없으며, 각 선택에는 장점과 트레이드오프가 있다.",
     "- 모든 텍스트는 자연스러운 한국어. 모바일 화면에 맞게 간결하게(situation 2~3문장, resultText 1~2문장).",
@@ -196,7 +214,7 @@ function buildSystemPrompt(theme: LifeQuestTheme, context: LifeQuestScenarioCont
     "- 선택의 성향에 맞는 스탯을 준다. (예: 팬에게 진심을 전하면 bond, 콘셉트를 깊게 만들면 lore, 무대를 장악하면 stagePresence)",
     "",
     "## 금지 사항",
-    "- 판타지/전투/마법/몬스터/무기/체력(HP) 등 게임적 요소 금지. STAR 활동과 팬덤 성장에 집중.",
+    "- NFT 원작과 관리자가 검토한 세계관 밖의 설정을 임의로 추가하지 않는다. 전투·마법 등은 해당 IP 설정에 있을 때만 비폭력적 성장 맥락으로 사용한다.",
     "- 의학적 진단·치료, 법률 자문, 구체적 투자·재테크 종목 추천 금지.",
     "- 자해·폭력·혐오·성적 콘텐츠, 실존 인물 비방, 개인정보 요구 금지.",
     "- 도박이나 불법 행위를 권하는 선택지 금지.",

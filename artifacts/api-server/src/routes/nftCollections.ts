@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { adminAuditLogsTable, db, nftCollectionsTable, nftEvolutionStagesTable, NFT_COLLECTION_STATUSES } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
@@ -7,6 +7,7 @@ import { hasAdminAccess } from "../lib/adminRbac";
 import { analyzeNftRpg } from "../lib/nftRpgAnalyzer";
 import { generateNftStageAvatar } from "../lib/nftAvatarGenerator";
 import { resolveNftReferenceImage } from "../lib/nftReferenceImage";
+import { getNftPublishReadiness, normalizeNftRpgMissions } from "../lib/nftRpgContent";
 import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
@@ -45,28 +46,46 @@ function blueprint(category: z.infer<typeof categorySchema>, ipName: string) {
 }
 
 router.get("/nft/collections", async (_req, res): Promise<void> => {
-  const rows = await db
-    .select({
-      id: nftCollectionsTable.id,
-      chainId: nftCollectionsTable.chainId,
-      contractAddress: nftCollectionsTable.contractAddress,
-      name: nftCollectionsTable.name,
-      ipName: nftCollectionsTable.ipName,
-      category: nftCollectionsTable.category,
-      officialUrl: nftCollectionsTable.officialUrl,
-      roleName: nftCollectionsTable.roleName,
-      worldStyle: nftCollectionsTable.worldStyle,
-      status: nftCollectionsTable.status,
-      updatedAt: nftCollectionsTable.updatedAt,
-    })
+  const candidates = await db
+    .select()
     .from(nftCollectionsTable)
     .where(eq(nftCollectionsTable.status, "published"))
     .orderBy(desc(nftCollectionsTable.updatedAt));
+  const stages = candidates.length
+    ? await db.select().from(nftEvolutionStagesTable)
+      .where(inArray(nftEvolutionStagesTable.collectionId, candidates.map((row) => row.id)))
+    : [];
+  const rows = candidates
+    .filter((collection) => getNftPublishReadiness(
+      collection,
+      stages.filter((stage) => stage.collectionId === collection.id),
+    ).ready)
+    .map((collection) => ({
+      id: collection.id,
+      chainId: collection.chainId,
+      contractAddress: collection.contractAddress,
+      name: collection.name,
+      ipName: collection.ipName,
+      category: collection.category,
+      officialUrl: collection.officialUrl,
+      roleName: collection.roleName,
+      worldStyle: collection.worldStyle,
+      status: collection.status,
+      updatedAt: collection.updatedAt,
+    }));
   res.json(rows);
 });
 
 router.get("/nft/collections/:id/evolution", async (req, res): Promise<void> => {
-  const rows = await db.select().from(nftEvolutionStagesTable).where(eq(nftEvolutionStagesTable.collectionId, String(req.params.id))).orderBy(nftEvolutionStagesTable.minLevel);
+  const id = String(req.params.id);
+  const [collection] = await db.select().from(nftCollectionsTable)
+    .where(eq(nftCollectionsTable.id, id))
+    .limit(1);
+  const rows = await db.select().from(nftEvolutionStagesTable).where(eq(nftEvolutionStagesTable.collectionId, id)).orderBy(nftEvolutionStagesTable.minLevel);
+  if (!collection || collection.status !== "published" || !getNftPublishReadiness(collection, rows).ready) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
   res.json(rows.filter((stage) => stage.status === "published"));
 });
 
@@ -80,9 +99,12 @@ router.get("/admin/nft/collections/:id/evolution", requireAuth, async (req, res)
 
 router.get("/nft/collections/:id/rpg-content", async (req, res): Promise<void> => {
   const [collection] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, String(req.params.id))).limit(1);
-  if (!collection || collection.status !== "published") { res.status(404).json({ error: "not_found" }); return; }
-  const blueprint = collection.rpgBlueprint ?? {};
-  const missions = Array.isArray(blueprint.missions) ? blueprint.missions.map((title, index) => ({ id: `${collection.id}:mission:${index}`, title: String(title), description: `${collection.ipName}의 ${String(title)} 활동을 완료해 보세요.`, xp: 10 + index * 5 })) : [];
+  const stages = collection
+    ? await db.select().from(nftEvolutionStagesTable)
+      .where(eq(nftEvolutionStagesTable.collectionId, collection.id))
+    : [];
+  if (!collection || collection.status !== "published" || !getNftPublishReadiness(collection, stages).ready) { res.status(404).json({ error: "not_found" }); return; }
+  const missions = normalizeNftRpgMissions(collection);
   res.json({ collectionId: collection.id, ipName: collection.ipName, category: collection.category, roleName: collection.roleName ?? "캐릭터", worldStyle: collection.worldStyle ?? "", missions, story: { opening: `${collection.ipName}의 새로운 성장 이야기가 시작됩니다.`, next: `${collection.roleName ?? "캐릭터"}로서 다음 장면을 준비해 보세요.` } });
 });
 
@@ -90,8 +112,31 @@ router.patch("/admin/nft/collections/:collectionId/evolution/:stageKey", require
   if (!(await requireAdmin(req, res))) return;
   const parsed = z.object({ minLevel: z.number().int().min(1).max(100).optional(), title: z.string().trim().min(1).max(120).optional(), description: z.string().trim().min(1).max(500).optional(), imageUrl: stageImageUrlSchema.optional(), status: z.enum(["draft", "approved", "published", "archived"]).optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
-  const [updated] = await db.update(nftEvolutionStagesTable).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(nftEvolutionStagesTable.collectionId, String(req.params.collectionId)), eq(nftEvolutionStagesTable.stageKey, String(req.params.stageKey)))).returning();
+  const collectionId = String(req.params.collectionId);
+  const stageKey = String(req.params.stageKey);
+  const [before] = await db.select().from(nftEvolutionStagesTable)
+    .where(and(eq(nftEvolutionStagesTable.collectionId, collectionId), eq(nftEvolutionStagesTable.stageKey, stageKey)))
+    .limit(1);
+  if (!before) { res.status(404).json({ error: "not_found" }); return; }
+  const nextImage = parsed.data.imageUrl === undefined ? before.imageUrl : parsed.data.imageUrl;
+  if ((parsed.data.status === "approved" || parsed.data.status === "published") && !nextImage) {
+    res.status(409).json({ error: "stage_image_required" });
+    return;
+  }
+  if (parsed.data.status === "published" && before.status !== "approved") {
+    res.status(409).json({ error: "stage_approval_required" });
+    return;
+  }
+  const [updated] = await db.update(nftEvolutionStagesTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(nftEvolutionStagesTable.id, before.id)).returning();
   if (!updated) { res.status(404).json({ error: "not_found" }); return; }
+  await db.insert(adminAuditLogsTable).values({
+    actorUserId: req.dbUser!.id,
+    action: "nft_evolution_stage_update",
+    targetType: "nft_evolution_stage",
+    targetId: updated.id,
+    beforeJson: { status: before.status, imageUrl: before.imageUrl },
+    afterJson: { status: updated.status, imageUrl: updated.imageUrl },
+  });
   res.json(updated);
 });
 
@@ -256,9 +301,34 @@ router.post("/admin/nft/collections/:id/review", requireAuth, async (req, res): 
   if (!(await requireAdmin(req, res))) return;
   const parsed = z.object({ action: z.enum(["approve", "reject", "publish", "suspend"]), roleName: z.string().trim().max(80).optional(), worldStyle: z.string().trim().max(300).optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid" }); return; }
+  const id = String(req.params.id);
+  const [before] = await db.select().from(nftCollectionsTable).where(eq(nftCollectionsTable.id, id)).limit(1);
+  if (!before) { res.status(404).json({ error: "not_found" }); return; }
+  if (parsed.data.action === "publish") {
+    const stages = await db.select().from(nftEvolutionStagesTable)
+      .where(eq(nftEvolutionStagesTable.collectionId, id));
+    const readiness = getNftPublishReadiness(before, stages);
+    if (!readiness.ready) {
+      res.status(409).json({ error: "collection_not_ready", missing: readiness.missing });
+      return;
+    }
+  }
   const status = parsed.data.action === "approve" ? "approved" : parsed.data.action === "publish" ? "published" : parsed.data.action === "suspend" ? "suspended" : "rejected";
-  const [row] = await db.update(nftCollectionsTable).set({ status, ...(parsed.data.roleName ? { roleName: parsed.data.roleName } : {}), ...(parsed.data.worldStyle ? { worldStyle: parsed.data.worldStyle } : {}), reviewedAt: new Date(), updatedAt: new Date() }).where(eq(nftCollectionsTable.id, String(req.params.id))).returning();
+  const rightsStatus = parsed.data.action === "approve"
+    ? "verified"
+    : parsed.data.action === "reject"
+      ? "rejected"
+      : before.rightsStatus;
+  const [row] = await db.update(nftCollectionsTable).set({ status, rightsStatus, ...(parsed.data.roleName ? { roleName: parsed.data.roleName } : {}), ...(parsed.data.worldStyle ? { worldStyle: parsed.data.worldStyle } : {}), reviewedAt: new Date(), updatedAt: new Date() }).where(eq(nftCollectionsTable.id, id)).returning();
   if (!row) { res.status(404).json({ error: "not_found" }); return; }
+  await db.insert(adminAuditLogsTable).values({
+    actorUserId: req.dbUser!.id,
+    action: `nft_collection_${parsed.data.action}`,
+    targetType: "nft_collection",
+    targetId: row.id,
+    beforeJson: { status: before.status, rightsStatus: before.rightsStatus },
+    afterJson: { status: row.status, rightsStatus: row.rightsStatus },
+  });
   res.json(row);
 });
 

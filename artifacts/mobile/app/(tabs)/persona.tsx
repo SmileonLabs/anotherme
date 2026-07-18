@@ -23,7 +23,7 @@ import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
 import { useWalletVerification, type WalletStatus } from "@/hooks/useWalletVerification";
 import { usePersonaAnalysis } from "@/hooks/usePersonaAnalysis";
 import { gradients, gradientsDark } from "@/constants/colors";
-import { mediaUri } from "@/lib/apiBase";
+import { useMediaUri } from "@/hooks/useMediaUri";
 
 type StatKey =
   | "logic"
@@ -799,7 +799,15 @@ function MyDashboard({
   const isStarLocked = isStarMode && !equippedStar;
   const displayLevel = isStarMode ? equippedStar?.level ?? 1 : level;
   const displayXp = isStarMode ? equippedStar?.xp ?? 0 : xp;
-  const xpInLevel = Math.max(0, displayXp % 100);
+  const starLevelStartXp = 50 * Math.max(0, displayLevel - 1) * displayLevel;
+  const starNextLevelXp = 50 * displayLevel * (displayLevel + 1);
+  const xpInLevel = isStarMode
+    ? Math.max(0, displayXp - starLevelStartXp)
+    : Math.max(0, displayXp % 100);
+  const xpForLevel = isStarMode
+    ? Math.max(1, starNextLevelXp - starLevelStartXp)
+    : 100;
+  const xpProgress = Math.min(100, Math.round((xpInLevel / xpForLevel) * 100));
   const statItems = isStarMode
     ? [
         { icon: "heart" as const, label: "매력", value: equippedStar?.stats.charm ?? 0, color: "#FF62B6" },
@@ -822,7 +830,7 @@ function MyDashboard({
       title: star.displayName,
       subtitle: star.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
       source: star.imageUrl
-        ? ({ uri: mediaUri(star.imageUrl) } as ImageSource)
+        ? ({ uri: star.imageUrl } as ImageSource)
         : (require("../../assets/images/star-character-cutout.png") as ImageSource),
       active: equippedStar?.id === star.id,
       onPress: () => void onEquipStar(star.id),
@@ -856,8 +864,8 @@ function MyDashboard({
         <View style={styles.dashboardLevelBlock}>
           <Text style={styles.dashboardSectionTitle}>{isStarLocked ? "STAR 스탯 잠금" : isStarMode ? `${equippedStar?.displayName ?? "STAR"} 스탯` : "내 FAN 스탯"}</Text>
           <Text style={styles.dashboardLevel}>{isStarLocked ? "—" : `Lv. ${displayLevel}`}</Text>
-          <Text style={styles.dashboardXpText}>{isStarLocked ? "NFT 등록 후 이용 가능" : `${xpInLevel} / 100 ${isStarMode ? "STAR" : "FAN"} XP`}</Text>
-          <View style={styles.dashboardXpTrack}><LinearGradient colors={["#7138FF", "#D893FF"]} style={[styles.dashboardXpFill, { width: `${xpInLevel}%` }]} /></View>
+          <Text style={styles.dashboardXpText}>{isStarLocked ? "NFT 등록 후 이용 가능" : `${xpInLevel} / ${xpForLevel} ${isStarMode ? "STAR" : "FAN"} XP`}</Text>
+          <View style={styles.dashboardXpTrack}><LinearGradient colors={["#7138FF", "#D893FF"]} style={[styles.dashboardXpFill, { width: `${xpProgress}%` }]} /></View>
         </View>
         {isStarLocked ? (
           <View style={styles.dashboardStatsLocked}>
@@ -884,7 +892,7 @@ function MyDashboard({
           <Text style={styles.dashboardCardTitle}>지갑 정보 ✦</Text>
           <DashboardInfoRow icon="link" label="지갑 연결 상태" value={walletStatus?.walletVerified ? "연결됨" : "미연결"} accent={walletStatus?.walletVerified} />
           <DashboardInfoRow icon="credit-card" label="지갑 주소" value={formatWalletAddress(walletStatus?.walletAddress)} />
-          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(equippedStar ? 2 : 1)} />
+          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(1 + starProfiles.length)} />
           <Pressable onPress={onWallet} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}><Text style={styles.dashboardOutlineText}>지갑 관리</Text></Pressable>
         </LinearGradient>
       </View>
@@ -894,7 +902,7 @@ function MyDashboard({
         <View style={styles.dashboardInventoryImages}>
           {inventoryItems.slice(0, 3).map((item) => (
             <View key={item.key} style={[styles.dashboardInventoryThumb, item.active && styles.dashboardInventoryThumbActive]}>
-              <Image source={item.source} style={styles.dashboardInventoryImage} contentFit="cover" />
+              <DashboardCharacterImage source={item.source} thumbnail />
             </View>
           ))}
         </View>
@@ -916,14 +924,14 @@ function MyDashboard({
                   pressed && { opacity: 0.72 },
                 ]}
               >
-                <Image source={item.source} style={styles.dashboardInventoryItemImage} contentFit="contain" />
+                <DashboardCharacterImage source={item.source} />
                 <Text style={styles.dashboardInventoryItemTitle} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.dashboardInventoryItemSubtitle}>{item.active ? "사용 중" : item.subtitle}</Text>
                 {item.active ? <Feather name="check-circle" size={14} color="#D28CFF" /> : null}
               </Pressable>
             ))}
           </View>
-          {!starProfiles.length ? <StarLockCard /> : null}
+          <StarLockCard />
         </View>
       ) : null}
 
@@ -939,6 +947,20 @@ function MyDashboard({
         <DashboardInfoRow icon="log-out" label="로그아웃" value="" onPress={onAccount} />
       </LinearGradient>
     </View>
+  );
+}
+
+function DashboardCharacterImage({ source, thumbnail = false }: { source: ImageSource; thumbnail?: boolean }) {
+  const rawUri = typeof source === "object" && source && "uri" in source
+    ? String(source.uri ?? "")
+    : undefined;
+  const resolvedUri = useMediaUri(rawUri);
+  return (
+    <Image
+      source={resolvedUri ? { uri: resolvedUri } : source}
+      style={thumbnail ? styles.dashboardInventoryImage : styles.dashboardInventoryItemImage}
+      contentFit={thumbnail ? "cover" : "contain"}
+    />
   );
 }
 

@@ -3774,6 +3774,56 @@ paths:
                 items:
                   $ref: "#/components/schemas/PublicNftCollection"
 
+  /nft/collections/{id}/evolution:
+    get:
+      operationId: listPublishedNftEvolutionStages
+      tags: [nft]
+      summary: List published avatar evolution stages for a collection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Published evolution stages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NftEvolutionStage"
+        "404":
+          description: Collection is not fully reviewed and published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /nft/collections/{id}/rpg-content:
+    get:
+      operationId: getPublishedNftRpgContent
+      tags: [nft]
+      summary: Get reviewed RPG mission content for a published collection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Collection RPG content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NftRpgContent"
+        "404":
+          description: Collection is not published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /users/me/wallet:
     get:
       operationId: getMyWalletStatus
@@ -5289,6 +5339,55 @@ components:
           type: string
           const: published
         updatedAt: { type: string, format: date-time }
+
+    NftEvolutionStage:
+      type: object
+      required: [id, collectionId, stageKey, minLevel, title, description, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        collectionId: { type: string, format: uuid }
+        stageKey: { type: string }
+        minLevel: { type: integer, minimum: 1 }
+        title: { type: string }
+        description: { type: string }
+        retainedTraits:
+          type: array
+          items: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        status:
+          type: string
+          const: published
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    NftRpgMission:
+      type: object
+      required: [id, title, description, xp]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        xp: { type: integer, minimum: 1 }
+
+    NftRpgContent:
+      type: object
+      required: [collectionId, ipName, category, roleName, worldStyle, missions, story]
+      properties:
+        collectionId: { type: string, format: uuid }
+        ipName: { type: string }
+        category: { type: string }
+        roleName: { type: string }
+        worldStyle: { type: string }
+        missions:
+          type: array
+          items:
+            $ref: "#/components/schemas/NftRpgMission"
+        story:
+          type: object
+          required: [opening, next]
+          properties:
+            opening: { type: string }
+            next: { type: string }
 
     EquippedStarProfileResponse:
       type: object

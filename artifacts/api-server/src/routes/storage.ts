@@ -7,7 +7,7 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { requireAuth } from "../lib/auth";
 import { and, eq, isNull, like, or } from "drizzle-orm";
-import { chatRoomMembersTable, db, messagesTable, nftEvolutionStagesTable, usersTable } from "@workspace/db";
+import { chatRoomMembersTable, db, messagesTable, nftEvolutionStagesTable, starProfilesTable, usersTable } from "@workspace/db";
 import { rateLimit } from "../lib/rateLimit";
 import { hasReadableObjectReference } from "../lib/objectAccessPolicy";
 import { issueMediaTicket, validateMediaTicket } from "../lib/mediaTicket";
@@ -28,7 +28,12 @@ export async function canReadPrivateObject(userId: string, objectPath: string): 
     .from(nftEvolutionStagesTable)
     .where(eq(nftEvolutionStagesTable.imageUrl, objectPath))
     .limit(1);
-  if (nftStageReference) return true;
+  const [starProfileReference] = await db
+    .select({ id: starProfilesTable.id })
+    .from(starProfilesTable)
+    .where(eq(starProfilesTable.imageUrl, objectPath))
+    .limit(1);
+  if (nftStageReference || starProfileReference) return true;
   const candidates = await db
     .select({ roomId: messagesTable.roomId, type: messagesTable.type, content: messagesTable.content })
     .from(messagesTable)

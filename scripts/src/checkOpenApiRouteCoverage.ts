@@ -28,14 +28,33 @@ const exemptRoutes = new Set([
   "POST /calls/{id}/diagnostics",
   // NFT/RPG collection management is consumed by the mobile app through the
   // lightweight customFetch client until its generated contract is published.
-  "GET /nft/collections",
-  "GET /nft/collections/{id}/evolution",
-  "GET /nft/collections/{id}/rpg-content",
   "GET /admin/nft/collections",
   "POST /admin/nft/collections",
   "POST /admin/nft/collections/{id}/analyze",
   "POST /admin/nft/collections/{id}/review",
+  "GET /admin/nft/collections/{id}/evolution",
+  "PATCH /admin/nft/collections/{collectionId}/evolution/{stageKey}",
+  "POST /admin/nft/collections/{collectionId}/evolution/{stageKey}/generate-avatar",
+  "POST /admin/nft/collections/{id}/analyze-legacy",
+  "POST /admin/nft/collections/{id}/rpg-analyze",
   "POST /users/me/star-profiles/revalidate",
+  // Internal operations consoles intentionally use authenticated customFetch
+  // contracts and are not part of the public generated SDK.
+  "GET /admin/audit-logs",
+  "GET /admin/members",
+  "GET /admin/members/{id}",
+  "GET /admin/operations/overview",
+  "GET /admin/roles",
+  "POST /admin/roles",
+  "DELETE /admin/roles/{id}",
+  "GET /admin/official-ai-accounts",
+  "POST /admin/official-ai-accounts",
+  "PATCH /admin/official-ai-accounts/{id}",
+  "POST /admin/official-ai-accounts/{id}/review",
+  // Public official-account discovery currently has a hand-written client
+  // because the runtime response is intentionally polymorphic.
+  "GET /official-ai-accounts",
+  "GET /official-ai-accounts/{slug}/runtime",
 ]);
 
 function sourceFiles(directory: string): string[] {

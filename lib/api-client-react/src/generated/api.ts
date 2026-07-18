@@ -126,6 +126,8 @@ import type {
   MuteInput,
   MyBattleStats,
   MyClan,
+  NftEvolutionStage,
+  NftRpgContent,
   ObjectUploadResponse,
   PersonaAnalysisError,
   PersonaCard,
@@ -11330,6 +11332,160 @@ export function useListPublishedNftCollections<TData = Awaited<ReturnType<typeof
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPublishedNftCollectionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListPublishedNftEvolutionStagesUrl = (id: string,) => {
+
+
+
+
+  return `/api/nft/collections/${id}/evolution`
+}
+
+/**
+ * @summary List published avatar evolution stages for a collection
+ */
+export const listPublishedNftEvolutionStages = async (id: string, options?: RequestInit): Promise<NftEvolutionStage[]> => {
+
+  return customFetch<NftEvolutionStage[]>(getListPublishedNftEvolutionStagesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublishedNftEvolutionStagesQueryKey = (id: string,) => {
+    return [
+    `/api/nft/collections/${id}/evolution`
+    ] as const;
+    }
+
+
+export const getListPublishedNftEvolutionStagesQueryOptions = <TData = Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>, TError = ErrorType<ApiError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublishedNftEvolutionStagesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>> = ({ signal }) => listPublishedNftEvolutionStages(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublishedNftEvolutionStagesQueryResult = NonNullable<Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>>
+export type ListPublishedNftEvolutionStagesQueryError = ErrorType<ApiError>
+
+
+/**
+ * @summary List published avatar evolution stages for a collection
+ */
+
+export function useListPublishedNftEvolutionStages<TData = Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>, TError = ErrorType<ApiError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublishedNftEvolutionStages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublishedNftEvolutionStagesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPublishedNftRpgContentUrl = (id: string,) => {
+
+
+
+
+  return `/api/nft/collections/${id}/rpg-content`
+}
+
+/**
+ * @summary Get reviewed RPG mission content for a published collection
+ */
+export const getPublishedNftRpgContent = async (id: string, options?: RequestInit): Promise<NftRpgContent> => {
+
+  return customFetch<NftRpgContent>(getGetPublishedNftRpgContentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublishedNftRpgContentQueryKey = (id: string,) => {
+    return [
+    `/api/nft/collections/${id}/rpg-content`
+    ] as const;
+    }
+
+
+export const getGetPublishedNftRpgContentQueryOptions = <TData = Awaited<ReturnType<typeof getPublishedNftRpgContent>>, TError = ErrorType<ApiError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedNftRpgContent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublishedNftRpgContentQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublishedNftRpgContent>>> = ({ signal }) => getPublishedNftRpgContent(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublishedNftRpgContent>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublishedNftRpgContentQueryResult = NonNullable<Awaited<ReturnType<typeof getPublishedNftRpgContent>>>
+export type GetPublishedNftRpgContentQueryError = ErrorType<ApiError>
+
+
+/**
+ * @summary Get reviewed RPG mission content for a published collection
+ */
+
+export function useGetPublishedNftRpgContent<TData = Awaited<ReturnType<typeof getPublishedNftRpgContent>>, TError = ErrorType<ApiError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublishedNftRpgContent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublishedNftRpgContentQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -33,6 +33,7 @@ import { usePlayMode } from "@/hooks/usePlayMode";
 import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
 import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
 import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
+import { useMediaUri } from "@/hooks/useMediaUri";
 import { FAN_STAT_META } from "@/constants/fanStats";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
@@ -233,6 +234,7 @@ export default function HomeScreen() {
     refetch: refetchPlayMode,
     setMode,
   } = usePlayMode();
+  const equippedStarImageUri = useMediaUri(equippedStar?.imageUrl);
   const { posts: feedPosts, refetch: refetchFeed } = useStarFeed();
   const openBibiOfficialRoom = useOpenBibiOfficialRoom();
   const { data: myClan, refetch: refetchClan } = useGetMyClan();
@@ -379,8 +381,8 @@ export default function HomeScreen() {
   const activeCardBgImage = FAN_CARD_BG_IMAGE;
   const activeImageSource = activePlayMode === "fan"
     ? FAN_CHARACTER_IMAGE
-    : equippedStar?.imageUrl
-      ? { uri: equippedStar.imageUrl }
+    : equippedStarImageUri
+      ? { uri: equippedStarImageUri }
       : STAR_RANDOM_BOX_IMAGE;
   const activeStats = activePlayMode === "star"
     ? [
@@ -818,8 +820,8 @@ export default function HomeScreen() {
           {equippedStar ? (
             <View style={styles.starStatusWrap}>
               <View style={[styles.starAvatar, { backgroundColor: `${colors.primary}18` }]}>
-                {equippedStar.imageUrl ? (
-                  <ExpoImage source={{ uri: equippedStar.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                {equippedStarImageUri ? (
+                  <ExpoImage source={{ uri: equippedStarImageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
                 ) : (
                   <Feather name="star" size={22} color="#FBBF24" />
                 )}

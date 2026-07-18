@@ -83,7 +83,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
   const canVerify = Boolean(challenge && signature.trim().length > 0 && !isVerifying);
   const canEquip = tokenId.trim().length > 0 && !isEquipping && Boolean(selectedCollectionId);
   const title = equippedStar
-    ? `${equippedStar.displayName} 장착 완료`
+    ? "새 NFT로 STAR 추가 소환"
     : starUnlocked
       ? "장착할 STAR NFT를 선택해 주세요"
       : "STAR 모드는 STAR NFT 보유자 전용";
@@ -383,7 +383,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
         </Pressable>
       ) : null}
 
-      {status?.walletVerified && !equippedStar ? (
+      {status?.walletVerified ? (
         <View style={styles.challengeBlock}>
           <Text style={[styles.label, { color: colors.foreground }]}>소환 가능한 내 NFT</Text>
           {inventory?.partial ? (
