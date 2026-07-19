@@ -48,6 +48,8 @@ export function NativePushRegistrar() {
   const routerRef = useRef(router);
   routerRef.current = router;
   const done = useRef(false);
+  const registrationInFlight = useRef(false);
+  const lastRegistrationAt = useRef(0);
   const initialNotificationHandled = useRef(false);
 
   // One-time native setup: notification display behaviour + the call channel.
@@ -59,24 +61,55 @@ export function NativePushRegistrar() {
 
   // Reset the registration guard so a later sign-in / re-enable re-registers.
   useEffect(() => {
-    if (!isSignedIn || me?.notificationEnabled === false) done.current = false;
+    if (!isSignedIn || me?.notificationEnabled === false) {
+      done.current = false;
+      lastRegistrationAt.current = 0;
+    }
   }, [isSignedIn, me?.notificationEnabled]);
 
-  // Register the device push token once the user is signed in and has
-  // notifications enabled.
+  // Register once at sign-in and retry after a denied/transient token lookup.
+  // Refresh on foreground at a bounded interval so an APK whose initial
+  // registration failed does not remain permanently unreachable for calls.
   useEffect(() => {
     if (!nativePushSupported) return;
     if (!isSignedIn || !me?.notificationEnabled) return;
-    if (done.current) return;
-    done.current = true;
-    void (async () => {
+    let mounted = true;
+    const registerDevice = async (force = false) => {
+      const sixHours = 6 * 60 * 60 * 1000;
+      if (registrationInFlight.current) return;
+      if (
+        !force &&
+        done.current &&
+        Date.now() - lastRegistrationAt.current < sixHours
+      ) {
+        return;
+      }
+      registrationInFlight.current = true;
       try {
         const token = await registerForPushTokenAsync();
-        if (token) await registerRef.current({ data: { token } });
+        if (!token || !mounted) {
+          done.current = false;
+          return;
+        }
+        await registerRef.current({ data: { token } });
+        if (!mounted) return;
+        done.current = true;
+        lastRegistrationAt.current = Date.now();
       } catch {
         done.current = false;
+      } finally {
+        registrationInFlight.current = false;
       }
-    })();
+    };
+
+    void registerDevice();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void registerDevice();
+    });
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
   }, [isSignedIn, me?.notificationEnabled]);
 
   // FCM can rotate device tokens. Keep the server-side token list fresh instead
@@ -85,7 +118,15 @@ export function NativePushRegistrar() {
     if (!nativePushSupported) return;
     if (!isSignedIn || !me?.notificationEnabled) return;
     return subscribePushTokenRefresh((token) => {
-      void registerRef.current({ data: { token } }).catch(() => {});
+      void registerRef
+        .current({ data: { token } })
+        .then(() => {
+          done.current = true;
+          lastRegistrationAt.current = Date.now();
+        })
+        .catch(() => {
+          done.current = false;
+        });
     });
   }, [isSignedIn, me?.notificationEnabled]);
 

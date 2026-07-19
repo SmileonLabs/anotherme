@@ -258,17 +258,16 @@ public class CallForegroundPackage implements ReactPackage {
   };
 }
 
-function patchMainApplication(file, androidPackage) {
-  if (!fs.existsSync(file)) return;
-  let contents = fs.readFileSync(file, "utf8");
-  const isJava = file.endsWith(".java");
+function patchMainApplicationContent(contents, androidPackage, language) {
+  const isJava = language === "java";
   const importLine = `import ${androidPackage}.call.CallForegroundPackage${isJava ? ";" : ""}`;
   if (!contents.includes(importLine)) {
     contents = contents.replace(/^(package .*\n)/m, `$1\n${importLine}\n`);
   }
   const hasPackageAdd =
     contents.includes("packages.add(CallForegroundPackage())") ||
-    contents.includes("packages.add(new CallForegroundPackage())");
+    contents.includes("packages.add(new CallForegroundPackage())") ||
+    contents.includes("add(CallForegroundPackage())");
   if (!hasPackageAdd) {
     if (isJava) {
       contents = contents.replace(
@@ -276,13 +275,42 @@ function patchMainApplication(file, androidPackage) {
         "$1packages.add(new CallForegroundPackage());$1return packages;",
       );
     } else {
-      contents = contents.replace(
-        /(\n\s*)return packages/,
-        "$1packages.add(CallForegroundPackage())$1return packages",
-      );
+      const expoApplyPattern = /(\bPackageList\s*\(\s*this\s*\)\s*\.packages\s*\.apply\s*\{)/;
+      if (expoApplyPattern.test(contents)) {
+        contents = contents.replace(
+          expoApplyPattern,
+          "$1\n          add(CallForegroundPackage())",
+        );
+      } else {
+        contents = contents.replace(
+          /(\n\s*)return packages/,
+          "$1packages.add(CallForegroundPackage())$1return packages",
+        );
+      }
     }
   }
-  fs.writeFileSync(file, contents);
+
+  const importAdded = contents.includes(importLine);
+  const packageAdded = isJava
+    ? contents.includes("packages.add(new CallForegroundPackage())")
+    : contents.includes("add(CallForegroundPackage())") ||
+      contents.includes("packages.add(CallForegroundPackage())");
+  if (!importAdded || !packageAdded) {
+    throw new Error(
+      `Unable to register CallForegroundPackage in ${language} MainApplication. ` +
+        "The Expo/React Native template changed; update withCallForegroundService before building.",
+    );
+  }
+  return contents;
+}
+
+function patchMainApplication(file, androidPackage) {
+  if (!fs.existsSync(file)) return false;
+  const language = file.endsWith(".java") ? "java" : "kotlin";
+  const contents = fs.readFileSync(file, "utf8");
+  const patched = patchMainApplicationContent(contents, androidPackage, language);
+  fs.writeFileSync(file, patched);
+  return true;
 }
 
 module.exports = function withCallForegroundService(config) {
@@ -316,9 +344,18 @@ module.exports = function withCallForegroundService(config) {
       Object.entries(sources).forEach(([name, source]) => {
         fs.writeFileSync(path.join(callDir, name), source);
       });
-      patchMainApplication(path.join(javaRoot, "MainApplication.kt"), androidPackage);
-      patchMainApplication(path.join(javaRoot, "MainApplication.java"), androidPackage);
+      const patched =
+        patchMainApplication(path.join(javaRoot, "MainApplication.kt"), androidPackage) ||
+        patchMainApplication(path.join(javaRoot, "MainApplication.java"), androidPackage);
+      if (!patched) {
+        throw new Error(
+          `MainApplication source was not found under ${javaRoot}; ` +
+            "CallForegroundPackage cannot be registered.",
+        );
+      }
       return mod;
     },
   ]);
 };
+
+module.exports.patchMainApplicationContent = patchMainApplicationContent;

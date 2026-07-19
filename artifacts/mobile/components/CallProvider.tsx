@@ -51,6 +51,18 @@ const RING_TIMEOUT_MS = 45_000;
 const KEEPALIVE_MIN_INTERVAL_MS = 8000;
 const DISCONNECT_GRACE_MS = 12_000;
 
+function callFailureCode(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message === "call_foreground_service_unavailable") return "native_module_unavailable";
+  if (message === "microphone_permission_denied") return "microphone_permission_denied";
+  if (message === "camera_permission_denied") return "camera_permission_denied";
+  if (message === "audio_session_start_failed") return "audio_session_start_failed";
+  if (message === "microphone_publish_failed") return "microphone_publish_failed";
+  if (message === "camera_publish_failed") return "camera_publish_failed";
+  if (/network|websocket|signal|connect/i.test(message)) return "transport_connect_failed";
+  return "unknown_join_failure";
+}
+
 interface CallContextValue {
   startCall: (
     calleeId: string,
@@ -241,11 +253,12 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const failCallLocally = useCallback(
     async (callId: string | null, role: string, err: unknown) => {
       if (callId) {
+        const message = err instanceof Error ? err.message : String(err);
         reportCallDiagnostic(callId, {
           phase: "join_failed",
           platform: Platform.OS,
           role,
-          details: { message: err instanceof Error ? err.message : String(err) },
+          details: { code: callFailureCode(err), message },
         });
         await markCallFailed(callId);
       }

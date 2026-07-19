@@ -17,6 +17,7 @@ import {
   type AudioPlayer,
 } from "expo-audio";
 import {
+  isCallForegroundServiceAvailable,
   startCallForegroundService,
   stopCallForegroundService,
 } from "@/lib/callForegroundService";
@@ -333,6 +334,10 @@ export async function joinCall(
   });
 
   try {
+    diagnostic("native_foreground_service_ready", {
+      available: isCallForegroundServiceAvailable(),
+      media,
+    });
     await startCallForegroundService(media);
     diagnostic("native_foreground_service_started", { media });
   } catch (err) {
