@@ -12,9 +12,8 @@ import { Feather } from "@expo/vector-icons";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  customFetch,
   useGetClanRankings,
   useGetMe,
   useGetMyClan,
@@ -22,9 +21,7 @@ import {
   useGetMyQuests,
   useListClanWars,
   useListIncomingFriendRequests,
-  type Quest,
 } from "@workspace/api-client-react";
-import { Avatar } from "@/components/Avatar";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
@@ -32,25 +29,14 @@ import { dailyTalkRewardStatusQueryKey } from "@/hooks/useDailyTalkReward";
 import { usePlayMode } from "@/hooks/usePlayMode";
 import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
 import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
-import { useOpenBibiOfficialRoom } from "@/hooks/useBibiOfficial";
 import { useMediaUri } from "@/hooks/useMediaUri";
 import { FAN_STAT_META } from "@/constants/fanStats";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
 const FAN_CHARACTER_IMAGE = require("../../assets/images/fan-slime.png");
-const FAN_CARD_BG_IMAGE = require("../../assets/images/fan_bg.png");
 const STAR_CHARACTER_IMAGE = require("../../assets/images/star-character-cutout.png");
 const STAR_RANDOM_BOX_IMAGE = require("../../assets/images/star-random-box.png");
 const TORIMIA_PORTAL_SCENE_IMAGE = require("../../assets/images/torimia-portal-scene.png");
-const MISSION_STAR_POINTS = [
-  { left: "12%" as const, top: "22%" as const, size: 1.5, opacity: 0.72 },
-  { left: "29%" as const, top: "12%" as const, size: 1, opacity: 0.42 },
-  { left: "47%" as const, top: "31%" as const, size: 1.4, opacity: 0.58 },
-  { left: "68%" as const, top: "18%" as const, size: 1, opacity: 0.48 },
-  { left: "84%" as const, top: "37%" as const, size: 1.5, opacity: 0.7 },
-  { left: "18%" as const, top: "57%" as const, size: 1, opacity: 0.36 },
-  { left: "75%" as const, top: "68%" as const, size: 1.2, opacity: 0.44 },
-] as const;
 
 const HOME_NAV_ITEMS: Array<{
   key: string;
@@ -101,34 +87,7 @@ const HomeNavigationGrid = React.memo(function HomeNavigationGrid() {
   );
 });
 
-type RankingScope = "persona" | "fan" | "star" | "battle";
 type PlayModeChoice = "fan" | "star";
-
-interface ServiceRankingItem {
-  id: string;
-  rank: number;
-  userId: string;
-  displayName: string;
-  avatarUrl: string | null;
-  level: number;
-  title: string;
-  subTitle: string;
-  badgeLabel: string;
-  score: number;
-  primaryStatLabel: string;
-  primaryStatValue: number;
-}
-
-interface ServiceRankingResult {
-  scope: RankingScope;
-  type: string;
-  items: ServiceRankingItem[];
-  myRank: {
-    rank: number;
-    score: number;
-    pointsToNextRank: number;
-  } | null;
-}
 
 interface PersonaOntologyProfile {
   evidenceSummary: string[];
@@ -139,42 +98,12 @@ interface PersonaOntologyProfile {
   confidence: number;
 }
 
-const RANK_SCOPE_META: Record<
-  RankingScope,
-  { label: string; icon: keyof typeof Feather.glyphMap; color: string }
-> = {
-  persona: { label: "자아", icon: "user", color: "#60A5FA" },
-  fan: { label: "FAN", icon: "heart", color: "#F472B6" },
-  star: { label: "STAR", icon: "star", color: "#FBBF24" },
-  battle: { label: "배틀", icon: "mic", color: "#C084FC" },
-};
-
 const STAR_STAT_META = [
   { key: "charm", label: "매력" },
   { key: "stagePresence", label: "무대감" },
   { key: "bond", label: "유대" },
   { key: "lore", label: "세계관" },
 ] as const;
-
-function questIcon(q: Quest): keyof typeof Feather.glyphMap {
-  const s = `${q.key} ${q.title}`;
-  if (/배틀|battle/i.test(s)) return "mic";
-  if (/성장RPG|dungeon/i.test(s)) return "compass";
-  if (/팬클럽|가문|clan/i.test(s)) return "shield";
-  if (/분석|analyze|persona|자아/i.test(s)) return "cpu";
-  if (/대화|채팅|chat|메시지/i.test(s)) return "message-circle";
-  return "target";
-}
-
-function questColor(q: Quest): string {
-  const icon = questIcon(q);
-  if (icon === "mic") return "#C084FC";
-  if (icon === "compass") return "#34D399";
-  if (icon === "shield") return "#FBBF24";
-  if (icon === "cpu") return "#60A5FA";
-  if (icon === "message-circle") return "#38BDF8";
-  return "#A78BFA";
-}
 
 function starStageLabel(stage: "aspiring" | "promoted" | undefined): string {
   if (stage === "promoted") return "공식 STAR";
@@ -184,16 +113,6 @@ function starStageLabel(stage: "aspiring" | "promoted" | undefined): string {
 function xpToReachLevel(level: number): number {
   if (level <= 1) return 0;
   return 50 * (level - 1) * level;
-}
-
-function rankLabel(result: ServiceRankingResult | undefined): string {
-  return result?.myRank ? `${result.myRank.rank}위` : "진입 전";
-}
-
-function formatCompactNumber(value: number | undefined): string {
-  const safe = value ?? 0;
-  if (safe >= 10000) return `${Math.floor(safe / 1000) / 10}만`;
-  return safe.toLocaleString();
 }
 
 function feedKindLabel(kind: StarFeedPost["kind"]): string {
@@ -206,23 +125,13 @@ function feedKindLabel(kind: StarFeedPost["kind"]): string {
   return "공식 소식";
 }
 
-function useHomeRanking(scope: RankingScope) {
-  return useQuery({
-    queryKey: ["home-service-ranking", scope],
-    queryFn: () =>
-      customFetch<ServiceRankingResult>(`/api/users/rankings?scope=${scope}&type=overall&limit=5`, {
-        responseType: "json",
-      }),
-  });
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const { data: me, refetch: refetchMe } = useGetMe();
+  const { refetch: refetchMe } = useGetMe();
   const { data: persona, refetch: refetchPersona } = useGetMyPersona();
   const { data: quests = [], refetch: refetchQuests } = useGetMyQuests();
   const {
@@ -236,7 +145,6 @@ export default function HomeScreen() {
   } = usePlayMode();
   const equippedStarImageUri = useMediaUri(equippedStar?.imageUrl);
   const { posts: feedPosts, refetch: refetchFeed } = useStarFeed();
-  const openBibiOfficialRoom = useOpenBibiOfficialRoom();
   const { data: myClan, refetch: refetchClan } = useGetMyClan();
   const { data: clanRanking, refetch: refetchClanRank } = useGetClanRankings({
     type: "overall",
@@ -244,10 +152,6 @@ export default function HomeScreen() {
   const { data: wars = [], refetch: refetchWars } = useListClanWars({
     status: "active",
   });
-  const { data: personaRankingData, refetch: refetchPersonaRanking } = useHomeRanking("persona");
-  const { data: fanRankingData, refetch: refetchFanRanking } = useHomeRanking("fan");
-  const { data: starRankingData, refetch: refetchStarRanking } = useHomeRanking("star");
-  const { data: battleRankingData, refetch: refetchBattleRanking } = useHomeRanking("battle");
   const { data: incomingRequests = [], refetch: refetchRequests } =
     useListIncomingFriendRequests();
 
@@ -274,10 +178,6 @@ export default function HomeScreen() {
         refetchClan(),
         refetchClanRank(),
         refetchWars(),
-        refetchPersonaRanking(),
-        refetchFanRanking(),
-        refetchStarRanking(),
-        refetchBattleRanking(),
         refetchRequests(),
         queryClient.invalidateQueries({ queryKey: dailyTalkRewardStatusQueryKey }),
         queryClient.invalidateQueries({ queryKey: pvtWalletQueryKey }),
@@ -294,10 +194,6 @@ export default function HomeScreen() {
     refetchClan,
     refetchClanRank,
     refetchWars,
-    refetchPersonaRanking,
-    refetchFanRanking,
-    refetchStarRanking,
-    refetchBattleRanking,
     refetchRequests,
     queryClient,
   ]);
@@ -312,10 +208,6 @@ export default function HomeScreen() {
       refetchClan();
       refetchClanRank();
       refetchWars();
-      refetchPersonaRanking();
-      refetchFanRanking();
-      refetchStarRanking();
-      refetchBattleRanking();
       refetchRequests();
       void queryClient.invalidateQueries({ queryKey: dailyTalkRewardStatusQueryKey });
       void queryClient.invalidateQueries({ queryKey: pvtWalletQueryKey });
@@ -328,10 +220,6 @@ export default function HomeScreen() {
       refetchClan,
       refetchClanRank,
       refetchWars,
-      refetchPersonaRanking,
-      refetchFanRanking,
-      refetchStarRanking,
-      refetchBattleRanking,
       refetchRequests,
       queryClient,
     ]),
@@ -359,7 +247,6 @@ export default function HomeScreen() {
   const clan = myClan?.clan;
   const clanRank = clanRanking?.myClanRank?.rank;
   const activeWar = wars[0];
-  const rankItems = battleRankingData?.items?.slice(0, 5) ?? [];
   const latestFeedPosts = feedPosts.slice(0, 2);
   const starStage = equippedStar ? starStageLabel(equippedStar.stage) : null;
   const activePlayMode = selectedPlayMode;
@@ -378,7 +265,6 @@ export default function HomeScreen() {
         ? "NFT 장착 필요"
         : "NFT 등록 필요"
     : "FAN · 응원 중인 STAR 없음";
-  const activeCardBgImage = FAN_CARD_BG_IMAGE;
   const activeImageSource = activePlayMode === "fan"
     ? FAN_CHARACTER_IMAGE
     : equippedStarImageUri
@@ -425,19 +311,10 @@ export default function HomeScreen() {
     }
     router.push("/(tabs)/feed" as never);
   };
-  const handleOpenBibiChat = async () => {
-    try {
-      const result = await openBibiOfficialRoom.mutateAsync();
-      router.push({ pathname: "/chat/[id]", params: { id: result.room.id } });
-    } catch {
-      router.push("/(tabs)/chats" as never);
-    }
-  };
   const todayMissions = [
     {
       key: "daily_battle",
       title: "오늘의 토크베틀",
-      description: "AI 상대와 주제로 대결하고\n승부를 기록해요",
       icon: "zap" as const,
       color: "#A855F7",
       gradient: ["rgba(64,16,112,0.86)", "rgba(14,5,35,0.98)", "rgba(5,4,18,1)"] as const,
@@ -446,7 +323,6 @@ export default function HomeScreen() {
     {
       key: "daily_clan",
       title: "팬들의 이야기가 모이는 피드",
-      description: "STAR와 FAN의 활동을 공유하고\n서로 응원해 보세요.",
       icon: "heart" as const,
       color: "#F04CCB",
       gradient: ["rgba(85,8,73,0.66)", "rgba(13,5,28,0.98)", "rgba(5,4,18,1)"] as const,
@@ -455,7 +331,6 @@ export default function HomeScreen() {
     {
       key: "daily_dungeon",
       title: "성장 재료 수집",
-      description: "STAR 미션으로 성장\n재료를 모아요",
       icon: "target" as const,
       color: "#35E6E0",
       gradient: ["rgba(0,66,83,0.68)", "rgba(4,15,35,0.98)", "rgba(5,4,18,1)"] as const,
@@ -463,61 +338,13 @@ export default function HomeScreen() {
     },
   ];
   const showLegacyHomeSections: boolean = false;
-  const rankSummaries = [
-    { scope: "persona" as const, result: personaRankingData },
-    { scope: "fan" as const, result: fanRankingData },
-    { scope: "star" as const, result: starRankingData },
-    { scope: "battle" as const, result: battleRankingData },
-  ];
-
   return (
     <NeonBackdrop style={styles.container}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerLeft}>
-          <Text
-            style={[styles.greeting, { color: colors.foreground }]}
-            numberOfLines={1}
-          >
-            안녕하세요, {me?.nickname ?? "회원"}님 👋
-          </Text>
-          <Text style={[styles.greetingSub, { color: colors.mutedForeground }]}>
-            오늘의 Another Me
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityLabel="알림"
-            hitSlop={8}
-            onPress={() => router.push("/friends/requests")}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Feather name="bell" size={22} color={colors.foreground} />
-            {hasRequests ? (
-              <View style={[styles.iconDot, { borderColor: colors.background }]} />
-            ) : null}
-          </Pressable>
-          <Pressable
-            accessibilityLabel="친구"
-            hitSlop={8}
-            onPress={() => router.push("/friends")}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1, display: "none" }]}
-          >
-            <Feather name="users" size={22} color={colors.foreground} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="설정"
-            hitSlop={8}
-            onPress={() => router.push("/settings")}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Feather name="settings" size={22} color={colors.foreground} />
-          </Pressable>
-        </View>
-      </View>
-
       <CustomScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 6, paddingBottom: insets.bottom + 100 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -529,46 +356,52 @@ export default function HomeScreen() {
       >
         {/* FAN / STAR growth card */}
         <View style={styles.playCard}>
-          <ExpoImage
-            source={activeCardBgImage}
-            style={[StyleSheet.absoluteFill, styles.playCardBg]}
-            contentFit="cover"
-          />
-          <LinearGradient
-            colors={["rgba(9,6,28,0.62)", "rgba(17,9,45,0.34)", "rgba(6,5,20,0.82)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-
           <View style={[styles.playCardHeader, starLocked && styles.playCardHeaderLocked]}>
-            <View style={styles.modeSwitchWrap}>
+            <View style={styles.playHeaderTopRow}>
+              <View style={styles.modeSwitchWrap}>
+                <Pressable
+                  onPress={() => handleModeSelect("star")}
+                  disabled={isChangingMode}
+                  style={[
+                    styles.modeSwitchChip,
+                    activePlayMode === "star" && styles.modeSwitchChipActive,
+                  ]}
+                >
+                  <Feather name="star" size={13} color={activePlayMode === "star" ? "#fff" : "#8E85B7"} />
+                  <Text style={[styles.modeSwitchText, activePlayMode === "star" && styles.modeSwitchTextActive]}>STAR</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleModeSelect("fan")}
+                  disabled={isChangingMode}
+                  style={[
+                    styles.modeSwitchChip,
+                    activePlayMode === "fan" && styles.modeSwitchChipActive,
+                  ]}
+                >
+                  <Feather name="heart" size={13} color={activePlayMode === "fan" ? "#fff" : "#8E85B7"} />
+                  <Text style={[styles.modeSwitchText, activePlayMode === "fan" && styles.modeSwitchTextActive]}>FAN</Text>
+                </Pressable>
+              </View>
               <Pressable
-                onPress={() => handleModeSelect("star")}
-                disabled={isChangingMode}
-                style={[
-                  styles.modeSwitchChip,
-                  activePlayMode === "star" && styles.modeSwitchChipActive,
-                ]}
+                accessibilityLabel="설정"
+                hitSlop={8}
+                onPress={() => router.push("/settings")}
+                style={({ pressed }) => [styles.playHeaderIcon, { opacity: pressed ? 0.5 : 1 }]}
               >
-                <Feather name="star" size={13} color={activePlayMode === "star" ? "#fff" : "#8E85B7"} />
-                <Text style={[styles.modeSwitchText, activePlayMode === "star" && styles.modeSwitchTextActive]}>STAR</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => handleModeSelect("fan")}
-                disabled={isChangingMode}
-                style={[
-                  styles.modeSwitchChip,
-                  activePlayMode === "fan" && styles.modeSwitchChipActive,
-                ]}
-              >
-                <Feather name="heart" size={13} color={activePlayMode === "fan" ? "#fff" : "#8E85B7"} />
-                <Text style={[styles.modeSwitchText, activePlayMode === "fan" && styles.modeSwitchTextActive]}>FAN</Text>
+                <Feather name="settings" size={18} color="#E8DDFF" />
               </Pressable>
             </View>
             <View style={styles.playStatusWrap}>
-              <Text style={styles.playStatusText}>{activeCardStatus}</Text>
-              <Feather name="info" size={13} color="#8E85B7" />
+              <Text style={styles.playStatusText} numberOfLines={1}>{activeCardStatus}</Text>
+              <Pressable
+                accessibilityLabel="알림"
+                hitSlop={8}
+                onPress={() => router.push("/friends/requests")}
+                style={({ pressed }) => [styles.playHeaderIcon, { opacity: pressed ? 0.5 : 1 }]}
+              >
+                <Feather name="bell" size={18} color="#E8DDFF" />
+                {hasRequests ? <View style={styles.iconDot} /> : null}
+              </Pressable>
             </View>
           </View>
 
@@ -646,76 +479,28 @@ export default function HomeScreen() {
 
         {/* Daily quests */}
         <View style={styles.missionSection}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.missionSectionTitle}>오늘의 미션</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="비비와의 대화 바로가기"
-              onPress={() => void handleOpenBibiChat()}
-              style={({ pressed }) => [styles.bibiChatShortcut, { display: "none", opacity: pressed ? 0.72 : 1 }]}
-            >
-              <LinearGradient
-                colors={["rgba(18,17,49,0.98)", "rgba(8,7,25,0.98)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.bibiChatShortcutInner}
-              >
-                <Feather name="message-circle" size={16} color="#B8A8FF" />
-                <Text style={styles.bibiChatShortcutText}>비비와의 대화</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
           <View style={styles.questRow}>
-            {todayMissions.map((mission, index) => {
-              const quest = dailyQuests.find((item) => item.key === mission.key);
-              const progress = quest?.progress ?? 0;
-              const target = quest?.target ?? (mission.key === "daily_dungeon" ? 3 : 1);
-              const ratio = Math.min(100, Math.round((progress / Math.max(target, 1)) * 100));
-              return (
-                <Pressable
-                  key={mission.key}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${mission.title} 바로가기`}
-                  onPress={mission.onPress}
-                  style={({ pressed }) => [styles.missionCard, { borderColor: `${mission.color}66`, opacity: pressed ? 0.78 : 1 }]}
-                >
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={mission.gradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0.82, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                    {MISSION_STAR_POINTS.map((star, starIndex) => (
-                      <View
-                        key={starIndex}
-                        style={[
-                          styles.missionStar,
-                          {
-                            left: star.left,
-                            top: star.top,
-                            width: star.size,
-                            height: star.size,
-                            opacity: star.opacity,
-                            backgroundColor: mission.color,
-                          },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <View style={[styles.missionIconGlow, { backgroundColor: `${mission.color}20` }]}>
-                    <Feather name={mission.icon} size={21} color={mission.color} />
-                  </View>
-                  <Text style={styles.missionTitle}>{mission.title}</Text>
-                  <Text style={styles.missionDescription}>{mission.description}</Text>
-                  <View style={styles.missionTrack}>
-                    <View style={[styles.missionFill, { width: `${ratio}%`, backgroundColor: mission.color }]} />
-                  </View>
-                  <Text style={styles.missionProgress}>{progress} / {target}</Text>
-                </Pressable>
-              );
-            })}
+            {todayMissions.map((mission) => (
+              <Pressable
+                key={mission.key}
+                accessibilityRole="button"
+                accessibilityLabel={`${mission.title} 바로가기`}
+                onPress={mission.onPress}
+                style={({ pressed }) => [styles.missionCard, { borderColor: `${mission.color}66`, opacity: pressed ? 0.78 : 1 }]}
+              >
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={mission.gradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0.82, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={[styles.missionIconGlow, { backgroundColor: `${mission.color}20` }]}>
+                  <Feather name={mission.icon} size={18} color={mission.color} />
+                </View>
+                <Text style={styles.missionTitle} numberOfLines={2}>{mission.title}</Text>
+              </Pressable>
+            ))}
           </View>
         </View>
 
@@ -991,62 +776,6 @@ export default function HomeScreen() {
           </Pressable>
         ) : null}
 
-        {/* Cumulative top ranking */}
-        {rankItems.length > 0 ? (
-          <View style={[styles.card, { backgroundColor: colors.card }]}>
-            <View style={styles.cardHeader}>
-              <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-                토크배틀 TOP 랭킹
-              </Text>
-              <Pressable
-                hitSlop={8}
-                onPress={() => router.push("/profile/ranking")}
-                style={({ pressed }) => [styles.moreBtn, { opacity: pressed ? 0.5 : 1 }]}
-              >
-                <Text style={[styles.moreText, { color: colors.mutedForeground }]}>
-                  더 보기
-                </Text>
-                <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
-              </Pressable>
-            </View>
-            {rankItems.map((item, i) => (
-              <View
-                key={item.userId}
-                style={[
-                  styles.rankRow,
-                  {
-                    borderTopColor: colors.border,
-                    borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.rankNum,
-                    { color: item.rank <= 3 ? "#FBBF24" : colors.mutedForeground },
-                  ]}
-                >
-                  {item.rank}
-                </Text>
-                <Avatar uri={item.avatarUrl} name={item.displayName} size={36} />
-                <View style={styles.rankInfo}>
-                  <Text style={[styles.rankName, { color: colors.foreground }]} numberOfLines={1}>
-                    {item.displayName}
-                  </Text>
-                  <Text style={[styles.rankLevel, { color: colors.mutedForeground }]}>
-                    Lv.{item.level}
-                  </Text>
-                </View>
-                <View style={styles.rankScoreBox}>
-                  <Feather name="award" size={13} color="#FBBF24" />
-                  <Text style={[styles.rankScore, { color: colors.foreground }]}>
-                    {item.score.toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
       </CustomScrollView>
     </NeonBackdrop>
   );
@@ -1054,32 +783,19 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(157, 99, 255, 0.18)",
-  },
-  headerLeft: { flex: 1, paddingRight: 12 },
-  greeting: { fontSize: 22, fontFamily: "Inter_500Medium", letterSpacing: -0.5 },
-  greetingSub: { fontSize: 13.5, fontFamily: "Inter_500Medium", marginTop: 4 },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
-  iconBtn: { padding: 6 },
   iconDot: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 2,
+    right: 1,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: "#FF3B30",
-    borderWidth: 1.5,
+    borderWidth: 1,
+    borderColor: "#000",
   },
 
-  scrollContent: { paddingHorizontal: 16, gap: 18 },
+  scrollContent: { paddingHorizontal: 16, gap: 12 },
 
   // FAN / STAR growth card
   playCard: {
@@ -1089,11 +805,11 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "rgba(170,78,255,0.58)",
-    backgroundColor: "#090717",
+    backgroundColor: "#000",
   },
-  playCardBg: { opacity: 0.9 },
-  playCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  playCardHeader: { gap: 3 },
   playCardHeaderLocked: { opacity: 0.62 },
+  playHeaderTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   modeSwitchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -1115,8 +831,15 @@ const styles = StyleSheet.create({
   modeSwitchChipActive: { backgroundColor: "#6D35F6" },
   modeSwitchText: { color: "#8E85B7", fontSize: 11, fontFamily: "Inter_800ExtraBold" },
   modeSwitchTextActive: { color: "#fff" },
-  playStatusWrap: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
-  playStatusText: { color: "#B8AFD7", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  playStatusWrap: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 5 },
+  playStatusText: { flexShrink: 1, color: "#B8AFD7", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  playHeaderIcon: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
   playCardBody: { flex: 1, flexDirection: "row", marginTop: 12, position: "relative" },
   playCardBodyLocked: { opacity: 0.62 },
   playInfoCol: { width: "43%", zIndex: 3, paddingLeft: 3 },
@@ -1257,42 +980,18 @@ const styles = StyleSheet.create({
 
   // Quests
   missionSection: {
-    gap: 2,
+    gap: 0,
   },
-  missionSectionTitle: {
-    flex: 1,
-    color: "#C9C2D8",
-    fontSize: 13,
-    fontFamily: "Inter_700Bold",
-  },
-  missionMoreText: { color: "#A9A3BA", fontSize: 13, fontFamily: "Inter_500Medium" },
-  bibiChatShortcut: {
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(141,113,255,0.26)",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-  },
-  bibiChatShortcutInner: {
-    minHeight: 36,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  bibiChatShortcutText: { color: "#CEC7E4", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   questRow: { flexDirection: "row", gap: 8 },
   missionCard: {
     flex: 1,
-    minHeight: 148,
+    minHeight: 82,
     alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderRadius: 15,
-    paddingHorizontal: 8,
-    paddingVertical: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 8,
     backgroundColor: "#080519",
     overflow: "hidden",
     shadowColor: "#7C3AED",
@@ -1301,42 +1000,23 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-  missionStar: { position: "absolute", borderRadius: 4 },
   missionIconGlow: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 7,
+    marginBottom: 5,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.06)",
   },
   missionTitle: {
     color: "#F7F5FF",
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: "Inter_700Bold",
     textAlign: "center",
+    lineHeight: 14,
   },
-  missionDescription: {
-    minHeight: 30,
-    color: "#A9A3BA",
-    fontSize: 9.5,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    lineHeight: 13,
-    marginTop: 4,
-  },
-  missionTrack: {
-    width: "100%",
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    overflow: "hidden",
-    marginTop: 6,
-  },
-  missionFill: { height: "100%", borderRadius: 3 },
-  missionProgress: { color: "#A9A3BA", fontSize: 10, fontFamily: "Inter_500Medium", marginTop: 4 },
   questCell: { flex: 1, alignItems: "center" },
   questIcon: {
     width: 42,
@@ -1576,21 +1256,4 @@ const styles = StyleSheet.create({
   warVs: { fontSize: 13, fontFamily: "Inter_700Bold", paddingHorizontal: 10 },
 
   // Ranking
-  rankRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 9,
-  },
-  rankNum: {
-    width: 20,
-    textAlign: "center",
-    fontSize: 15,
-    fontFamily: "Inter_800ExtraBold",
-  },
-  rankInfo: { flex: 1 },
-  rankName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  rankLevel: { fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 2 },
-  rankScoreBox: { flexDirection: "row", alignItems: "center", gap: 4 },
-  rankScore: { fontSize: 14, fontFamily: "Inter_700Bold" },
 });

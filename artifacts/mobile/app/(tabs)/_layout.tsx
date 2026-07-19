@@ -6,6 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useAuth } from "@clerk/expo";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { ThemeModeContext, useThemeMode } from "@/hooks/useThemeMode";
@@ -20,6 +21,8 @@ function ClassicTabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
   const pwaBottom = usePwaBottomInset();
+  const insets = useSafeAreaInsets();
+  const bottomInset = isWeb ? pwaBottom : insets.bottom;
 
   const tabIcon = (
     ios: string,
@@ -55,9 +58,9 @@ function ClassicTabLayout() {
         tabBarItemStyle: { paddingTop: 5 },
         tabBarStyle: {
           position: "absolute",
-          height: 82 + (isWeb ? pwaBottom : 0),
+          height: 68 + bottomInset,
           paddingTop: 5,
-          paddingBottom: isWeb ? Math.max(6, pwaBottom) : 6,
+          paddingBottom: Math.max(6, bottomInset),
           backgroundColor: isIOS ? "transparent" : "#05040D",
           borderTopWidth: 1,
           borderTopColor: "rgba(139, 92, 246, 0.24)",

@@ -2,7 +2,6 @@ import { CustomFlatList } from "@/components/CustomScroll";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -15,7 +14,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGetMe, useListRooms } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { BibiOfficialEntry } from "@/components/BibiOfficialEntry";
-import { DailyTalkRewardCard } from "@/components/DailyTalkRewardCard";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { EmptyState } from "@/components/EmptyState";
 import { ModeSwitch } from "@/components/ModeSwitch";
@@ -167,13 +165,7 @@ export default function ChatsScreen() {
           filteredRooms.length === 0 ? styles.emptyContainer : styles.listContent
         }
         ListHeaderComponent={
-          <View style={styles.rewardHeader}>
-            <DailyTalkRewardCard
-              onClaim={() => router.push("/daily-talk-reward/generate" as never)}
-              onOpenDraft={(id) => router.push(`/daily-talk-reward/${id}` as never)}
-              onOpenWallet={() => router.push("/pvt/wallet" as never)}
-              onOpenHistory={() => router.push("/daily-talk-reward/history" as never)}
-            />
+          <View style={styles.listHeader}>
             <BibiOfficialEntry
               onOpenRoom={(roomId) => router.push({ pathname: "/chat/[id]", params: { id: roomId } })}
             />
@@ -315,7 +307,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  rewardHeader: { paddingHorizontal: 16, paddingTop: 4 },
+  listHeader: { paddingHorizontal: 16, paddingTop: 4 },
   listContent: { paddingHorizontal: 12, paddingBottom: 120 },
   emptyContainer: { flexGrow: 1, minHeight: 400 },
   roomItem: {
