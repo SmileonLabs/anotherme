@@ -23,6 +23,13 @@ import { parseFileContent, formatFileSize } from "@/lib/fileMessage";
 const IMAGE_WIDTH = 220;
 const IMAGE_MAX_HEIGHT = 300;
 const STICKER_SIZE = 128;
+const WEB_LONG_TEXT_STYLE = Platform.select({
+  web: {
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+  } as any,
+  default: undefined,
+});
 
 interface MessageBubbleProps {
   content: string;
@@ -501,6 +508,7 @@ function MessageBubbleComponent({
       <Text
         style={[
           styles.text,
+          WEB_LONG_TEXT_STYLE,
           isDeleted && styles.deletedText,
           { color: isMe ? colors.myBubbleText : colors.otherBubbleText },
         ]}
@@ -678,6 +686,7 @@ const styles = StyleSheet.create({
   },
   bubbleWrap: {
     maxWidth: "82%",
+    minWidth: 0,
     gap: 3,
   },
   bubbleWrapMe: {
@@ -686,6 +695,8 @@ const styles = StyleSheet.create({
   bubbleLine: {
     flexDirection: "row",
     alignItems: "flex-end",
+    maxWidth: "100%",
+    minWidth: 0,
     gap: 6,
   },
   bubbleLineMe: {
@@ -693,12 +704,16 @@ const styles = StyleSheet.create({
   },
   bodyWrap: {
     flexShrink: 1,
+    maxWidth: "100%",
+    minWidth: 0,
     position: "relative",
   },
   bubble: {
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 18,
+    maxWidth: "100%",
+    minWidth: 0,
   },
   bubbleMe: {
     borderBottomRightRadius: 4,
@@ -750,6 +765,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     lineHeight: 21,
+    maxWidth: "100%",
+    minWidth: 0,
   },
   deletedText: {
     fontStyle: "italic",
