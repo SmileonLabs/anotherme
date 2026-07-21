@@ -22,6 +22,7 @@ export const chatRoomMembersTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     roomId: uuid("room_id").notNull().references(() => chatRoomsTable.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
     lastReadMessageId: uuid("last_read_message_id"),
     lastReadSeq: integer("last_read_seq").notNull().default(0),
@@ -36,6 +37,7 @@ export const chatRoomMembersTable = pgTable(
     // on every room/message request filter by room_id.
     index("chat_room_members_user_id_idx").on(t.userId),
     index("chat_room_members_room_id_idx").on(t.roomId),
+    index("chat_room_members_profile_id_idx").on(t.profileId),
     index("chat_room_members_room_id_last_read_seq_idx").on(t.roomId, t.lastReadSeq),
   ],
 );
@@ -85,6 +87,7 @@ export const messageDeletionsTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     messageId: uuid("message_id").notNull().references(() => messagesTable.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -787,10 +787,42 @@ export type CharacterProfile = CharacterProfileSummary & ({
   level: number;
   /** @minimum 0 */
   xp: number;
+  /** @nullable */
+  jobKey?: string | null;
+  /** @minimum 0 */
+  jobStage: number;
   stats: CharacterProfileStats;
   metadata: CharacterProfileMetadata;
   isActive: boolean;
 });
+
+export type CharacterProfileInventoryItemMetadata = { [key: string]: unknown };
+
+export interface CharacterProfileInventoryItem {
+  id: string;
+  profileId: string;
+  itemKey: string;
+  itemType: string;
+  /** @minimum 0 */
+  quantity: number;
+  equipped: boolean;
+  metadata: CharacterProfileInventoryItemMetadata;
+  updatedAt: string;
+}
+
+export type CharacterProfileNotificationData = { [key: string]: unknown };
+
+export interface CharacterProfileNotification {
+  id: string;
+  profileId: string;
+  /** @nullable */
+  actorProfileId?: string | null;
+  type: string;
+  data: CharacterProfileNotificationData;
+  /** @nullable */
+  readAt?: string | null;
+  createdAt: string;
+}
 
 export interface CharacterProfileState {
   activeProfile: CharacterProfile;
@@ -2792,6 +2824,32 @@ size: number;
 contentType?: string;
 };
 
+export type CreateMyFanCharacterProfileBodyCustomization = {
+  ageStyle: string;
+  hairStyle: string;
+  skinTone: string;
+  genderExpression: string;
+};
+
+export type CreateMyFanCharacterProfileBody = {
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
+  displayName: string;
+  /**
+     * @minLength 3
+     * @maxLength 24
+     */
+  handle?: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  profileImageUrl?: string | null;
+  customization: CreateMyFanCharacterProfileBodyCustomization;
+};
+
 export type UpdateMyActiveCharacterProfileBody = {
   profileId: string;
 };
@@ -2812,6 +2870,16 @@ export type UpdateMyCharacterProfileBody = {
      * @nullable
      */
   statusMessage?: string | null;
+};
+
+export type GetMyCharacterProfileInventory200 = {
+  profileId: string;
+  items: CharacterProfileInventoryItem[];
+};
+
+export type GetMyCharacterProfileNotifications200 = {
+  profileId: string;
+  items: CharacterProfileNotification[];
 };
 
 export type GetServiceRankingsParams = {
@@ -2911,3 +2979,20 @@ export type PostFanCommunitiesIdBroadcastsBody = { [key: string]: unknown };
 export type GetFanCommunitiesIdMissions200Item = { [key: string]: unknown };
 
 export type PostFanCommunitiesIdMissionsBody = { [key: string]: unknown };
+
+export type UpdateAdminCharacterProfileStatusBodyStatus = typeof UpdateAdminCharacterProfileStatusBodyStatus[keyof typeof UpdateAdminCharacterProfileStatusBodyStatus];
+
+
+export const UpdateAdminCharacterProfileStatusBodyStatus = {
+  active: 'active',
+  locked: 'locked',
+} as const;
+
+export type UpdateAdminCharacterProfileStatusBody = {
+  status: UpdateAdminCharacterProfileStatusBodyStatus;
+  /**
+     * @minLength 2
+     * @maxLength 300
+     */
+  reason: string;
+};

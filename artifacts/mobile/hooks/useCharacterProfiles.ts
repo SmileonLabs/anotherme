@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { customFetch } from "@workspace/api-client-react";
+import { customFetch, setCharacterProfileIdGetter } from "@workspace/api-client-react";
 import { playModeQueryKey } from "./usePlayMode";
 
 export type CharacterProfileType = "fan" | "star" | "official_ai";
@@ -15,6 +15,8 @@ export interface CharacterProfileView {
   status: CharacterProfileStatus;
   level: number;
   xp: number;
+  jobKey: string | null;
+  jobStage: number;
   stats: Record<string, number>;
   metadata: Record<string, unknown>;
   isActive: boolean;
@@ -57,6 +59,32 @@ export function useCharacterProfiles() {
       }),
     onSuccess: (state) => queryClient.setQueryData(characterProfilesQueryKey, state),
   });
+  const createFan = useMutation({
+    mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customization: { ageStyle: string; hairStyle: string; skinTone: string; genderExpression: string } & Record<string, unknown> }) =>
+      customFetch<CharacterProfileState>("/api/users/me/fan-profiles", {
+        method: "POST",
+        responseType: "json",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async (state) => {
+      setCharacterProfileIdGetter(() => state.activeProfile.id);
+      queryClient.setQueryData(characterProfilesQueryKey, state);
+      await queryClient.invalidateQueries({ queryKey: playModeQueryKey });
+    },
+  });
+  const archive = useMutation({
+    mutationFn: (profileId: string) => customFetch<CharacterProfileState>(`/api/users/me/profiles/${profileId}`, { method: "DELETE", responseType: "json" }),
+    onSuccess: async (state) => {
+      setCharacterProfileIdGetter(() => state.activeProfile.id);
+      queryClient.setQueryData(characterProfilesQueryKey, state);
+      await queryClient.invalidateQueries({ queryKey: playModeQueryKey });
+    },
+  });
+
+  if (query.data?.activeProfile.id) {
+    const profileId = query.data.activeProfile.id;
+    setCharacterProfileIdGetter(() => profileId);
+  }
 
   return {
     state: query.data,
@@ -67,8 +95,12 @@ export function useCharacterProfiles() {
     isLoading: query.isLoading,
     isActivating: activation.isPending,
     isUpdating: update.isPending,
+    isCreatingFan: createFan.isPending,
+    isArchiving: archive.isPending,
     refetch: query.refetch,
     activateProfile: activation.mutateAsync,
     updateProfile: update.mutateAsync,
+    createFanProfile: createFan.mutateAsync,
+    archiveProfile: archive.mutateAsync,
   };
 }

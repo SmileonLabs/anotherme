@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   chatRoomMembersTable,
@@ -40,7 +40,7 @@ import {
   setMemberReadSeq,
   type ReadTarget,
 } from "../lib/readReceipts";
-import { ensureCharacterProfileState } from "../lib/characterProfiles";
+import { ensureCharacterProfileState, resolveCharacterProfileActor } from "../lib/characterProfiles";
 import type { CharacterProfileView } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
@@ -419,6 +419,7 @@ router.get(
   async (req, res): Promise<void> => {
     const userId = req.dbUser!.id;
     const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const actorProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
 
     const [member] = await db
       .select()
@@ -427,6 +428,7 @@ router.get(
         and(
           eq(chatRoomMembersTable.roomId, raw),
           eq(chatRoomMembersTable.userId, userId),
+          or(eq(chatRoomMembersTable.profileId, actorProfile.id), isNull(chatRoomMembersTable.profileId)),
         ),
       );
 
@@ -478,6 +480,7 @@ router.post(
   async (req, res): Promise<void> => {
     const userId = req.dbUser!.id;
     const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const actorProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
 
     const [member] = await db
       .select()
@@ -486,6 +489,7 @@ router.post(
         and(
           eq(chatRoomMembersTable.roomId, raw),
           eq(chatRoomMembersTable.userId, userId),
+          or(eq(chatRoomMembersTable.profileId, actorProfile.id), isNull(chatRoomMembersTable.profileId)),
         ),
       );
 
@@ -521,8 +525,7 @@ router.post(
     // sticker code, or file metadata), so room previews and push notifications
     // use a label.
     const preview = previewForMessage(input.type, input.content);
-    const profileState = await ensureCharacterProfileState(userId);
-    const activeProfileId = profileState.activeProfile.id;
+    const activeProfileId = actorProfile.id;
     const directRoom = await getDirectRoomPeer(raw, userId);
     if (directRoom.isDirect && !directRoom.peerId) {
       res.status(409).json({ error: "Invalid direct room membership" });
@@ -631,7 +634,7 @@ router.post(
     // optimistically in this request. Hydrate those responses fully; the common
     // newly-created path only needs the lightweight acknowledgement above.
     const payload = createdResult.created
-      ? serializeCreatedMessage(message, sender, profileState.activeProfile)
+      ? serializeCreatedMessage(message, sender, actorProfile)
       : await serializeMessage(
           message,
           userId,

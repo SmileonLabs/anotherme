@@ -165,12 +165,12 @@ export const starFeedReactionsTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
-    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
+    profileId: uuid("profile_id").notNull().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
     reactionType: text("reaction_type").notNull().default("cheer"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("star_feed_reactions_post_user_idx").on(t.postId, t.userId),
+    uniqueIndex("star_feed_reactions_post_profile_idx").on(t.postId, t.profileId),
     index("star_feed_reactions_post_id_idx").on(t.postId),
     index("star_feed_reactions_user_id_idx").on(t.userId),
   ],

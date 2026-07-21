@@ -57,7 +57,11 @@ export * from './callWithCaller';
 export * from './cancelBattle200';
 export * from './characterProfile';
 export * from './characterProfileFollowState';
+export * from './characterProfileInventoryItem';
+export * from './characterProfileInventoryItemMetadata';
 export * from './characterProfileMetadata';
+export * from './characterProfileNotification';
+export * from './characterProfileNotificationData';
 export * from './characterProfileState';
 export * from './characterProfileStats';
 export * from './characterProfileStatus';
@@ -97,6 +101,8 @@ export * from './clanWarSummaryStatus';
 export * from './clanWisdom';
 export * from './createCallInput';
 export * from './createClanWarBody';
+// CreateMyFanCharacterProfileBody is exported from generated/api as the canonical Zod schema.
+export * from './createMyFanCharacterProfileBodyCustomization';
 export * from './dailyTalkReward';
 export * from './dailyTalkRewardAbuseSignals';
 export * from './dailyTalkRewardOntologySyncStatus';
@@ -134,6 +140,8 @@ export * from './getClanRankingsParams';
 export * from './getClanRankingsType';
 export * from './getFanCommunitiesIdBroadcasts200Item';
 export * from './getFanCommunitiesIdMissions200Item';
+export * from './getMyCharacterProfileInventory200';
+export * from './getMyCharacterProfileNotifications200';
 export * from './getPersonaRankingsArchetype';
 export * from './getPersonaRankingsParams';
 export * from './getPersonaRankingsType';
@@ -292,6 +300,8 @@ export * from './torimiaError';
 export * from './torimiaRequirement';
 export * from './torimiaRequirementKey';
 export * from './torimiaState';
+// UpdateAdminCharacterProfileStatusBody is exported from generated/api as the canonical Zod schema.
+export * from './updateAdminCharacterProfileStatusBodyStatus';
 // UpdateMyActiveCharacterProfileBody is exported from generated/api as the canonical Zod schema.
 // UpdateMyCharacterProfileBody is exported from generated/api as the canonical Zod schema.
 export * from './uploadStorageObjectParams';

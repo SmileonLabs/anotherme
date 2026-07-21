@@ -18,6 +18,10 @@ export type CharacterProfile = CharacterProfileSummary & ({
   level: number;
   /** @minimum 0 */
   xp: number;
+  /** @nullable */
+  jobKey?: string | null;
+  /** @minimum 0 */
+  jobStage: number;
   stats: CharacterProfileStats;
   metadata: CharacterProfileMetadata;
   isActive: boolean;

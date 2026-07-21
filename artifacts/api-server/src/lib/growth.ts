@@ -1,10 +1,11 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import type { Logger } from "pino";
 import { db } from "@workspace/db";
 import {
   DEFAULT_FAN_STATS,
   DEFAULT_PERSONA_STATS,
   fanProfilesTable,
+  fanCharacterProfilesTable,
   characterGrowthEventsTable,
   characterProfilesTable,
   personasTable,
@@ -491,6 +492,7 @@ export async function recordLifeQuestActivity(
 
 export interface RecordRewardParams {
   userId: string;
+  profileId?: string;
   /** "quest" | "achievement" — keeps reward grants distinct from core activity. */
   sourceType: Extract<GrowthSourceType, "quest" | "achievement" | "system">;
   eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward" | "fan_support">;
@@ -522,16 +524,18 @@ export interface RecordRewardParams {
 export async function recordReward(params: RecordRewardParams): Promise<boolean> {
   const { userId, sourceType, eventType, sourceKey, expDelta, reason, metadata } = params;
   if (expDelta <= 0) return false;
-  const fanCharacterProfileId = (await ensureCharacterProfileState(userId)).profiles.find((profile) => profile.type === "fan")?.id ?? null;
+  const state = await ensureCharacterProfileState(userId);
+  const targetProfile = params.profileId
+    ? state.profiles.find((profile) => profile.id === params.profileId)
+    : state.activeProfile;
+  if (!targetProfile || targetProfile.status !== "active") return false;
 
   let granted = false;
   await db.transaction(async (tx) => {
-    await tx.insert(fanProfilesTable).values({ userId }).onConflictDoNothing();
-
     const [locked] = await tx
       .select()
-      .from(fanProfilesTable)
-      .where(eq(fanProfilesTable.userId, userId))
+      .from(characterProfilesTable)
+      .where(and(eq(characterProfilesTable.id, targetProfile.id), eq(characterProfilesTable.ownerUserId, userId)))
       .for("update");
     if (!locked) return;
 
@@ -562,31 +566,31 @@ export async function recordReward(params: RecordRewardParams): Promise<boolean>
 
     if (inserted.length === 0) return;
 
-    await tx
-      .update(fanProfilesTable)
-      .set({ xp: afterExp, level: afterLevel })
-      .where(eq(fanProfilesTable.userId, userId));
-    if (fanCharacterProfileId) {
-      await tx
-        .insert(characterGrowthEventsTable)
-        .values({
-          profileId: fanCharacterProfileId,
-          ownerUserId: userId,
-          sourceKey: `fan:${sourceKey}`,
-          eventType,
-          xpDelta: expDelta,
-          statChanges: {},
-          beforeLevel,
-          afterLevel,
-          beforeXp: beforeExp,
-          afterXp: afterExp,
-          metadata: metadata ?? {},
-        })
-        .onConflictDoNothing({ target: characterGrowthEventsTable.sourceKey });
-      await tx
-        .update(characterProfilesTable)
-        .set({ xp: afterExp, level: afterLevel })
-        .where(eq(characterProfilesTable.id, fanCharacterProfileId));
+    await tx.update(characterProfilesTable).set({ xp: afterExp, level: afterLevel, updatedAt: new Date() })
+      .where(eq(characterProfilesTable.id, targetProfile.id));
+    await tx.insert(characterGrowthEventsTable).values({
+      profileId: targetProfile.id,
+      ownerUserId: userId,
+      sourceKey: `profile:${targetProfile.id}:${sourceKey}`,
+      eventType,
+      xpDelta: expDelta,
+      statChanges: {},
+      beforeLevel,
+      afterLevel,
+      beforeXp: beforeExp,
+      afterXp: afterExp,
+      metadata: metadata ?? {},
+    }).onConflictDoNothing({ target: characterGrowthEventsTable.sourceKey });
+
+    if (targetProfile.type === "fan") {
+      const [legacy] = await tx.select().from(fanCharacterProfilesTable).where(and(
+        eq(fanCharacterProfilesTable.profileId, targetProfile.id),
+        isNotNull(fanCharacterProfilesTable.legacyFanUserId),
+      ));
+      if (legacy?.legacyFanUserId) {
+        await tx.update(fanProfilesTable).set({ xp: afterExp, level: afterLevel })
+          .where(eq(fanProfilesTable.userId, legacy.legacyFanUserId));
+      }
     }
     granted = true;
   });

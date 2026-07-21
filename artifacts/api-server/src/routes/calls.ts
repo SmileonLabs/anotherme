@@ -31,6 +31,7 @@ import {
   type CallMedia,
   type TerminalCallStatus,
 } from "../lib/callLifecycle";
+import { ensureCharacterProfileState, resolveCharacterProfileActor } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 const createCallSchema = z.object({
@@ -298,6 +299,7 @@ async function isBlockedBetween(a: string, b: string): Promise<boolean> {
 async function postCallMessage(
   roomId: string,
   callerId: string,
+  callerProfileId: string,
   callId: string,
   media: CallMedia,
 ): Promise<void> {
@@ -306,7 +308,7 @@ async function postCallMessage(
     const roomSeq = await allocateRoomMessageSeq(tx, roomId);
     const [message] = await tx
       .insert(messagesTable)
-      .values({ roomId, senderId: callerId, type: "call", content, callId, roomSeq })
+      .values({ roomId, senderId: callerId, senderProfileId: callerProfileId, type: "call", content, callId, roomSeq })
       .returning();
     await tx
       .update(chatRoomsTable)
@@ -350,7 +352,9 @@ function serializeCall(c: Call, media: CallMedia = "audio") {
     id: c.id,
     roomName: c.roomName,
     callerId: c.callerId,
+    callerProfileId: c.callerProfileId ?? null,
     calleeId: c.calleeId,
+    calleeProfileId: c.calleeProfileId ?? null,
     chatRoomId: c.chatRoomId ?? null,
     media,
     status: c.status,
@@ -397,12 +401,14 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
   }
   const { calleeId, roomId } = parsed.data;
   const media = parsed.data.media ?? "audio";
+  const callerProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
 
   const [callee] = await db.select().from(usersTable).where(eq(usersTable.id, calleeId));
   if (!callee) {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  const calleeProfile = (await ensureCharacterProfileState(calleeId)).activeProfile;
 
   // Block list is mutual for calls: if either side blocked the other, the call
   // is refused. 403 (not 404) so the caller gets a clear, honest failure.
@@ -446,7 +452,9 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
         .values({
           roomName,
           callerId: userId,
+          callerProfileId: callerProfile.id,
           calleeId,
+          calleeProfileId: calleeProfile.id,
           chatRoomId: validRoomId,
           media,
           status: "ringing",
@@ -472,7 +480,7 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
   // Post the in-chat call card so both parties can join from the conversation.
   if (validRoomId) {
     try {
-      await postCallMessage(validRoomId, userId, call.id, media);
+      await postCallMessage(validRoomId, userId, callerProfile.id, call.id, media);
     } catch (err) {
       req.log.error({ err, roomId: validRoomId, callId: call.id }, "Failed to post call message");
     }
@@ -485,22 +493,22 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
     title: media === "video" ? "영상통화" : "보이스톡",
     body:
       media === "video"
-        ? `${req.dbUser!.nickname}님이 영상 통화를 걸었습니다`
-        : `${req.dbUser!.nickname}님이 음성 통화를 걸었습니다`,
+        ? `${callerProfile.displayName}님이 영상 통화를 걸었습니다`
+        : `${callerProfile.displayName}님이 음성 통화를 걸었습니다`,
     url: validRoomId ? `/chat/${validRoomId}` : "/",
     tag: `call-${call.id}`,
     data: incomingCallData({
       callId: call.id,
       chatRoomId: validRoomId,
       callerUserId: userId,
-      callerName: req.dbUser!.nickname,
+      callerName: callerProfile.displayName,
       media,
     }),
   });
 
   // The initial session remains subscribe-only while ringing. The caller gets
   // media publish permission only through the active-only join endpoint.
-  const token = await createToken(roomName, userId, req.dbUser!.nickname, media, false);
+  const token = await createToken(roomName, userId, callerProfile.displayName, media, false);
   publishCallRealtimeEvent(call, "call.created", userId, media);
   res.status(201).json({ call: serializeCall(call, media), token, url: LIVEKIT_URL });
 });

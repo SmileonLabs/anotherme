@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -39,6 +40,8 @@ export const characterProfilesTable = pgTable(
     status: text("status").$type<CharacterProfileStatus>().notNull().default("active"),
     level: integer("level").notNull().default(1),
     xp: integer("xp").notNull().default(0),
+    jobKey: text("job_key"),
+    jobStage: integer("job_stage").notNull().default(0),
     stats: jsonb("stats").$type<Record<string, number>>().notNull().default({}),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -62,11 +65,11 @@ export const fanCharacterProfilesTable = pgTable(
       .primaryKey()
       .references(() => characterProfilesTable.id, { onDelete: "cascade" }),
     legacyFanUserId: uuid("legacy_fan_user_id")
-      .notNull()
       .references(() => fanProfilesTable.userId, { onDelete: "cascade" }),
+    generation: integer("generation").notNull().default(1),
     customization: jsonb("customization").$type<Record<string, unknown>>().notNull().default({}),
   },
-  (table) => [uniqueIndex("fan_character_profiles_legacy_idx").on(table.legacyFanUserId)],
+  (table) => [index("fan_character_profiles_legacy_idx").on(table.legacyFanUserId)],
 );
 
 export const starCharacterProfilesTable = pgTable(
@@ -156,6 +159,73 @@ export const characterGrowthEventsTable = pgTable(
     uniqueIndex("character_growth_events_source_idx").on(table.sourceKey),
     index("character_growth_events_profile_created_idx").on(table.profileId, table.createdAt),
   ],
+);
+
+export const characterProfileQuestProgressTable = pgTable(
+  "character_profile_quest_progress",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").notNull().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
+    questKey: text("quest_key").notNull(),
+    questType: text("quest_type").notNull(),
+    periodKey: text("period_key").notNull(),
+    progress: integer("progress").notNull().default(0),
+    target: integer("target").notNull().default(1),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    rewardClaimedAt: timestamp("reward_claimed_at", { withTimezone: true }),
+    rewardXp: integer("reward_xp").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("character_profile_quest_period_idx").on(table.profileId, table.questKey, table.periodKey),
+    index("character_profile_quest_type_idx").on(table.profileId, table.questType),
+  ],
+);
+
+export const characterProfileAchievementsTable = pgTable(
+  "character_profile_achievements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").notNull().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
+    achievementKey: text("achievement_key").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true }).notNull().defaultNow(),
+    rewardClaimedAt: timestamp("reward_claimed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [uniqueIndex("character_profile_achievement_idx").on(table.profileId, table.achievementKey)],
+);
+
+export const characterProfileInventoryTable = pgTable(
+  "character_profile_inventory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").notNull().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    itemType: text("item_type").notNull().default("material"),
+    quantity: integer("quantity").notNull().default(0),
+    equipped: boolean("equipped").notNull().default(false),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("character_profile_inventory_item_idx").on(table.profileId, table.itemKey),
+    index("character_profile_inventory_profile_idx").on(table.profileId, table.updatedAt),
+  ],
+);
+
+export const characterProfileNotificationsTable = pgTable(
+  "character_profile_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").notNull().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
+    actorProfileId: uuid("actor_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
+    type: text("type").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("character_profile_notifications_profile_idx").on(table.profileId, table.readAt, table.createdAt)],
 );
 
 export type CharacterProfile = typeof characterProfilesTable.$inferSelect;

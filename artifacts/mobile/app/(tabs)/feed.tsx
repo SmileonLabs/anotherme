@@ -302,10 +302,10 @@ export default function FeedScreen() {
       const key = post.author.id ?? post.author.nickname;
       if (!unique.has(key)) unique.set(key, post.author);
     });
-    const own = me?.id
-      ? { id: me.id, nickname: activeProfile?.displayName ?? me.nickname, profileImageUrl: activeProfile?.profileImageUrl ?? me.profileImageUrl ?? null, activityProfile: activeProfile, starProfile: null }
+    const own = me?.id && activeProfile?.id
+      ? { id: activeProfile.id, nickname: activeProfile.displayName ?? me.nickname, profileImageUrl: activeProfile.profileImageUrl ?? me.profileImageUrl ?? null, activityProfile: activeProfile, starProfile: null }
       : null;
-    const others = [...unique.values()].filter((author) => author.id !== me?.id);
+    const others = [...unique.values()].filter((author) => author.id !== activeProfile?.id);
     return (own ? [own, ...others] : others).slice(0, 7);
   }, [posts, me, activeProfile]);
   function openProfile(author: StarFeedAuthor) {

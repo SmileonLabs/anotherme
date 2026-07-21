@@ -6,7 +6,7 @@ import { customFetch } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
 
-export default function AdminMemberDetailScreen() {
+function LegacyAdminMemberDetailScreen() {
   const colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useQuery({ queryKey: ["admin", "member", id], queryFn: () => customFetch<{ member: { nickname: string; email: string; statusMessage: string | null; notificationEnabled: boolean; talkAnalysisEnabled: boolean; createdAt: string }; sections: { fan: { level: number; xp: number; stats: Record<string, number> } | null; mode: { currentMode: string; starUnlocked: boolean } | null; star: Array<{ displayName: string; level: number; xp: number; category: string; ownershipStatus: string }>; nft: Array<{ displayName: string; ownershipStatus: string }>; wallets: Array<{ walletAddress: string; chainId: number; verifiedAt: string | null }>; activity: { postCount: number; reportCount: number; blocks: Array<{ blockerUserId: string; blockedUserId: string; createdAt: string }> } } }>(`/api/admin/members/${id}`, { responseType: "json" }) });
@@ -18,3 +18,5 @@ export default function AdminMemberDetailScreen() {
 function Section({ title, colors, children }: { title: string; colors: ReturnType<typeof useColors>; children: React.ReactNode }) { return <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text>{children}</View>; }
 function Row({ label, value, colors }: { label: string; value: string; colors: ReturnType<typeof useColors> }) { return <View style={styles.row}><Text style={{ color: colors.mutedForeground }}>{label}</Text><Text style={[styles.value, { color: colors.foreground }]}>{value}</Text></View>; }
 const styles = StyleSheet.create({ container: { padding: 18, gap: 12 }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, hero: { borderWidth: 1, borderRadius: 18, padding: 20, alignItems: "center", gap: 8 }, avatar: { width: 58, height: 58, borderRadius: 18, alignItems: "center", justifyContent: "center" }, title: { fontSize: 23, fontWeight: "800" }, email: { fontSize: 12 }, meta: { fontSize: 11 }, section: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 12 }, sectionTitle: { fontSize: 17, fontWeight: "700" }, row: { gap: 4 }, value: { fontSize: 14, fontWeight: "600" } });
+
+export { default } from "@/components/AdminMemberDetailScreen";

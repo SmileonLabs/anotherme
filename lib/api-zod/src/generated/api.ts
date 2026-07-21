@@ -3691,8 +3691,12 @@ export const UpdateMyPlayModeResponse = zod.object({
 
 export const getMyCharacterProfilesResponseActiveProfileTwoXpMin = 0;
 
+export const getMyCharacterProfilesResponseActiveProfileTwoJobStageMin = 0;
+
 
 export const getMyCharacterProfilesResponseProfilesItemTwoXpMin = 0;
+
+export const getMyCharacterProfilesResponseProfilesItemTwoJobStageMin = 0;
 
 
 
@@ -3709,6 +3713,8 @@ export const GetMyCharacterProfilesResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(getMyCharacterProfilesResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfilesResponseActiveProfileTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
@@ -3725,10 +3731,71 @@ export const GetMyCharacterProfilesResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(getMyCharacterProfilesResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfilesResponseProfilesItemTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
 })))
+})
+
+
+/**
+ * @summary Resolve and verify the request's active character profile
+ */
+export const GetMyCharacterProfileContextHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+
+export const getMyCharacterProfileContextResponseTwoXpMin = 0;
+
+export const getMyCharacterProfileContextResponseTwoJobStageMin = 0;
+
+
+
+export const GetMyCharacterProfileContextResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(getMyCharacterProfileContextResponseTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfileContextResponseTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+}))
+
+
+/**
+ * @summary Customize the initial FAN or create an unlocked additional FAN
+ */
+export const createMyFanCharacterProfileBodyDisplayNameMax = 30;
+
+export const createMyFanCharacterProfileBodyHandleMin = 3;
+export const createMyFanCharacterProfileBodyHandleMax = 24;
+
+export const createMyFanCharacterProfileBodyProfileImageUrlMax = 1024;
+
+
+
+export const CreateMyFanCharacterProfileBody = zod.object({
+  "displayName": zod.string().min(1).max(createMyFanCharacterProfileBodyDisplayNameMax),
+  "handle": zod.string().min(createMyFanCharacterProfileBodyHandleMin).max(createMyFanCharacterProfileBodyHandleMax).optional(),
+  "profileImageUrl": zod.string().max(createMyFanCharacterProfileBodyProfileImageUrlMax).nullish(),
+  "customization": zod.object({
+  "ageStyle": zod.string(),
+  "hairStyle": zod.string(),
+  "skinTone": zod.string(),
+  "genderExpression": zod.string()
+})
 })
 
 
@@ -3742,8 +3809,12 @@ export const UpdateMyActiveCharacterProfileBody = zod.object({
 
 export const updateMyActiveCharacterProfileResponseActiveProfileTwoXpMin = 0;
 
+export const updateMyActiveCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
 
 export const updateMyActiveCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const updateMyActiveCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
 
 
 
@@ -3760,6 +3831,8 @@ export const UpdateMyActiveCharacterProfileResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(updateMyActiveCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyActiveCharacterProfileResponseActiveProfileTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
@@ -3776,6 +3849,8 @@ export const UpdateMyActiveCharacterProfileResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(updateMyActiveCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyActiveCharacterProfileResponseProfilesItemTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
@@ -3807,8 +3882,12 @@ export const UpdateMyCharacterProfileBody = zod.object({
 
 export const updateMyCharacterProfileResponseActiveProfileTwoXpMin = 0;
 
+export const updateMyCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
 
 export const updateMyCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const updateMyCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
 
 
 
@@ -3825,6 +3904,8 @@ export const UpdateMyCharacterProfileResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(updateMyCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyCharacterProfileResponseActiveProfileTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
@@ -3841,10 +3922,133 @@ export const UpdateMyCharacterProfileResponse = zod.object({
   "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
   "level": zod.number().min(1),
   "xp": zod.number().min(updateMyCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyCharacterProfileResponseProfilesItemTwoJobStageMin),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isActive": zod.boolean()
 })))
+})
+
+
+/**
+ * @summary Soft-delete an owned profile while preserving historical content
+ */
+export const ArchiveMyCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+
+export const archiveMyCharacterProfileResponseActiveProfileTwoXpMin = 0;
+
+export const archiveMyCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
+
+export const archiveMyCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const archiveMyCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
+
+
+
+export const ArchiveMyCharacterProfileResponse = zod.object({
+  "activeProfile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(archiveMyCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(archiveMyCharacterProfileResponseActiveProfileTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(archiveMyCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(archiveMyCharacterProfileResponseProfilesItemTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})))
+})
+
+
+/**
+ * @summary List inventory items owned by one character profile
+ */
+export const GetMyCharacterProfileInventoryParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const getMyCharacterProfileInventoryResponseItemsItemQuantityMin = 0;
+
+
+
+export const GetMyCharacterProfileInventoryResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "itemKey": zod.string(),
+  "itemType": zod.string(),
+  "quantity": zod.number().min(getMyCharacterProfileInventoryResponseItemsItemQuantityMin),
+  "equipped": zod.boolean(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary List notifications for the selected character profile
+ */
+export const GetMyCharacterProfileNotificationsHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+export const GetMyCharacterProfileNotificationsResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "actorProfileId": zod.string().uuid().nullish(),
+  "type": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+export const MarkMyCharacterProfileNotificationReadParams = zod.object({
+  "notificationId": zod.coerce.string().uuid()
+})
+
+export const MarkMyCharacterProfileNotificationReadResponse = zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "actorProfileId": zod.string().uuid().nullish(),
+  "type": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
 })
 
 
@@ -4840,3 +5044,47 @@ export const PostFanCommunitiesIdMissionsBody = zod.object({
 export const PostFanMissionsIdJoinParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
+
+
+/**
+ * @summary Lock or reactivate a character profile
+ */
+export const UpdateAdminCharacterProfileStatusParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const updateAdminCharacterProfileStatusBodyReasonMin = 2;
+export const updateAdminCharacterProfileStatusBodyReasonMax = 300;
+
+
+
+export const UpdateAdminCharacterProfileStatusBody = zod.object({
+  "status": zod.enum(['active', 'locked']),
+  "reason": zod.string().min(updateAdminCharacterProfileStatusBodyReasonMin).max(updateAdminCharacterProfileStatusBodyReasonMax)
+})
+
+
+export const updateAdminCharacterProfileStatusResponseTwoXpMin = 0;
+
+export const updateAdminCharacterProfileStatusResponseTwoJobStageMin = 0;
+
+
+
+export const UpdateAdminCharacterProfileStatusResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateAdminCharacterProfileStatusResponseTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateAdminCharacterProfileStatusResponseTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+}))

@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, isNull } from "drizzle-orm";
 import {
   activeCharacterProfilesTable,
   characterProfileFollowsTable,
+  characterProfileNotificationsTable,
   characterProfilesTable,
   db,
   fanCharacterProfilesTable,
@@ -15,6 +17,11 @@ import {
   type CharacterProfile,
   type CharacterProfileType,
 } from "@workspace/db";
+import {
+  canArchiveCharacterProfile,
+  canCreateAdditionalFan,
+  normalizeProfileHandle,
+} from "./characterProfilePolicy";
 
 export interface CharacterProfileView {
   id: string;
@@ -26,6 +33,8 @@ export interface CharacterProfileView {
   status: CharacterProfile["status"];
   level: number;
   xp: number;
+  jobKey: string | null;
+  jobStage: number;
   stats: Record<string, number>;
   metadata: Record<string, unknown>;
   isActive: boolean;
@@ -248,6 +257,8 @@ async function readCharacterProfileState(userId: string): Promise<CharacterProfi
     status: profile.status,
     level: profile.level,
     xp: profile.xp,
+    jobKey: profile.jobKey,
+    jobStage: profile.jobStage,
     stats: profile.stats,
     metadata: profile.metadata,
     isActive: profile.id === selection.activeProfileId,
@@ -259,6 +270,128 @@ async function readCharacterProfileState(userId: string): Promise<CharacterProfi
 
 export async function ensureCharacterProfileState(userId: string): Promise<CharacterProfileState> {
   await ensureLegacyProfileRows(userId);
+  return readCharacterProfileState(userId);
+}
+
+export async function resolveCharacterProfileActor(
+  userId: string,
+  requestedProfileId?: string | null,
+): Promise<CharacterProfileView> {
+  const state = await ensureCharacterProfileState(userId);
+  if (!requestedProfileId) return state.activeProfile;
+  const profile = state.profiles.find((candidate) => candidate.id === requestedProfileId);
+  if (!profile) {
+    const error = new Error("Profile does not belong to authenticated user");
+    (error as Error & { code?: string }).code = "PROFILE_NOT_OWNED";
+    throw error;
+  }
+  if (profile.status !== "active") {
+    const error = new Error("Profile is unavailable");
+    (error as Error & { code?: string }).code = "PROFILE_UNAVAILABLE";
+    throw error;
+  }
+  return profile;
+}
+
+export async function createFanCharacterProfile(
+  userId: string,
+  input: {
+    displayName: string;
+    handle?: string;
+    profileImageUrl?: string | null;
+    customization: Record<string, unknown>;
+  },
+): Promise<CharacterProfileState> {
+  await ensureLegacyProfileRows(userId);
+  const state = await readCharacterProfileState(userId);
+  const fanProfiles = state.profiles.filter((profile) => profile.type === "fan");
+  const fanDetails = await db
+    .select()
+    .from(fanCharacterProfilesTable)
+    .where(eq(fanCharacterProfilesTable.profileId, fanProfiles[0]?.id ?? randomUUID()));
+  const firstFanIsUncustomized = fanProfiles.length === 1
+    && fanDetails.length === 1
+    && Object.keys(fanDetails[0]!.customization).length === 0;
+
+  if (!firstFanIsUncustomized && !canCreateAdditionalFan(fanProfiles)) {
+    const error = new Error("An existing FAN must reach Torimia before another FAN can be created");
+    (error as Error & { code?: string }).code = "FAN_EXPANSION_LOCKED";
+    throw error;
+  }
+
+  if (firstFanIsUncustomized) {
+    const profile = fanProfiles[0]!;
+    await db.transaction(async (tx) => {
+      await tx.update(characterProfilesTable).set({
+        displayName: input.displayName,
+        profileImageUrl: input.profileImageUrl ?? profile.profileImageUrl,
+        metadata: { ...profile.metadata, onboardingCustomized: true },
+        updatedAt: new Date(),
+      }).where(eq(characterProfilesTable.id, profile.id));
+      await tx.update(fanCharacterProfilesTable).set({ customization: input.customization })
+        .where(eq(fanCharacterProfilesTable.profileId, profile.id));
+    });
+    return activateCharacterProfile(userId, profile.id);
+  }
+
+  const generation = fanProfiles.length + 1;
+  const requestedHandle = input.handle ? normalizeProfileHandle(input.handle) : "";
+  const handle = requestedHandle || `fan-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  const [created] = await db.transaction(async (tx) => {
+    const rows = await tx.insert(characterProfilesTable).values({
+      ownerUserId: userId,
+      type: "fan",
+      handle,
+      displayName: input.displayName,
+      profileImageUrl: input.profileImageUrl ?? null,
+      stats: { charm: 0, supportPower: 0, bond: 0, influence: 0 },
+      metadata: { onboardingCustomized: true, generation },
+    }).returning();
+    const profile = rows[0];
+    if (!profile) throw new Error("FAN profile creation failed");
+    await tx.insert(fanCharacterProfilesTable).values({
+      profileId: profile.id,
+      legacyFanUserId: null,
+      generation,
+      customization: input.customization,
+    });
+    return rows;
+  });
+  if (!created) throw new Error("FAN profile creation failed");
+  return activateCharacterProfile(userId, created.id);
+}
+
+export async function archiveCharacterProfile(
+  userId: string,
+  profileId: string,
+): Promise<CharacterProfileState> {
+  await ensureLegacyProfileRows(userId);
+  const state = await readCharacterProfileState(userId);
+  const target = state.profiles.find((profile) => profile.id === profileId);
+  if (!target) {
+    const error = new Error("Profile not found");
+    (error as Error & { code?: string }).code = "PROFILE_NOT_FOUND";
+    throw error;
+  }
+  if (!canArchiveCharacterProfile(state.profiles.length)) {
+    const error = new Error("The last character profile cannot be archived");
+    (error as Error & { code?: string }).code = "LAST_PROFILE_REQUIRED";
+    throw error;
+  }
+  const replacement = state.profiles.find((profile) => profile.id !== profileId && profile.status === "active");
+  if (!replacement) {
+    const error = new Error("No active replacement profile is available");
+    (error as Error & { code?: string }).code = "REPLACEMENT_PROFILE_REQUIRED";
+    throw error;
+  }
+  await db.transaction(async (tx) => {
+    await tx.update(characterProfilesTable).set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(characterProfilesTable.id, profileId), eq(characterProfilesTable.ownerUserId, userId)));
+    if (target.isActive) {
+      await tx.update(activeCharacterProfilesTable).set({ activeProfileId: replacement.id, updatedAt: new Date() })
+        .where(eq(activeCharacterProfilesTable.userId, userId));
+    }
+  });
   return readCharacterProfileState(userId);
 }
 
@@ -396,7 +529,15 @@ export async function setCharacterProfileFollowing(
   }
   const viewerProfileId = (await ensureCharacterProfileState(viewerUserId)).activeProfile.id;
   if (following) {
-    await db.insert(characterProfileFollowsTable).values({ followerProfileId: viewerProfileId, followedProfileId: targetProfileId }).onConflictDoNothing();
+    const inserted = await db.insert(characterProfileFollowsTable).values({ followerProfileId: viewerProfileId, followedProfileId: targetProfileId }).onConflictDoNothing().returning({ followerProfileId: characterProfileFollowsTable.followerProfileId });
+    if (inserted.length > 0) {
+      await db.insert(characterProfileNotificationsTable).values({
+        profileId: targetProfileId,
+        actorProfileId: viewerProfileId,
+        type: "profile.followed",
+        data: {},
+      });
+    }
   } else {
     await db.delete(characterProfileFollowsTable).where(and(eq(characterProfileFollowsTable.followerProfileId, viewerProfileId), eq(characterProfileFollowsTable.followedProfileId, targetProfileId)));
   }

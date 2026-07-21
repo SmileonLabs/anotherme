@@ -14,8 +14,11 @@ import {
   battleSessionsTable,
   chatRoomMembersTable,
   blockedUsersTable,
+  characterProfilesTable,
+  characterProfileFollowsTable,
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { resolveCharacterProfileActor } from "../lib/characterProfiles";
 import { addSubscription } from "../lib/push";
 import { toPublicUser } from "../lib/publicUser";
 import { rateLimit } from "../lib/rateLimit";
@@ -104,22 +107,23 @@ router.get("/search", requireAuth, rateLimit({ name: "global-search", limit: 30,
     return;
   }
   const { q, type, limit } = parsed.data;
+  const actorProfile = await resolveCharacterProfileActor(req.dbUser!.id, req.header("x-character-profile-id"));
   const blocked = await db.select({ blockerUserId: blockedUsersTable.blockerUserId, blockedUserId: blockedUsersTable.blockedUserId }).from(blockedUsersTable).where(or(eq(blockedUsersTable.blockerUserId, req.dbUser!.id), eq(blockedUsersTable.blockedUserId, req.dbUser!.id)));
   const blockedIds = blocked.map((row) => row.blockerUserId === req.dbUser!.id ? row.blockedUserId : row.blockerUserId);
   const users = type === "stars" || type === "posts" ? [] : await db
-    .select({ id: usersTable.id, nickname: usersTable.nickname, profileImageUrl: usersTable.profileImageUrl, statusMessage: usersTable.statusMessage })
-    .from(usersTable)
-    .where(and(notInArray(usersTable.id, [req.dbUser!.id, ...blockedIds]), or(ilike(usersTable.nickname, `%${q}%`), ilike(usersTable.statusMessage, `%${q}%`))))
+    .select({ id: characterProfilesTable.id, ownerUserId: characterProfilesTable.ownerUserId, nickname: characterProfilesTable.displayName, handle: characterProfilesTable.handle, profileImageUrl: characterProfilesTable.profileImageUrl, statusMessage: characterProfilesTable.statusMessage, profileType: characterProfilesTable.type })
+    .from(characterProfilesTable)
+    .where(and(notInArray(characterProfilesTable.ownerUserId, [req.dbUser!.id, ...blockedIds]), eq(characterProfilesTable.status, "active"), or(ilike(characterProfilesTable.displayName, `%${q}%`), ilike(characterProfilesTable.handle, `%${q}%`), ilike(characterProfilesTable.statusMessage, `%${q}%`))))
     .limit(limit);
   const stars = type === "users" || type === "posts" ? [] : await db
     .select({ id: starProfilesTable.id, displayName: starProfilesTable.displayName, starKey: starProfilesTable.starKey, imageUrl: starProfilesTable.imageUrl, stage: starProfilesTable.stage, ownerId: starProfilesTable.userId })
     .from(starProfilesTable)
     .where(or(ilike(starProfilesTable.displayName, `%${q}%`), ilike(starProfilesTable.starKey, `%${q}%`)))
     .limit(limit);
-  const followedStarIds = stars.length ? await db.select({ starProfileId: starProfileFollowsTable.starProfileId }).from(starProfileFollowsTable).where(and(eq(starProfileFollowsTable.followerUserId, req.dbUser!.id), inArray(starProfileFollowsTable.starProfileId, stars.map((star) => star.id)))) : [];
+  const followedStarIds = stars.length ? await db.select({ starProfileId: characterProfileFollowsTable.followedProfileId }).from(characterProfileFollowsTable).where(and(eq(characterProfileFollowsTable.followerProfileId, actorProfile.id), inArray(characterProfileFollowsTable.followedProfileId, stars.map((star) => star.id)))) : [];
   const followedSet = new Set(followedStarIds.map((row) => row.starProfileId));
   const posts = type === "users" || type === "stars" ? [] : await db
-    .select({ id: starFeedPostsTable.id, title: starFeedPostsTable.title, body: starFeedPostsTable.body, kind: starFeedPostsTable.kind, createdAt: starFeedPostsTable.createdAt, authorUserId: starFeedPostsTable.authorUserId, targetStarProfileId: starFeedPostsTable.targetStarProfileId })
+    .select({ id: starFeedPostsTable.id, title: starFeedPostsTable.title, body: starFeedPostsTable.body, kind: starFeedPostsTable.kind, createdAt: starFeedPostsTable.createdAt, authorProfileId: starFeedPostsTable.authorProfileId, targetStarProfileId: starFeedPostsTable.targetStarProfileId })
     .from(starFeedPostsTable)
     .where(and(eq(starFeedPostsTable.status, "PUBLISHED"), eq(starFeedPostsTable.visibility, "PUBLIC"), or(ilike(starFeedPostsTable.title, `%${q}%`), ilike(starFeedPostsTable.body, `%${q}%`))))
     .orderBy(desc(starFeedPostsTable.createdAt))
@@ -128,8 +132,8 @@ router.get("/search", requireAuth, rateLimit({ name: "global-search", limit: 30,
   res.json({
     query: q,
     type,
-    users: users.map((user) => ({ ...user, isMe: user.id === req.dbUser!.id })),
-    starProfiles: stars.map((star) => ({ ...star, ownerId: blockedIds.includes(star.ownerId) ? null : star.ownerId, followedByMe: followedSet.has(star.id) })),
+    users: users.map(({ ownerUserId, ...profile }) => ({ ...profile, isMe: ownerUserId === req.dbUser!.id })),
+    starProfiles: stars.map((star) => ({ id: star.id, displayName: star.displayName, starKey: star.starKey, imageUrl: star.imageUrl, stage: star.stage, profileId: star.id, ownerId: star.ownerId === req.dbUser!.id ? null : star.id, isMine: star.ownerId === req.dbUser!.id, followedByMe: followedSet.has(star.id) })),
     posts: posts.map((post) => ({ ...post, createdAt: post.createdAt.toISOString() })),
     nextCursor: null,
   });

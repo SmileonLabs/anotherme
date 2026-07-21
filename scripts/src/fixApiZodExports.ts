@@ -12,6 +12,8 @@ if (fs.existsSync(barrel)) {
     ["export * from './blockSearchTrendingTermBody';", "// BlockSearchTrendingTermBody is exported from generated/api as the canonical Zod schema."],
     ["export * from './updateMyActiveCharacterProfileBody';", "// UpdateMyActiveCharacterProfileBody is exported from generated/api as the canonical Zod schema."],
     ["export * from './updateMyCharacterProfileBody';", "// UpdateMyCharacterProfileBody is exported from generated/api as the canonical Zod schema."],
+    ["export * from './createMyFanCharacterProfileBody';", "// CreateMyFanCharacterProfileBody is exported from generated/api as the canonical Zod schema."],
+    ["export * from './updateAdminCharacterProfileStatusBody';", "// UpdateAdminCharacterProfileStatusBody is exported from generated/api as the canonical Zod schema."],
   ]);
   let next = source;
   for (const [marker, replacement] of markers) next = next.replace(marker, replacement);

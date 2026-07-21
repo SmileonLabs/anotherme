@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
+import { and, desc, eq } from "drizzle-orm";
+import { characterProfileInventoryTable, characterProfileNotificationsTable, db } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import {
   activateCharacterProfile,
@@ -7,6 +9,9 @@ import {
   updateCharacterProfile,
   getPublicCharacterProfile,
   setCharacterProfileFollowing,
+  archiveCharacterProfile,
+  createFanCharacterProfile,
+  resolveCharacterProfileActor,
 } from "../lib/characterProfiles";
 import { listPublicStarFeedPostsByAuthor } from "../lib/starFeed";
 
@@ -17,9 +22,43 @@ const updateSchema = z.object({
   profileImageUrl: z.string().max(1024).nullable().optional(),
   statusMessage: z.string().trim().max(100).nullable().optional(),
 }).refine((body) => Object.keys(body).length > 0, { message: "At least one field is required" });
+const createFanSchema = z.object({
+  displayName: z.string().trim().min(1).max(30),
+  handle: z.string().trim().min(3).max(24).optional(),
+  profileImageUrl: z.string().max(1024).nullable().optional(),
+  customization: z.object({
+    ageStyle: z.string().trim().min(1).max(30),
+    hairStyle: z.string().trim().min(1).max(30),
+    skinTone: z.string().trim().min(1).max(30),
+    genderExpression: z.string().trim().min(1).max(30),
+  }).passthrough(),
+});
 
 router.get("/users/me/profiles", requireAuth, async (req, res): Promise<void> => {
   res.json(await ensureCharacterProfileState(req.dbUser!.id));
+});
+
+router.get("/users/me/profile-context", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const requested = req.header("x-character-profile-id");
+    res.json(await resolveCharacterProfileActor(req.dbUser!.id, requested));
+  } catch (error) {
+    const code = (error as Error & { code?: string }).code;
+    res.status(code === "PROFILE_NOT_OWNED" ? 403 : 409).json({ error: code ?? "PROFILE_CONTEXT_INVALID" });
+  }
+});
+
+router.post("/users/me/fan-profiles", requireAuth, async (req, res): Promise<void> => {
+  const parsed = createFanSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "INVALID_FAN_PROFILE" }); return; }
+  try {
+    res.status(201).json(await createFanCharacterProfile(req.dbUser!.id, parsed.data));
+  } catch (error) {
+    const code = (error as Error & { code?: string }).code;
+    if (code === "FAN_EXPANSION_LOCKED") { res.status(409).json({ error: code }); return; }
+    if ((error as { code?: string }).code === "23505") { res.status(409).json({ error: "PROFILE_HANDLE_TAKEN" }); return; }
+    throw error;
+  }
 });
 
 router.patch("/users/me/active-profile", requireAuth, async (req, res): Promise<void> => {
@@ -61,6 +100,54 @@ router.patch("/users/me/profiles/:profileId", requireAuth, async (req, res): Pro
     }
     throw error;
   }
+});
+
+router.delete("/users/me/profiles/:profileId", requireAuth, async (req, res): Promise<void> => {
+  const profileId = Array.isArray(req.params.profileId) ? req.params.profileId[0] : req.params.profileId;
+  if (!z.uuid().safeParse(profileId).success) { res.status(400).json({ error: "INVALID_PROFILE_ID" }); return; }
+  try {
+    res.json(await archiveCharacterProfile(req.dbUser!.id, profileId));
+  } catch (error) {
+    const code = (error as Error & { code?: string }).code;
+    if (code === "PROFILE_NOT_FOUND") { res.status(404).json({ error: code }); return; }
+    if (code === "LAST_PROFILE_REQUIRED" || code === "REPLACEMENT_PROFILE_REQUIRED") { res.status(409).json({ error: code }); return; }
+    throw error;
+  }
+});
+
+router.get("/users/me/profiles/:profileId/inventory", requireAuth, async (req, res): Promise<void> => {
+  const profileId = Array.isArray(req.params.profileId) ? req.params.profileId[0] : req.params.profileId;
+  if (!z.uuid().safeParse(profileId).success) { res.status(400).json({ error: "INVALID_PROFILE_ID" }); return; }
+  try {
+    await resolveCharacterProfileActor(req.dbUser!.id, profileId);
+  } catch {
+    res.status(403).json({ error: "PROFILE_NOT_OWNED" });
+    return;
+  }
+  const items = await db.select().from(characterProfileInventoryTable)
+    .where(eq(characterProfileInventoryTable.profileId, profileId))
+    .orderBy(desc(characterProfileInventoryTable.updatedAt));
+  res.json({ profileId, items });
+});
+
+router.get("/users/me/profile-notifications", requireAuth, async (req, res): Promise<void> => {
+  const actor = await resolveCharacterProfileActor(req.dbUser!.id, req.header("x-character-profile-id"));
+  const items = await db.select().from(characterProfileNotificationsTable)
+    .where(eq(characterProfileNotificationsTable.profileId, actor.id))
+    .orderBy(desc(characterProfileNotificationsTable.createdAt))
+    .limit(100);
+  res.json({ profileId: actor.id, items });
+});
+
+router.patch("/users/me/profile-notifications/:notificationId/read", requireAuth, async (req, res): Promise<void> => {
+  const notificationId = Array.isArray(req.params.notificationId) ? req.params.notificationId[0] : req.params.notificationId;
+  if (!z.uuid().safeParse(notificationId).success) { res.status(400).json({ error: "INVALID_NOTIFICATION_ID" }); return; }
+  const actor = await resolveCharacterProfileActor(req.dbUser!.id, req.header("x-character-profile-id"));
+  const [updated] = await db.update(characterProfileNotificationsTable).set({ readAt: new Date() })
+    .where(and(eq(characterProfileNotificationsTable.id, notificationId), eq(characterProfileNotificationsTable.profileId, actor.id)))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "NOTIFICATION_NOT_FOUND" }); return; }
+  res.json(updated);
 });
 
 router.get("/profiles/:profileId", requireAuth, async (req, res): Promise<void> => {

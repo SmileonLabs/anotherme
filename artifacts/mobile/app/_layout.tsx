@@ -215,6 +215,7 @@ function RootStackNav() {
         name="profile/edit"
         options={{ title: "프로필 수정", headerBackTitle: "Back" }}
       />
+      <Stack.Screen name="profile/create-fan" options={{ headerShown: false }} />
       <Stack.Screen name="profile/[userId]" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile/history"

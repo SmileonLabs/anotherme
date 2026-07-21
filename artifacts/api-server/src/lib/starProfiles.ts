@@ -59,7 +59,8 @@ export class StarProfileError extends Error {
       | "invalid_token_id"
       | "star_not_owned"
       | "token_not_owned"
-      | "nft_check_failed",
+      | "nft_check_failed"
+      | "collection_expansion_locked",
     message: string,
   ) {
     super(message);
@@ -371,14 +372,26 @@ export async function equipStarNft(params: {
     ? { starKey: `${collection.ipName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${tokenId}`, displayName: `${collection.ipName} #${tokenId}` }
     : getStarIdentityForToken(tokenId);
   const now = new Date();
-  const [existingProfile] = await db.select({ metadata: starProfilesTable.metadata })
+  const [existingProfile] = await db.select()
     .from(starProfilesTable)
     .where(and(
       eq(starProfilesTable.chainId, config.chainId),
       eq(starProfilesTable.contractAddress, config.contractAddress),
       eq(starProfilesTable.tokenId, tokenId),
+      eq(starProfilesTable.ownershipStatus, "verified"),
     ))
     .limit(1);
+  if (collection) {
+    const sameCollectionProfiles = await db.select().from(starProfilesTable).where(and(
+      eq(starProfilesTable.userId, params.userId),
+      eq(starProfilesTable.collectionId, collection.id),
+      eq(starProfilesTable.ownershipStatus, "verified"),
+    ));
+    const otherTokenProfiles = sameCollectionProfiles.filter((candidate) => candidate.tokenId !== tokenId);
+    if (otherTokenProfiles.length > 0 && !otherTokenProfiles.some((candidate) => candidate.stage === "promoted" || candidate.torimiaOpenedAt !== null)) {
+      throw new StarProfileError("collection_expansion_locked", "같은 컬렉션의 기존 STAR가 토르미아에 도달해야 추가 소환할 수 있어요.");
+    }
+  }
   let nftImageUrl = typeof existingProfile?.metadata?.nftImageUrl === "string"
     ? existingProfile.metadata.nftImageUrl
     : null;
@@ -412,9 +425,29 @@ export async function equipStarNft(params: {
       .set({ equippedAt: null })
       .where(eq(starProfilesTable.userId, params.userId));
 
-    return tx
-      .insert(starProfilesTable)
-      .values({
+    if (existingProfile?.userId === params.userId && existingProfile.ownershipStatus === "verified") {
+      return tx.update(starProfilesTable).set({
+        walletAddress,
+        collectionId: collection?.id ?? null,
+        category: collection?.category ?? "idol",
+        metadata: profileMetadata,
+        ...(nftImageUrl ? { imageUrl: nftImageUrl } : {}),
+        starKey: identity.starKey,
+        displayName: identity.displayName,
+        verifiedAt: now,
+        equippedAt: now,
+        updatedAt: now,
+      }).where(eq(starProfilesTable.id, existingProfile.id)).returning();
+    }
+
+    if (existingProfile && existingProfile.userId !== params.userId && existingProfile.ownershipStatus === "verified") {
+      await tx.update(starProfilesTable).set({ ownershipStatus: "transferred", equippedAt: null, updatedAt: now })
+        .where(eq(starProfilesTable.id, existingProfile.id));
+      await tx.update(characterProfilesTable).set({ status: "locked", updatedAt: now })
+        .where(eq(characterProfilesTable.id, existingProfile.id));
+    }
+
+    return tx.insert(starProfilesTable).values({
         userId: params.userId,
         walletAddress,
         chainId: config.chainId!,
@@ -428,23 +461,6 @@ export async function equipStarNft(params: {
         displayName: identity.displayName,
         verifiedAt: now,
         equippedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [starProfilesTable.chainId, starProfilesTable.contractAddress, starProfilesTable.tokenId],
-        set: {
-          userId: params.userId,
-          walletAddress,
-          collectionId: collection?.id ?? null,
-          category: collection?.category ?? "idol",
-          metadata: profileMetadata,
-          ...(nftImageUrl ? { imageUrl: nftImageUrl } : {}),
-          ownershipStatus: "verified",
-          starKey: identity.starKey,
-          displayName: identity.displayName,
-          verifiedAt: now,
-          equippedAt: now,
-          updatedAt: now,
-        },
       })
       .returning();
   });

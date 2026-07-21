@@ -2,11 +2,12 @@ import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { chatRoomsTable, chatRoomMembersTable, friendshipsTable, messageDeletionsTable, messagesTable, usersTable } from "@workspace/db";
+import { characterProfilesTable, chatRoomsTable, chatRoomMembersTable, friendshipsTable, messageDeletionsTable, messagesTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { toPublicUser } from "../lib/publicUser";
 import { allocateRoomMessageSeq, getRoomUnreadMeta } from "../lib/readReceipts";
 import { hasMutualBlockBetween, lockUserPair } from "../lib/chatDelivery";
+import { ensureCharacterProfileState, resolveCharacterProfileActor } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 const MAX_ROOM_MEMBERS = 100;
@@ -46,6 +47,11 @@ export async function roomWithMeta(roomId: string, userId: string) {
     ? await db.select().from(usersTable).where(inArray(usersTable.id, memberUserIds))
     : [];
   const userById = new Map(userRows.map((u) => [u.id, u]));
+  const memberProfileIds = memberRows.flatMap((member) => member.profileId ? [member.profileId] : []);
+  const profileRows = memberProfileIds.length
+    ? await db.select().from(characterProfilesTable).where(inArray(characterProfilesTable.id, memberProfileIds))
+    : [];
+  const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
   const aliasByUserId = new Map<string, string | null>();
   if (memberUserIds.length > 0) {
     const friendships = await db
@@ -68,11 +74,14 @@ export async function roomWithMeta(roomId: string, userId: string) {
     .map((m) => userById.get(m.userId))
     .filter((u): u is NonNullable<typeof u> => !!u)
     .map((u) => {
+      const membership = memberRows.find((member) => member.userId === u.id);
+      const profile = membership?.profileId ? profileById.get(membership.profileId) : null;
       const friendAlias = aliasByUserId.get(u.id) ?? null;
       return {
         ...toPublicUser(u),
+        profile: profile ? { id: profile.id, type: profile.type, handle: profile.handle, displayName: profile.displayName, profileImageUrl: profile.profileImageUrl } : null,
         friendAlias,
-        displayName: friendAlias || u.nickname,
+        displayName: friendAlias || profile?.displayName || u.nickname,
       };
     });
 
@@ -135,10 +144,15 @@ export async function roomWithMeta(roomId: string, userId: string) {
 
 router.get("/rooms", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
+  const actorProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
   const memberRows = await db
     .select()
     .from(chatRoomMembersTable)
-    .where(and(eq(chatRoomMembersTable.userId, userId), isNull(chatRoomMembersTable.hiddenAt)));
+    .where(and(
+      eq(chatRoomMembersTable.userId, userId),
+      isNull(chatRoomMembersTable.hiddenAt),
+      or(eq(chatRoomMembersTable.profileId, actorProfile.id), isNull(chatRoomMembersTable.profileId)),
+    ));
 
   const rooms = await Promise.all(memberRows.map((m) => roomWithMeta(m.roomId, userId)));
   const validRooms = rooms.filter(Boolean);
@@ -167,6 +181,12 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
   if (existingMembers.length !== allMemberIds.length) {
     res.status(400).json({ error: "All room members must exist" });
     return;
+  }
+  const actorProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
+  const profileByUserId = new Map<string, string>();
+  for (const memberId of allMemberIds) {
+    const profile = memberId === userId ? actorProfile : (await ensureCharacterProfileState(memberId)).activeProfile;
+    profileByUserId.set(memberId, profile.id);
   }
 
   // Helper: find an existing direct room shared by exactly the given two users.
@@ -212,7 +232,7 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
         // reappears in their list with the existing history intact.
         await tx
           .update(chatRoomMembersTable)
-          .set({ hiddenAt: null })
+          .set({ hiddenAt: null, profileId: actorProfile.id })
           .where(
             and(
               eq(chatRoomMembersTable.roomId, existingId),
@@ -228,7 +248,7 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
         .returning();
       await tx
         .insert(chatRoomMembersTable)
-        .values(allMemberIds.map((mid) => ({ roomId: created.id, userId: mid })));
+        .values(allMemberIds.map((mid) => ({ roomId: created.id, userId: mid, profileId: profileByUserId.get(mid) })));
       return created.id;
     });
 
@@ -249,7 +269,7 @@ router.post("/rooms", requireAuth, async (req, res): Promise<void> => {
 
   await Promise.all(
     allMemberIds.map((mid) =>
-      db.insert(chatRoomMembersTable).values({ roomId: room.id, userId: mid }),
+      db.insert(chatRoomMembersTable).values({ roomId: room.id, userId: mid, profileId: profileByUserId.get(mid) }),
     ),
   );
 
@@ -451,7 +471,8 @@ router.post("/rooms/:id/members", requireAuth, async (req, res): Promise<void> =
           ),
         );
       if (!friendship) continue;
-      await tx.insert(chatRoomMembersTable).values({ roomId: raw, userId: mid });
+      const invitedProfile = (await ensureCharacterProfileState(mid)).activeProfile;
+      await tx.insert(chatRoomMembersTable).values({ roomId: raw, userId: mid, profileId: invitedProfile.id });
       newlyAdded.push(mid);
     }
     return newlyAdded;

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { chatRoomsTable } from "./chat";
+import { characterProfilesTable } from "./characterProfiles";
 
 export const callsTable = pgTable(
   "calls",
@@ -11,9 +12,11 @@ export const callsTable = pgTable(
     callerId: uuid("caller_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    callerProfileId: uuid("caller_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     calleeId: uuid("callee_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    calleeProfileId: uuid("callee_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     // The 1:1 chat room the call belongs to (nullable: a call may be placed
     // without an originating room). Used for the in-chat call card and for
     // routing a tapped incoming-call notification straight to the conversation.
@@ -44,6 +47,8 @@ export const callsTable = pgTable(
     index("calls_callee_status_created_at_idx").on(t.calleeId, t.status, t.createdAt),
     index("calls_caller_status_created_at_idx").on(t.callerId, t.status, t.createdAt),
     index("calls_status_created_at_idx").on(t.status, t.createdAt),
+    index("calls_caller_profile_created_at_idx").on(t.callerProfileId, t.createdAt),
+    index("calls_callee_profile_created_at_idx").on(t.calleeProfileId, t.createdAt),
     index("calls_room_termination_pending_idx")
       .on(t.roomTerminationAttemptedAt, t.endedAt)
       .where(

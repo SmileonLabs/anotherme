@@ -311,6 +311,7 @@ export function PersonaScreen({
                 onStarRegistration={scrollToStarLock}
                 isAnalyzing={isAnalyzing}
                 onEditProfile={() => router.push("/profile/edit")}
+                onCreateFan={() => router.push("/profile/create-fan" as never)}
                 onWallet={() => router.push("/pvt/wallet" as never)}
                 onNotifications={() => router.push("/settings/notifications")}
                 onAccount={() => router.push("/settings")}
@@ -779,6 +780,7 @@ function MyDashboard({
   onStarRegistration,
   isAnalyzing,
   onEditProfile,
+  onCreateFan,
   onWallet,
   onNotifications,
   onAccount,
@@ -808,6 +810,7 @@ function MyDashboard({
   onStarRegistration: () => void;
   isAnalyzing: boolean;
   onEditProfile: () => void;
+  onCreateFan: () => void;
   onWallet: () => void;
   onNotifications: () => void;
   onAccount: () => void;
@@ -967,6 +970,9 @@ function MyDashboard({
             ))}
           </View>
           <StarLockCard />
+          <Pressable onPress={onCreateFan} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}>
+            <Text style={styles.dashboardOutlineText}>+ 새 FAN 만들기</Text>
+          </Pressable>
         </View>
       ) : null}
 

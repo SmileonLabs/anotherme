@@ -3773,6 +3773,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/CharacterProfileState"
 
+  /users/me/profile-context:
+    get:
+      operationId: getMyCharacterProfileContext
+      tags: [users]
+      summary: Resolve and verify the request's active character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: header
+          name: X-Character-Profile-Id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Verified request actor
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfile" } } }
+        "403": { description: Profile is not owned by the account }
+        "409": { description: Profile is locked or unavailable }
+
+  /users/me/fan-profiles:
+    post:
+      operationId: createMyFanCharacterProfile
+      tags: [users]
+      summary: Customize the initial FAN or create an unlocked additional FAN
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, customization]
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 30 }
+                handle: { type: string, minLength: 3, maxLength: 24 }
+                profileImageUrl: { type: [string, "null"], maxLength: 1024 }
+                customization:
+                  type: object
+                  required: [ageStyle, hairStyle, skinTone, genderExpression]
+                  properties:
+                    ageStyle: { type: string }
+                    hairStyle: { type: string }
+                    skinTone: { type: string }
+                    genderExpression: { type: string }
+      responses:
+        "201":
+          description: Created and activated FAN
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileState" } } }
+        "409": { description: FAN expansion is not unlocked or handle is taken }
+
   /users/me/active-profile:
     patch:
       operationId: updateMyActiveCharacterProfile
@@ -3858,6 +3907,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: archiveMyCharacterProfile
+      tags: [users]
+      summary: Soft-delete an owned profile while preserving historical content
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Remaining profile state
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileState" } } }
+        "409": { description: The final profile cannot be archived }
+
+  /users/me/profiles/{profileId}/inventory:
+    get:
+      operationId: getMyCharacterProfileInventory
+      tags: [users]
+      summary: List inventory items owned by one character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Profile inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profileId, items]
+                properties:
+                  profileId: { type: string, format: uuid }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CharacterProfileInventoryItem" }
+        "403": { description: Profile is not owned by the account }
+
+  /users/me/profile-notifications:
+    get:
+      operationId: getMyCharacterProfileNotifications
+      tags: [users]
+      summary: List notifications for the selected character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: header
+          name: X-Character-Profile-Id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Profile notification list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profileId, items]
+                properties:
+                  profileId: { type: string, format: uuid }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CharacterProfileNotification" }
+
+  /users/me/profile-notifications/{notificationId}/read:
+    patch:
+      operationId: markMyCharacterProfileNotificationRead
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Read notification
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileNotification" } } }
+        "404": { description: Notification not found for selected profile }
 
   /nft/collections:
     get:
@@ -4484,6 +4615,35 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       responses: { "200": { description: Mission joined } }
+
+  /admin/profiles/{profileId}/status:
+    patch:
+      operationId: updateAdminCharacterProfileStatus
+      tags: [admin]
+      summary: Lock or reactivate a character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [active, locked] }
+                reason: { type: string, minLength: 2, maxLength: 300 }
+      responses:
+        "200":
+          description: Updated character profile
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfile" } } }
+        "400": { description: Invalid profile status request }
+        "403": { description: Administrator permission required }
+        "404": { description: Character profile not found }
 
 components:
   securitySchemes:
@@ -5317,7 +5477,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/CharacterProfileSummary"
         - type: object
-          required: [status, level, xp, stats, metadata, isActive]
+          required: [status, level, xp, jobStage, stats, metadata, isActive]
           properties:
             statusMessage:
               type: ["string", "null"]
@@ -5330,6 +5490,11 @@ components:
             xp:
               type: integer
               minimum: 0
+            jobKey:
+              type: [string, "null"]
+            jobStage:
+              type: integer
+              minimum: 0
             stats:
               type: object
               additionalProperties:
@@ -5339,6 +5504,31 @@ components:
               additionalProperties: true
             isActive:
               type: boolean
+
+    CharacterProfileInventoryItem:
+      type: object
+      required: [id, profileId, itemKey, itemType, quantity, equipped, metadata, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        profileId: { type: string, format: uuid }
+        itemKey: { type: string }
+        itemType: { type: string }
+        quantity: { type: integer, minimum: 0 }
+        equipped: { type: boolean }
+        metadata: { type: object, additionalProperties: true }
+        updatedAt: { type: string, format: date-time }
+
+    CharacterProfileNotification:
+      type: object
+      required: [id, profileId, type, data, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        profileId: { type: string, format: uuid }
+        actorProfileId: { type: [string, "null"], format: uuid }
+        type: { type: string }
+        data: { type: object, additionalProperties: true }
+        readAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
 
     CharacterProfileState:
       type: object

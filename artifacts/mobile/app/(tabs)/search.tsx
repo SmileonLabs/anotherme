@@ -16,8 +16,8 @@ import { useStarFeed, type StarFeedPost, type StarFeedPostKind } from "@/hooks/u
 import { mediaUri } from "@/lib/apiBase";
 import { customFetch } from "@workspace/api-client-react";
 
-type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean };
-type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; displayName: string; imageUrl: string | null; stage: string; ownerId: string | null; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
+type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean; profileType?: string; handle?: string };
+type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; profileId: string; ownerId: string | null; displayName: string; imageUrl: string | null; stage: string; isMine: boolean; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
 type TrendingResponse = { items: Array<{ term: string; rank: number; change: number; resultCount: number }>; generatedAt: string };
 type SearchType = "all" | "users" | "stars" | "posts";
 
@@ -288,7 +288,7 @@ export default function SearchScreen() {
               keyboardShouldPersistTaps="handled"
             >
               {matchedUsers.map((user) => (
-                <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ({ pathname: "/profile/[userId]", params: { userId: user.id } } as never))} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
+                <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ("profileType" in user && user.profileType ? { pathname: "/character/[profileId]", params: { profileId: user.id } } : { pathname: "/profile/[userId]", params: { userId: user.id } }) as never)} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
                   <View style={styles.personAvatarWrap}>
                     <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
                     <View style={styles.verified}><Feather name="check" size={8} color="#FFFFFF" /></View>
@@ -306,7 +306,7 @@ export default function SearchScreen() {
                 <View key={star.id} style={styles.starResultCard}>
                 <Pressable
                   key={star.id}
-                  onPress={() => star.ownerId ? router.push({ pathname: "/profile/[userId]", params: { userId: star.ownerId } } as never) : undefined}
+                  onPress={() => router.push({ pathname: "/character/[profileId]", params: { profileId: star.profileId } } as never)}
                   style={({ pressed }) => [styles.starResultMain, pressed && styles.pressed]}
                 >
                   <Image source={star.imageUrl ? { uri: mediaUri(star.imageUrl) } : require("../../assets/images/star-character-cutout.png")} style={styles.starResultImage} contentFit="cover" />

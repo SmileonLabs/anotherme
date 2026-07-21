@@ -33,3 +33,7 @@ export { UpdateMyActiveCharacterProfileBody } from "./generated/api";
 export type { UpdateMyActiveCharacterProfileBody as UpdateMyActiveCharacterProfileBodyType } from "./generated/types/updateMyActiveCharacterProfileBody";
 export { UpdateMyCharacterProfileBody } from "./generated/api";
 export type { UpdateMyCharacterProfileBody as UpdateMyCharacterProfileBodyType } from "./generated/types/updateMyCharacterProfileBody";
+export { CreateMyFanCharacterProfileBody } from "./generated/api";
+export type { CreateMyFanCharacterProfileBody as CreateMyFanCharacterProfileBodyType } from "./generated/types/createMyFanCharacterProfileBody";
+export { UpdateAdminCharacterProfileStatusBody } from "./generated/api";
+export type { UpdateAdminCharacterProfileStatusBody as UpdateAdminCharacterProfileStatusBodyType } from "./generated/types/updateAdminCharacterProfileStatusBody";

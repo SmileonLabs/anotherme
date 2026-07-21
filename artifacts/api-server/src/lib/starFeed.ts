@@ -9,6 +9,7 @@ import {
   starResultDraftsTable,
   starFeedPostsTable,
   starFeedReactionsTable,
+  characterProfileFollowsTable,
   starProfileFollowsTable,
   starProfilesTable,
   characterProfilesTable,
@@ -105,7 +106,7 @@ const targetStarProfilesTable = alias(starProfilesTable, "target_star_profiles")
 
 function serializeAuthor(row: Pick<PostRow, "authorUserId" | "authorNickname" | "authorProfileImageUrl" | "authorActivityProfileId" | "authorActivityProfileType" | "authorActivityProfileHandle" | "authorActivityProfileName" | "authorActivityProfileImageUrl" | "authorStarProfileId" | "authorStarDisplayName" | "authorStarImageUrl" | "authorStarStage">, followedStarProfileIds = new Set<string>()): StarFeedAuthorView {
   return {
-    id: row.authorUserId,
+    id: row.authorActivityProfileId,
     nickname: row.authorActivityProfileName ?? row.authorNickname ?? "STAR 공식",
     profileImageUrl: row.authorActivityProfileImageUrl ?? row.authorProfileImageUrl,
     activityProfile: row.authorActivityProfileId && row.authorActivityProfileType && row.authorActivityProfileHandle && row.authorActivityProfileName
@@ -122,6 +123,7 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
 
   const postIds = rows.map((row) => row.id);
   const starProfileIds = rows.flatMap((row) => row.authorStarProfileId ? [row.authorStarProfileId] : []);
+  const viewerProfileId = (await ensureCharacterProfileState(meUserId)).activeProfile.id;
   const [reactionCounts, commentCounts, myReactions, comments, followedProfiles] = await Promise.all([
     db
       .select({ postId: starFeedReactionsTable.postId, count: sql<number>`count(*)::int` })
@@ -136,7 +138,7 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
     db
       .select({ postId: starFeedReactionsTable.postId })
       .from(starFeedReactionsTable)
-      .where(and(inArray(starFeedReactionsTable.postId, postIds), eq(starFeedReactionsTable.userId, meUserId))),
+      .where(and(inArray(starFeedReactionsTable.postId, postIds), eq(starFeedReactionsTable.profileId, viewerProfileId))),
     db
       .select({
         id: starFeedCommentsTable.id,
@@ -159,7 +161,7 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
       .orderBy(desc(starFeedCommentsTable.createdAt))
       .limit(postIds.length * 2),
     starProfileIds.length
-      ? db.select({ starProfileId: starProfileFollowsTable.starProfileId }).from(starProfileFollowsTable).where(and(eq(starProfileFollowsTable.followerUserId, meUserId), inArray(starProfileFollowsTable.starProfileId, starProfileIds)))
+      ? db.select({ starProfileId: characterProfileFollowsTable.followedProfileId }).from(characterProfileFollowsTable).where(and(eq(characterProfileFollowsTable.followerProfileId, viewerProfileId), inArray(characterProfileFollowsTable.followedProfileId, starProfileIds)))
       : Promise.resolve([]),
   ]);
 
@@ -544,32 +546,33 @@ export async function discardStarResultDraft(userId: string, draftId: string): P
   return result.length > 0;
 }
 
-export async function cheerStarFeedPost(meUserId: string, postId: string): Promise<StarFeedPostView | null> {
+export async function cheerStarFeedPost(meUserId: string, postId: string, actorProfileId?: string): Promise<StarFeedPostView | null> {
   const post = await getStarFeedPost(meUserId, postId);
   if (!post) return null;
 
-  const profileState = await ensureCharacterProfileState(meUserId);
+  const profileId = actorProfileId ?? (await ensureCharacterProfileState(meUserId)).activeProfile.id;
   await db
     .insert(starFeedReactionsTable)
-    .values({ postId, userId: meUserId, profileId: profileState.activeProfile.id, reactionType: "cheer" })
-    .onConflictDoNothing({ target: [starFeedReactionsTable.postId, starFeedReactionsTable.userId] });
+    .values({ postId, userId: meUserId, profileId, reactionType: "cheer" })
+    .onConflictDoNothing({ target: [starFeedReactionsTable.postId, starFeedReactionsTable.profileId] });
 
   return getStarFeedPost(meUserId, postId);
 }
 
 export async function commentStarFeedPost(params: {
   userId: string;
+  actorProfileId?: string;
   postId: string;
   body: string;
 }): Promise<StarFeedPostView | null> {
   const post = await getStarFeedPost(params.userId, params.postId);
   if (!post) return null;
-  const profileState = await ensureCharacterProfileState(params.userId);
+  const profileId = params.actorProfileId ?? (await ensureCharacterProfileState(params.userId)).activeProfile.id;
 
   await db.insert(starFeedCommentsTable).values({
     postId: params.postId,
     userId: params.userId,
-    profileId: profileState.activeProfile.id,
+    profileId,
     body: params.body,
   });
 

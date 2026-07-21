@@ -5,7 +5,7 @@ import { db, starProfilesTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { ensurePlayModeState } from "../lib/fanStar";
 import { recordReward } from "../lib/growth";
-import { ensureCharacterProfileState } from "../lib/characterProfiles";
+import { resolveCharacterProfileActor, setCharacterProfileFollowing } from "../lib/characterProfiles";
 import {
   STAR_FEED_COMMENT_BODY_MAX,
   STAR_FEED_LIST_LIMIT_DEFAULT,
@@ -15,7 +15,6 @@ import {
   commentStarFeedPost,
   createStarFeedPost,
   createStarPostActivities,
-  followStarProfile,
   listStarFeedPosts,
   listStarFeedActivities,
   markStarFeedActivitiesRead,
@@ -25,10 +24,13 @@ import {
   approveStarResultDraft,
   discardStarResultDraft,
   discoverStarFeedByHashtag,
-  unfollowStarProfile,
 } from "../lib/starFeed";
 
 const router: IRouter = Router();
+
+function requestProfileId(req: { header(name: string): string | undefined }): string | undefined {
+  return req.header("x-character-profile-id");
+}
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -114,6 +116,11 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
   }
 
   const kind = parsed.data.kind ?? "fan";
+  const actorProfile = await resolveCharacterProfileActor(req.dbUser!.id, requestProfileId(req));
+  if ((kind === "fan" && actorProfile.type !== "fan") || (kind === "star" && actorProfile.type !== "star")) {
+    res.status(409).json({ error: "PROFILE_TYPE_MISMATCH" });
+    return;
+  }
   const playState = kind === "star" ? await ensurePlayModeState(req.dbUser!.id) : null;
   if (kind === "fan" && parsed.data.targetStarProfileId) {
     const [targetStar] = await db
@@ -161,8 +168,8 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
     body: parsed.data.body,
     media: parsed.data.media,
     authorStarProfileId: playState?.equippedStar?.id ?? null,
-    authorProfileId: (await ensureCharacterProfileState(req.dbUser!.id)).activeProfile.id,
-    targetStarProfileId: kind === "star" ? playState?.equippedStar?.id ?? null : parsed.data.targetStarProfileId ?? null,
+    authorProfileId: actorProfile.id,
+    targetStarProfileId: kind === "fan" ? parsed.data.targetStarProfileId ?? null : null,
   });
   if (kind === "star") await createStarPostActivities(post);
   if (kind === "fan") {
@@ -207,7 +214,7 @@ router.post("/star-feed/star-profiles/:id/follow", requireAuth, async (req, res)
     return;
   }
   try {
-    res.json(await followStarProfile(req.dbUser!.id, profileId));
+    res.json(await setCharacterProfileFollowing(req.dbUser!.id, profileId, true));
   } catch (error) {
     const code = error instanceof Error ? error.message : "unknown";
     const status = code === "star_profile_not_found" ? 404 : code === "cannot_follow_own_star_profile" ? 409 : 500;
@@ -221,12 +228,15 @@ router.delete("/star-feed/star-profiles/:id/follow", requireAuth, async (req, re
     res.status(400).json({ error: "invalid", message: "Invalid STAR profile id" });
     return;
   }
-  res.json(await unfollowStarProfile(req.dbUser!.id, profileId));
+  const result = await setCharacterProfileFollowing(req.dbUser!.id, profileId, false);
+  if (!result) { res.status(404).json({ error: "PROFILE_NOT_FOUND" }); return; }
+  res.json(result);
 });
 
 router.post("/star-feed/posts/:id/reactions", requireAuth, async (req, res): Promise<void> => {
   const postId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const post = await cheerStarFeedPost(req.dbUser!.id, postId);
+  const actor = await resolveCharacterProfileActor(req.dbUser!.id, requestProfileId(req));
+  const post = await cheerStarFeedPost(req.dbUser!.id, postId, actor.id);
   if (!post) {
     res.status(404).json({ error: "not_found", message: "피드 글을 찾을 수 없어요." });
     return;
@@ -244,6 +254,7 @@ router.post("/star-feed/posts/:id/comments", requireAuth, async (req, res): Prom
   const postId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const post = await commentStarFeedPost({
     userId: req.dbUser!.id,
+    actorProfileId: (await resolveCharacterProfileActor(req.dbUser!.id, requestProfileId(req))).id,
     postId,
     body: parsed.data.body,
   });

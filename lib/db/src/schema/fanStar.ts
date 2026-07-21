@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
 export type PlayMode = "fan" | "star";
@@ -103,7 +104,9 @@ export const starProfilesTable = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
-    uniqueIndex("star_profiles_unique_nft_idx").on(t.chainId, t.contractAddress, t.tokenId),
+    uniqueIndex("star_profiles_active_nft_idx")
+      .on(t.chainId, t.contractAddress, t.tokenId)
+      .where(sql`${t.ownershipStatus} = 'verified'`),
     index("star_profiles_user_id_equipped_idx").on(t.userId, t.equippedAt),
   ],
 );

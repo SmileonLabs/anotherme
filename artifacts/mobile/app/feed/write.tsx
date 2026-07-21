@@ -14,11 +14,12 @@ export default function FeedWriteScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ kind?: string }>();
-  const { equippedStar } = usePlayMode();
+  const { equippedStar, starProfiles } = usePlayMode();
   const initialKind: StarFeedWritableKind = params.kind === "star" ? "star" : "fan";
   const [kind, setKind] = React.useState<StarFeedWritableKind>(initialKind);
   const [body, setBody] = React.useState("");
   const [media, setMedia] = React.useState<UploadedImage[]>([]);
+  const [targetStarProfileId, setTargetStarProfileId] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const { createPost, isCreatingPost } = useStarFeed("recommended");
   const starWritable = equippedStar?.stage === "promoted";
@@ -45,7 +46,7 @@ export default function FeedWriteScreen() {
         kind: effectiveKind,
         body: body.trim(),
         media: media.map((item) => ({ objectPath: item.objectPath, mediaType: "image" })),
-        targetStarProfileId: effectiveKind === "star" ? equippedStar?.id ?? null : null,
+        targetStarProfileId: effectiveKind === "fan" ? targetStarProfileId : null,
       });
       router.replace("/(tabs)/feed" as never);
     } catch {
@@ -79,6 +80,21 @@ export default function FeedWriteScreen() {
         </View>
         {kind === "star" && !starWritable ? <Text style={styles.notice}>공식 STAR 승급 후 STAR 기록을 작성할 수 있어 FAN 작성 화면으로 전환했습니다.</Text> : null}
         <TextInput value={body} onChangeText={setBody} multiline maxLength={500} autoFocus placeholder={effectiveKind === "star" ? "STAR의 활동과 성장 기록을 남겨주세요." : "응원과 팬 이야기를 남겨주세요."} placeholderTextColor="#787282" style={styles.input} />
+        {effectiveKind === "fan" && starProfiles.length > 0 ? (
+          <View style={styles.targetSection}>
+            <Text style={styles.targetLabel}>응원할 STAR (선택)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.targetRow}>
+              <Pressable onPress={() => setTargetStarProfileId(null)} style={[styles.targetChip, targetStarProfileId === null && styles.targetChipActive]}>
+                <Text style={[styles.targetText, targetStarProfileId === null && styles.targetTextActive]}>선택 안 함</Text>
+              </Pressable>
+              {starProfiles.map((star) => (
+                <Pressable key={star.id} onPress={() => setTargetStarProfileId(star.id)} style={[styles.targetChip, targetStarProfileId === star.id && styles.targetChipActive]}>
+                  <Text style={[styles.targetText, targetStarProfileId === star.id && styles.targetTextActive]} numberOfLines={1}>{star.displayName}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
         <View style={styles.counterRow}><Text style={styles.counter}>{body.length}/500</Text></View>
         <View style={styles.mediaRow}>
           <Pressable disabled={uploading || media.length >= 4} onPress={() => void addImages()} style={styles.mediaButton}>
@@ -105,6 +121,13 @@ const styles = StyleSheet.create({
   modeText: { color: "#928B9D", fontSize: 13, fontFamily: "Inter_700Bold" },
   modeTextActive: { color: "#F5F1FF" },
   notice: { color: "#A9A1B5", fontSize: 12, lineHeight: 18, fontFamily: "Inter_500Medium" },
+  targetSection: { gap: 8 },
+  targetLabel: { color: "#D9D2E5", fontSize: 12, fontFamily: "Inter_700Bold" },
+  targetRow: { gap: 8, paddingRight: 12 },
+  targetChip: { maxWidth: 160, minHeight: 36, paddingHorizontal: 13, borderRadius: 18, borderWidth: 1, borderColor: "rgba(139,92,246,0.28)", alignItems: "center", justifyContent: "center", backgroundColor: "#0B0916" },
+  targetChipActive: { borderColor: "#9B6DFF", backgroundColor: "rgba(124,58,237,0.3)" },
+  targetText: { color: "#928B9D", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  targetTextActive: { color: "#F5F1FF" },
   input: { minHeight: 240, borderRadius: 18, borderWidth: 1, borderColor: "rgba(139,92,246,0.25)", backgroundColor: "#080711", color: "#F5F1FF", padding: 16, textAlignVertical: "top", fontSize: 15, lineHeight: 23, fontFamily: "Inter_400Regular" },
   counterRow: { alignItems: "flex-end", marginTop: -8 },
   counter: { color: "#777184", fontSize: 11, fontFamily: "Inter_500Medium" },
