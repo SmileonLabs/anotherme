@@ -1,0 +1,115 @@
+import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { NeonBackdrop } from "@/components/NeonUI";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import { useStarFeed, type StarFeedWritableKind } from "@/hooks/useStarFeed";
+import { pickAndUploadImages, type UploadedImage } from "@/lib/uploadImage";
+import { crossAlert } from "@/lib/crossAlert";
+
+export default function FeedWriteScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ kind?: string }>();
+  const { equippedStar } = usePlayMode();
+  const initialKind: StarFeedWritableKind = params.kind === "star" ? "star" : "fan";
+  const [kind, setKind] = React.useState<StarFeedWritableKind>(initialKind);
+  const [body, setBody] = React.useState("");
+  const [media, setMedia] = React.useState<UploadedImage[]>([]);
+  const [uploading, setUploading] = React.useState(false);
+  const { createPost, isCreatingPost } = useStarFeed("recommended");
+  const starWritable = equippedStar?.stage === "promoted";
+  const effectiveKind: StarFeedWritableKind = kind === "star" && !starWritable ? "fan" : kind;
+  const canSubmit = body.trim().length > 0 && !uploading && !isCreatingPost;
+
+  const addImages = async () => {
+    if (uploading || media.length >= 4) return;
+    setUploading(true);
+    try {
+      const selected = await pickAndUploadImages();
+      if (selected) setMedia((current) => [...current, ...selected].slice(0, 4));
+    } catch {
+      crossAlert("업로드 실패", "이미지를 업로드하지 못했습니다.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    try {
+      await createPost({
+        kind: effectiveKind,
+        body: body.trim(),
+        media: media.map((item) => ({ objectPath: item.objectPath, mediaType: "image" })),
+        targetStarProfileId: effectiveKind === "star" ? equippedStar?.id ?? null : null,
+      });
+      router.replace("/(tabs)/feed" as never);
+    } catch {
+      crossAlert("게시 실패", "게시글을 올리지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  };
+
+  return (
+    <NeonBackdrop style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} accessibilityLabel="피드로 돌아가기">
+          <Feather name="arrow-left" size={24} color="#F5F1FF" />
+        </Pressable>
+        <Text style={styles.headerTitle}>피드 글쓰기</Text>
+        <Pressable disabled={!canSubmit} onPress={() => void submit()} style={{ opacity: canSubmit ? 1 : 0.4 }}>
+          <Text style={styles.publishText}>{isCreatingPost ? "게시 중" : "게시"}</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled">
+        <View style={styles.modeRow}>
+          {(["star", "fan"] as const).map((item) => {
+            const disabled = item === "star" && !starWritable;
+            const active = effectiveKind === item;
+            return (
+              <Pressable key={item} disabled={disabled} onPress={() => setKind(item)} style={[styles.modeButton, active && styles.modeButtonActive, disabled && styles.disabled]}>
+                {disabled ? <Feather name="lock" size={12} color="#777184" /> : null}
+                <Text style={[styles.modeText, active && styles.modeTextActive]}>{item === "star" ? "STAR 기록" : "FAN 이야기"}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {kind === "star" && !starWritable ? <Text style={styles.notice}>공식 STAR 승급 후 STAR 기록을 작성할 수 있어 FAN 작성 화면으로 전환했습니다.</Text> : null}
+        <TextInput value={body} onChangeText={setBody} multiline maxLength={500} autoFocus placeholder={effectiveKind === "star" ? "STAR의 활동과 성장 기록을 남겨주세요." : "응원과 팬 이야기를 남겨주세요."} placeholderTextColor="#787282" style={styles.input} />
+        <View style={styles.counterRow}><Text style={styles.counter}>{body.length}/500</Text></View>
+        <View style={styles.mediaRow}>
+          <Pressable disabled={uploading || media.length >= 4} onPress={() => void addImages()} style={styles.mediaButton}>
+            {uploading ? <ActivityIndicator color="#D6B7FF" /> : <Feather name="image" size={18} color="#D6B7FF" />}
+            <Text style={styles.mediaButtonText}>사진 {media.length}/4</Text>
+          </Pressable>
+          {media.map((item) => <Pressable key={item.objectPath} onPress={() => setMedia((current) => current.filter((image) => image.objectPath !== item.objectPath))}><Image source={{ uri: item.localUri }} style={styles.preview} contentFit="cover" /></Pressable>)}
+        </View>
+      </ScrollView>
+    </NeonBackdrop>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { minHeight: 62, paddingHorizontal: 18, paddingBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(139,92,246,0.32)" },
+  headerTitle: { color: "#F5F1FF", fontSize: 17, fontFamily: "Inter_700Bold" },
+  publishText: { color: "#B95CFF", fontSize: 15, fontFamily: "Inter_800ExtraBold" },
+  content: { padding: 18, gap: 14 },
+  modeRow: { flexDirection: "row", gap: 8 },
+  modeButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: "rgba(139,92,246,0.26)", flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#0B0916" },
+  modeButtonActive: { borderColor: "#8B5CF6", backgroundColor: "rgba(124,58,237,0.22)" },
+  disabled: { opacity: 0.45 },
+  modeText: { color: "#928B9D", fontSize: 13, fontFamily: "Inter_700Bold" },
+  modeTextActive: { color: "#F5F1FF" },
+  notice: { color: "#A9A1B5", fontSize: 12, lineHeight: 18, fontFamily: "Inter_500Medium" },
+  input: { minHeight: 240, borderRadius: 18, borderWidth: 1, borderColor: "rgba(139,92,246,0.25)", backgroundColor: "#080711", color: "#F5F1FF", padding: 16, textAlignVertical: "top", fontSize: 15, lineHeight: 23, fontFamily: "Inter_400Regular" },
+  counterRow: { alignItems: "flex-end", marginTop: -8 },
+  counter: { color: "#777184", fontSize: 11, fontFamily: "Inter_500Medium" },
+  mediaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  mediaButton: { width: 84, height: 76, borderRadius: 14, borderWidth: 1, borderStyle: "dashed", borderColor: "rgba(182,116,255,0.55)", alignItems: "center", justifyContent: "center", gap: 6 },
+  mediaButtonText: { color: "#D6B7FF", fontSize: 11, fontFamily: "Inter_700Bold" },
+  preview: { width: 76, height: 76, borderRadius: 12 },
+});

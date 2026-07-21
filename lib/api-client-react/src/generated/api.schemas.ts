@@ -746,6 +746,57 @@ export interface PlayModeState {
   starProfiles: StarProfile[];
 }
 
+export type CharacterProfileSummaryType = typeof CharacterProfileSummaryType[keyof typeof CharacterProfileSummaryType];
+
+
+export const CharacterProfileSummaryType = {
+  fan: 'fan',
+  star: 'star',
+  official_ai: 'official_ai',
+} as const;
+
+export interface CharacterProfileSummary {
+  id: string;
+  type: CharacterProfileSummaryType;
+  handle: string;
+  displayName: string;
+  /** @nullable */
+  profileImageUrl?: string | null;
+  activityProfile?: CharacterProfileSummary | null;
+}
+
+export type CharacterProfileStatus = typeof CharacterProfileStatus[keyof typeof CharacterProfileStatus];
+
+
+export const CharacterProfileStatus = {
+  active: 'active',
+  locked: 'locked',
+  torimia: 'torimia',
+  archived: 'archived',
+} as const;
+
+export type CharacterProfileStats = {[key: string]: number};
+
+export type CharacterProfileMetadata = { [key: string]: unknown };
+
+export type CharacterProfile = CharacterProfileSummary & ({
+  /** @nullable */
+  statusMessage?: string | null;
+  status: CharacterProfileStatus;
+  /** @minimum 1 */
+  level: number;
+  /** @minimum 0 */
+  xp: number;
+  stats: CharacterProfileStats;
+  metadata: CharacterProfileMetadata;
+  isActive: boolean;
+});
+
+export interface CharacterProfileState {
+  activeProfile: CharacterProfile;
+  profiles: CharacterProfile[];
+}
+
 export interface StarProfilesResponse {
   starProfiles: StarProfile[];
 }
@@ -1534,6 +1585,7 @@ export interface Message {
   roomId: string;
   roomSeq: number;
   senderId: string;
+  senderProfile?: CharacterProfileSummary | null;
   authorKind: string;
   type: string;
   content: string;
@@ -2385,6 +2437,42 @@ export interface BattleResultsPage {
   nextCursor: string | null;
 }
 
+export type PublicCharacterProfileResponseProfileStats = {[key: string]: number};
+
+export type PublicCharacterProfileResponseProfileMetadata = { [key: string]: unknown };
+
+export type PublicCharacterProfileResponseProfile = CharacterProfileSummary & ({
+  /** @nullable */
+  statusMessage?: string | null;
+  /** @minimum 1 */
+  level: number;
+  /** @minimum 0 */
+  xp: number;
+  stats: PublicCharacterProfileResponseProfileStats;
+  metadata: PublicCharacterProfileResponseProfileMetadata;
+  isMine: boolean;
+  followedByMe: boolean;
+  /** @minimum 0 */
+  followerCount: number;
+  /** @minimum 0 */
+  followingCount: number;
+});
+
+export type PublicCharacterProfileResponsePosts = {
+  items: StarFeedPost[];
+  /** @nullable */
+  nextCursor: string | null;
+};
+
+export interface PublicCharacterProfileResponse {
+  profile: PublicCharacterProfileResponseProfile;
+  posts: PublicCharacterProfileResponsePosts;
+}
+
+export interface CharacterProfileFollowState {
+  following: boolean;
+}
+
 export type PublicProfileFan = { [key: string]: unknown };
 
 export type PublicProfileStarsItem = { [key: string]: unknown };
@@ -2702,6 +2790,28 @@ name?: string;
  */
 size: number;
 contentType?: string;
+};
+
+export type UpdateMyActiveCharacterProfileBody = {
+  profileId: string;
+};
+
+export type UpdateMyCharacterProfileBody = {
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
+  displayName?: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  profileImageUrl?: string | null;
+  /**
+     * @maxLength 100
+     * @nullable
+     */
+  statusMessage?: string | null;
 };
 
 export type GetServiceRankingsParams = {

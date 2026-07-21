@@ -34,6 +34,7 @@ import adminMembersRouter from "./adminMembers";
 import adminAuditRouter from "./adminAudit";
 import adminRolesRouter from "./adminRoles";
 import adminOperationsRouter from "./adminOperations";
+import characterProfilesRouter from "./characterProfiles";
 
 const router: IRouter = Router();
 
@@ -72,5 +73,6 @@ router.use(adminMembersRouter);
 router.use(adminAuditRouter);
 router.use(adminRolesRouter);
 router.use(adminOperationsRouter);
+router.use(characterProfilesRouter);
 
 export default router;

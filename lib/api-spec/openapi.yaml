@@ -3759,6 +3759,106 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
 
+  /users/me/profiles:
+    get:
+      operationId: getMyCharacterProfiles
+      tags: [users]
+      summary: List the account's activity profiles and active profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Character profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+
+  /users/me/active-profile:
+    patch:
+      operationId: updateMyActiveCharacterProfile
+      tags: [users]
+      summary: Select the activity profile used by feed and chat
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profileId]
+              properties:
+                profileId:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Updated character profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+        "404":
+          description: Profile not owned by the account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Profile is locked or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/profiles/{profileId}:
+    patch:
+      operationId: updateMyCharacterProfile
+      tags: [users]
+      summary: Update one owned activity profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 30
+                profileImageUrl:
+                  type: ["string", "null"]
+                  maxLength: 1024
+                statusMessage:
+                  type: ["string", "null"]
+                  maxLength: 100
+      responses:
+        "200":
+          description: Updated profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+        "400":
+          description: Invalid profile update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Profile not owned by the account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /nft/collections:
     get:
       operationId: listPublishedNftCollections
@@ -4291,6 +4391,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BattleResultsPage" }
+  /profiles/{profileId}:
+    get:
+      operationId: getPublicCharacterProfile
+      tags: [users]
+      summary: Get one public activity profile and its posts
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: Public activity profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicCharacterProfileResponse" }
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
+  /profiles/{profileId}/follow:
+    post:
+      operationId: followCharacterProfile
+      tags: [users]
+      summary: Follow a public activity profile as the active profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Followed, content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileFollowState" } } } }
+        "409": { description: Cannot follow an owned profile, content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } } }
+    delete:
+      operationId: unfollowCharacterProfile
+      tags: [users]
+      summary: Unfollow a public activity profile as the active profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Unfollowed, content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileFollowState" } } } }
+
   /users/{userId}/profile:
     get:
       tags: [users]
@@ -5153,6 +5291,65 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StarProfile"
+
+    CharacterProfileSummary:
+      type: object
+      required: [id, type, handle, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [fan, star, official_ai]
+        handle:
+          type: string
+        displayName:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        activityProfile:
+          oneOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: "null"
+
+    CharacterProfile:
+      allOf:
+        - $ref: "#/components/schemas/CharacterProfileSummary"
+        - type: object
+          required: [status, level, xp, stats, metadata, isActive]
+          properties:
+            statusMessage:
+              type: ["string", "null"]
+            status:
+              type: string
+              enum: [active, locked, torimia, archived]
+            level:
+              type: integer
+              minimum: 1
+            xp:
+              type: integer
+              minimum: 0
+            stats:
+              type: object
+              additionalProperties:
+                type: number
+            metadata:
+              type: object
+              additionalProperties: true
+            isActive:
+              type: boolean
+
+    CharacterProfileState:
+      type: object
+      required: [activeProfile, profiles]
+      properties:
+        activeProfile:
+          $ref: "#/components/schemas/CharacterProfile"
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CharacterProfile"
 
     StarProfilesResponse:
       type: object
@@ -6236,6 +6433,10 @@ components:
           type: integer
         senderId:
           type: string
+        senderProfile:
+          oneOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: "null"
         authorKind:
           type: string
         type:
@@ -7579,6 +7780,38 @@ components:
         opponentScore: { type: integer }
         opponentName: { type: string }
         completedAt: { type: string, format: date-time }
+    PublicCharacterProfileResponse:
+      type: object
+      required: [profile, posts]
+      properties:
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: object
+              required: [level, xp, stats, metadata, isMine, followedByMe, followerCount, followingCount]
+              properties:
+                statusMessage: { type: ["string", "null"] }
+                level: { type: integer, minimum: 1 }
+                xp: { type: integer, minimum: 0 }
+                stats: { type: object, additionalProperties: { type: number } }
+                metadata: { type: object, additionalProperties: true }
+                isMine: { type: boolean }
+                followedByMe: { type: boolean }
+                followerCount: { type: integer, minimum: 0 }
+                followingCount: { type: integer, minimum: 0 }
+        posts:
+          type: object
+          required: [items, nextCursor]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/StarFeedPost" } }
+            nextCursor: { type: ["string", "null"], format: date-time }
+
+    CharacterProfileFollowState:
+      type: object
+      required: [following]
+      properties:
+        following: { type: boolean }
+
     PublicProfile:
       type: object
       required: [id, nickname, stars, followerCount, followingCount]

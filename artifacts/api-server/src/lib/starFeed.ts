@@ -11,9 +11,11 @@ import {
   starFeedReactionsTable,
   starProfileFollowsTable,
   starProfilesTable,
+  characterProfilesTable,
   usersTable,
   type StarFeedPostKind,
 } from "@workspace/db";
+import { ensureCharacterProfileState } from "./characterProfiles";
 
 export const STAR_FEED_POST_TITLE_MAX = 80;
 export const STAR_FEED_POST_BODY_MAX = 500;
@@ -38,6 +40,7 @@ export interface StarFeedAuthorView {
   id: string | null;
   nickname: string;
   profileImageUrl: string | null;
+  activityProfile: { id: string; type: string; handle: string; displayName: string; profileImageUrl: string | null } | null;
   starProfile: { id: string; displayName: string; imageUrl: string | null; stage: string; followedByMe: boolean } | null;
 }
 
@@ -84,6 +87,11 @@ type PostRow = {
   authorUserId: string | null;
   authorNickname: string | null;
   authorProfileImageUrl: string | null;
+  authorActivityProfileId: string | null;
+  authorActivityProfileType: string | null;
+  authorActivityProfileHandle: string | null;
+  authorActivityProfileName: string | null;
+  authorActivityProfileImageUrl: string | null;
   authorStarProfileId: string | null;
   authorStarDisplayName: string | null;
   authorStarImageUrl: string | null;
@@ -95,11 +103,14 @@ type PostRow = {
 
 const targetStarProfilesTable = alias(starProfilesTable, "target_star_profiles");
 
-function serializeAuthor(row: Pick<PostRow, "authorUserId" | "authorNickname" | "authorProfileImageUrl" | "authorStarProfileId" | "authorStarDisplayName" | "authorStarImageUrl" | "authorStarStage">, followedStarProfileIds = new Set<string>()): StarFeedAuthorView {
+function serializeAuthor(row: Pick<PostRow, "authorUserId" | "authorNickname" | "authorProfileImageUrl" | "authorActivityProfileId" | "authorActivityProfileType" | "authorActivityProfileHandle" | "authorActivityProfileName" | "authorActivityProfileImageUrl" | "authorStarProfileId" | "authorStarDisplayName" | "authorStarImageUrl" | "authorStarStage">, followedStarProfileIds = new Set<string>()): StarFeedAuthorView {
   return {
     id: row.authorUserId,
-    nickname: row.authorNickname ?? "STAR 공식",
-    profileImageUrl: row.authorProfileImageUrl,
+    nickname: row.authorActivityProfileName ?? row.authorNickname ?? "STAR 공식",
+    profileImageUrl: row.authorActivityProfileImageUrl ?? row.authorProfileImageUrl,
+    activityProfile: row.authorActivityProfileId && row.authorActivityProfileType && row.authorActivityProfileHandle && row.authorActivityProfileName
+      ? { id: row.authorActivityProfileId, type: row.authorActivityProfileType, handle: row.authorActivityProfileHandle, displayName: row.authorActivityProfileName, profileImageUrl: row.authorActivityProfileImageUrl }
+      : null,
     starProfile: row.authorStarProfileId && row.authorStarDisplayName && row.authorStarStage
       ? { id: row.authorStarProfileId, displayName: row.authorStarDisplayName, imageUrl: row.authorStarImageUrl, stage: row.authorStarStage, followedByMe: followedStarProfileIds.has(row.authorStarProfileId) }
       : null,
@@ -135,9 +146,15 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
         authorUserId: usersTable.id,
         authorNickname: usersTable.nickname,
         authorProfileImageUrl: usersTable.profileImageUrl,
+        authorActivityProfileId: characterProfilesTable.id,
+        authorActivityProfileType: characterProfilesTable.type,
+        authorActivityProfileHandle: characterProfilesTable.handle,
+        authorActivityProfileName: characterProfilesTable.displayName,
+        authorActivityProfileImageUrl: characterProfilesTable.profileImageUrl,
       })
       .from(starFeedCommentsTable)
       .leftJoin(usersTable, eq(usersTable.id, starFeedCommentsTable.userId))
+      .leftJoin(characterProfilesTable, eq(characterProfilesTable.id, starFeedCommentsTable.profileId))
       .where(inArray(starFeedCommentsTable.postId, postIds))
       .orderBy(desc(starFeedCommentsTable.createdAt))
       .limit(postIds.length * 2),
@@ -226,6 +243,11 @@ async function selectPostRows(where?: ReturnType<typeof eq>): Promise<PostRow[]>
       authorUserId: usersTable.id,
       authorNickname: usersTable.nickname,
       authorProfileImageUrl: usersTable.profileImageUrl,
+      authorActivityProfileId: characterProfilesTable.id,
+      authorActivityProfileType: characterProfilesTable.type,
+      authorActivityProfileHandle: characterProfilesTable.handle,
+      authorActivityProfileName: characterProfilesTable.displayName,
+      authorActivityProfileImageUrl: characterProfilesTable.profileImageUrl,
       authorStarProfileId: starFeedPostsTable.authorStarProfileId,
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
@@ -236,6 +258,7 @@ async function selectPostRows(where?: ReturnType<typeof eq>): Promise<PostRow[]>
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
+    .leftJoin(characterProfilesTable, eq(characterProfilesTable.id, starFeedPostsTable.authorProfileId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
     .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId));
 
@@ -264,6 +287,11 @@ export async function listStarFeedPosts(
       authorUserId: usersTable.id,
       authorNickname: usersTable.nickname,
       authorProfileImageUrl: usersTable.profileImageUrl,
+      authorActivityProfileId: characterProfilesTable.id,
+      authorActivityProfileType: characterProfilesTable.type,
+      authorActivityProfileHandle: characterProfilesTable.handle,
+      authorActivityProfileName: characterProfilesTable.displayName,
+      authorActivityProfileImageUrl: characterProfilesTable.profileImageUrl,
       authorStarProfileId: starFeedPostsTable.authorStarProfileId,
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
@@ -274,6 +302,7 @@ export async function listStarFeedPosts(
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
+    .leftJoin(characterProfilesTable, eq(characterProfilesTable.id, starFeedPostsTable.authorProfileId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
     .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId))
     .where(sql`${scope === "following" ? sql`
@@ -304,6 +333,7 @@ export async function listPublicStarFeedPostsByAuthor(
   limit = STAR_FEED_LIST_LIMIT_DEFAULT,
   starProfileId?: string,
   cursor?: string,
+  characterProfileId?: string,
 ): Promise<{ items: StarFeedPostView[]; nextCursor: string | null }> {
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
   const rows = await db
@@ -320,6 +350,11 @@ export async function listPublicStarFeedPostsByAuthor(
       authorUserId: usersTable.id,
       authorNickname: usersTable.nickname,
       authorProfileImageUrl: usersTable.profileImageUrl,
+      authorActivityProfileId: characterProfilesTable.id,
+      authorActivityProfileType: characterProfilesTable.type,
+      authorActivityProfileHandle: characterProfilesTable.handle,
+      authorActivityProfileName: characterProfilesTable.displayName,
+      authorActivityProfileImageUrl: characterProfilesTable.profileImageUrl,
       authorStarProfileId: starFeedPostsTable.authorStarProfileId,
       authorStarDisplayName: starProfilesTable.displayName,
       authorStarImageUrl: starProfilesTable.imageUrl,
@@ -330,9 +365,10 @@ export async function listPublicStarFeedPostsByAuthor(
     })
     .from(starFeedPostsTable)
     .leftJoin(usersTable, eq(usersTable.id, starFeedPostsTable.authorUserId))
+    .leftJoin(characterProfilesTable, eq(characterProfilesTable.id, starFeedPostsTable.authorProfileId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
     .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId))
-    .where(and(eq(starFeedPostsTable.authorUserId, authorUserId), ...(starProfileId ? [eq(starFeedPostsTable.authorStarProfileId, starProfileId)] : []), eq(starFeedPostsTable.visibility, "PUBLIC"), eq(starFeedPostsTable.status, "PUBLISHED"), ...(cursor ? [lt(starFeedPostsTable.createdAt, new Date(cursor))] : [])))
+    .where(and(eq(starFeedPostsTable.authorUserId, authorUserId), ...(starProfileId ? [eq(starFeedPostsTable.authorStarProfileId, starProfileId)] : []), ...(characterProfileId ? [eq(starFeedPostsTable.authorProfileId, characterProfileId)] : []), eq(starFeedPostsTable.visibility, "PUBLIC"), eq(starFeedPostsTable.status, "PUBLISHED"), ...(cursor ? [lt(starFeedPostsTable.createdAt, new Date(cursor))] : [])))
     .orderBy(desc(starFeedPostsTable.createdAt))
     .limit(safeLimit);
   const items = await decoratePosts(viewerUserId, rows);
@@ -368,11 +404,15 @@ export async function createStarFeedPostWithResult(params: {
   metadata?: Record<string, unknown> | null;
   media?: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }>;
   authorStarProfileId?: string | null;
+  authorProfileId?: string | null;
   targetStarProfileId?: string | null;
 }): Promise<CreateStarFeedPostResult> {
   const title = params.title?.trim() || (params.kind === "star" ? "공식 STAR 기록" : "팬 응원");
+  const authorProfileId = params.authorProfileId
+    ?? (await ensureCharacterProfileState(params.userId)).activeProfile.id;
   const values = {
     authorUserId: params.userId,
+    authorProfileId,
     kind: params.kind,
     sourceKey: params.sourceKey ?? null,
     title,
@@ -461,6 +501,7 @@ export async function createStarFeedPost(params: {
   metadata?: Record<string, unknown> | null;
   media?: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }>;
   authorStarProfileId?: string | null;
+  authorProfileId?: string | null;
   targetStarProfileId?: string | null;
 }): Promise<StarFeedPostView> {
   const result = await createStarFeedPostWithResult(params);
@@ -478,7 +519,8 @@ export async function reportStarFeedPost(params: { userId: string; postId: strin
 export async function repostStarFeedPost(userId: string, postId: string): Promise<StarFeedPostView | null> {
   const source = await getStarFeedPost(userId, postId);
   if (!source) return null;
-  const created = await db.insert(starFeedPostsTable).values({ authorUserId: userId, kind: "fan", sourceKey: `repost:${userId}:${postId}`, repostOfPostId: postId, title: `Repost · ${source.title}`, body: source.body, metadata: { repostOfPostId: postId, originalAuthor: source.author.nickname }, hashtags: source.metadata?.hashtags as string[] ?? [] }).onConflictDoNothing({ target: starFeedPostsTable.sourceKey }).returning({ id: starFeedPostsTable.id });
+  const profileState = await ensureCharacterProfileState(userId);
+  const created = await db.insert(starFeedPostsTable).values({ authorUserId: userId, authorProfileId: profileState.activeProfile.id, kind: "fan", sourceKey: `repost:${userId}:${postId}`, repostOfPostId: postId, title: `Repost · ${source.title}`, body: source.body, metadata: { repostOfPostId: postId, originalAuthor: source.author.nickname }, hashtags: source.metadata?.hashtags as string[] ?? [] }).onConflictDoNothing({ target: starFeedPostsTable.sourceKey }).returning({ id: starFeedPostsTable.id });
   const id = created[0]?.id ?? (await db.select({ id: starFeedPostsTable.id }).from(starFeedPostsTable).where(eq(starFeedPostsTable.sourceKey, `repost:${userId}:${postId}`)).limit(1))[0]?.id;
   return id ? getStarFeedPost(userId, id) : null;
 }
@@ -506,9 +548,10 @@ export async function cheerStarFeedPost(meUserId: string, postId: string): Promi
   const post = await getStarFeedPost(meUserId, postId);
   if (!post) return null;
 
+  const profileState = await ensureCharacterProfileState(meUserId);
   await db
     .insert(starFeedReactionsTable)
-    .values({ postId, userId: meUserId, reactionType: "cheer" })
+    .values({ postId, userId: meUserId, profileId: profileState.activeProfile.id, reactionType: "cheer" })
     .onConflictDoNothing({ target: [starFeedReactionsTable.postId, starFeedReactionsTable.userId] });
 
   return getStarFeedPost(meUserId, postId);
@@ -521,10 +564,12 @@ export async function commentStarFeedPost(params: {
 }): Promise<StarFeedPostView | null> {
   const post = await getStarFeedPost(params.userId, params.postId);
   if (!post) return null;
+  const profileState = await ensureCharacterProfileState(params.userId);
 
   await db.insert(starFeedCommentsTable).values({
     postId: params.postId,
     userId: params.userId,
+    profileId: profileState.activeProfile.id,
     body: params.body,
   });
 

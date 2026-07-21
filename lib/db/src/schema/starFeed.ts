@@ -1,6 +1,7 @@
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { starProfilesTable } from "./fanStar";
+import { characterProfilesTable } from "./characterProfiles";
 
 export const STAR_FEED_POST_KINDS = ["official", "event", "fan", "star", "growth", "profile_update", "talk_diary"] as const;
 export type StarFeedPostKind = (typeof STAR_FEED_POST_KINDS)[number];
@@ -15,6 +16,7 @@ export const starFeedPostsTable = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     authorUserId: uuid("author_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+    authorProfileId: uuid("author_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     authorStarProfileId: uuid("author_star_profile_id").references(() => starProfilesTable.id, { onDelete: "set null" }),
     targetStarProfileId: uuid("target_star_profile_id").references(() => starProfilesTable.id, { onDelete: "set null" }),
     kind: text("kind").$type<StarFeedPostKind>().notNull().default("fan"),
@@ -37,6 +39,7 @@ export const starFeedPostsTable = pgTable(
     index("star_feed_posts_created_at_idx").on(t.createdAt),
     index("star_feed_posts_kind_created_at_idx").on(t.kind, t.createdAt),
     index("star_feed_posts_author_user_id_idx").on(t.authorUserId),
+    index("star_feed_posts_author_profile_id_idx").on(t.authorProfileId),
     index("star_feed_posts_author_star_profile_id_idx").on(t.authorStarProfileId),
     index("star_feed_posts_target_star_profile_id_idx").on(t.targetStarProfileId),
     index("star_feed_posts_status_created_at_idx").on(t.status, t.createdAt),
@@ -162,6 +165,7 @@ export const starFeedReactionsTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     reactionType: text("reaction_type").notNull().default("cheer"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -182,6 +186,7 @@ export const starFeedCommentsTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

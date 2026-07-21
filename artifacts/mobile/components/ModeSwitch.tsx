@@ -11,6 +11,7 @@ import {
 
 import { useColors } from "@/hooks/useColors";
 import { usePlayMode, type PlayMode } from "@/hooks/usePlayMode";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 const MODE_TARGETS: Record<PlayMode, Href> = {
   fan: "/(tabs)/chats" as Href,
@@ -25,25 +26,21 @@ export function ModeSwitch() {
     starUnlocked,
     starProfiles,
     isChanging,
-    isActivatingStar,
     setMode,
-    activateStar,
   } = usePlayMode();
+  const { activeProfile, profiles: characterProfiles, activateProfile } = useCharacterProfiles();
 
   const selectMode = async (nextMode: PlayMode) => {
     if (nextMode === "star" && !starUnlocked) {
       router.push(MODE_TARGETS.star);
       return;
     }
-    if (nextMode === mode) return;
-    await setMode(nextMode);
+    const candidate = nextMode === "star"
+      ? characterProfiles.find((profile) => profile.type === "star" && profile.status === "active")
+      : characterProfiles.find((profile) => profile.type === "fan" && profile.status === "active");
+    if (candidate && candidate.id !== activeProfile?.id) await activateProfile(candidate.id);
+    else if (nextMode !== mode) await setMode(nextMode);
     router.replace(MODE_TARGETS[nextMode]);
-  };
-
-  const selectStar = async (starProfileId: string) => {
-    await activateStar(starProfileId);
-    if (mode !== "star") await setMode("star");
-    router.replace(MODE_TARGETS.star);
   };
 
   return (
@@ -104,15 +101,14 @@ export function ModeSwitch() {
               <Pressable
                 key={star.id}
                 accessibilityRole="button"
-                accessibilityState={{ selected: active, busy: isActivatingStar }}
-                disabled={isChanging || isActivatingStar || active}
-                onPress={() => void selectStar(star.id)}
-                style={({ pressed }) => [
+                accessibilityState={{ selected: active, disabled: true }}
+                disabled
+                style={[
                   styles.starChip,
                   {
                     backgroundColor: active ? colors.foreground : colors.muted,
                     borderColor: active ? colors.foreground : colors.border,
-                    opacity: pressed || isActivatingStar ? 0.7 : 1,
+                    opacity: active ? 1 : 0.55,
                   },
                 ]}
               >

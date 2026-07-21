@@ -13,6 +13,7 @@ import { NeonBackdrop } from "@/components/NeonUI";
 import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
 import { usePlayMode } from "@/hooks/usePlayMode";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 import {
   useStarFeed,
   type StarFeedAuthor,
@@ -21,7 +22,6 @@ import {
   type StarFeedWritableKind,
 } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
-import { pickAndUploadImages, type UploadedImage } from "@/lib/uploadImage";
 
 type ColorTokens = ReturnType<typeof useColors>;
 
@@ -248,8 +248,9 @@ export default function FeedScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
-  const { starUnlocked, equippedStar, starProfiles } = usePlayMode();
-  const [feedFilter, setFeedFilter] = useState<"recommended" | "following">("recommended");
+  const { mode, equippedStar } = usePlayMode();
+  const { activeProfile, profiles: characterProfiles, activateProfile } = useCharacterProfiles();
+  const [feedMode, setFeedMode] = useState<StarFeedWritableKind>(mode);
   const [selectedProfile, setSelectedProfile] = useState<StarFeedAuthor | null>(null);
   const {
     posts,
@@ -257,7 +258,6 @@ export default function FeedScreen() {
     isFetching,
     error,
     refetch,
-    createPost,
     cheerPost,
     commentPost,
     setStarFollowing,
@@ -267,38 +267,35 @@ export default function FeedScreen() {
     approveResultDraft,
     discardResultDraft,
     isResolvingResultDraft,
-    isCreatingPost,
     isCheering,
     isCommenting,
     isSettingStarFollowing,
-  } = useStarFeed(feedFilter);
+  } = useStarFeed("recommended");
   const visiblePosts = useMemo(() => {
-    if (!postId) return posts;
-    const target = posts.find((post) => post.id === postId);
-    return target ? [target, ...posts.filter((post) => post.id !== postId)] : posts;
-  }, [postId, posts]);
-  const [draft, setDraft] = useState("");
-  const [postKind, setPostKind] = useState<StarFeedWritableKind>("fan");
-  const [targetStarProfileId, setTargetStarProfileId] = useState<string | null>(null);
+    const modePosts = posts.filter((post) =>
+      feedMode === "star"
+        ? ["official", "event", "star", "growth"].includes(post.kind)
+        : ["fan", "profile_update", "talk_diary"].includes(post.kind),
+    );
+    if (!postId) return modePosts;
+    const target = modePosts.find((post) => post.id === postId);
+    return target ? [target, ...modePosts.filter((post) => post.id !== postId)] : modePosts;
+  }, [feedMode, postId, posts]);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [uploadedMedia, setUploadedMedia] = useState<UploadedImage[]>([]);
-  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
-  const officialStarReady = equippedStar?.stage === "promoted";
-  const activePostKind: StarFeedWritableKind = officialStarReady ? postKind : "fan";
-  const canPost = draft.trim().length > 0 && !isCreatingPost && !isUploadingMedia;
-  const starName = equippedStar?.displayName ?? "STAR";
-  const targetStarProfiles = useMemo(() => {
-    const unique = new Map<string, { id: string; displayName: string; imageUrl: string | null }>();
-    starProfiles.forEach((star) => unique.set(star.id, { id: star.id, displayName: star.displayName, imageUrl: star.imageUrl }));
-    posts.forEach((post) => {
-      const star = post.author.starProfile;
-      if (star) unique.set(star.id, { id: star.id, displayName: star.displayName, imageUrl: star.imageUrl });
-    });
-    return [...unique.values()].slice(0, 12);
-  }, [posts, starProfiles]);
+  useEffect(() => {
+    setFeedMode(mode);
+  }, [mode]);
+
+  const selectFeedMode = (nextMode: StarFeedWritableKind) => {
+    setFeedMode(nextMode);
+    const candidate = nextMode === "star"
+      ? characterProfiles.find((profile) => profile.id === equippedStar?.id && profile.status === "active")
+      : characterProfiles.find((profile) => profile.type === "fan" && profile.status === "active");
+    if (candidate && candidate.id !== activeProfile?.id) void activateProfile(candidate.id);
+  };
+
   const storyAuthors = useMemo(() => {
     const unique = new Map<string, StarFeedAuthor>();
     posts.forEach((post) => {
@@ -306,36 +303,20 @@ export default function FeedScreen() {
       if (!unique.has(key)) unique.set(key, post.author);
     });
     const own = me?.id
-      ? { id: me.id, nickname: me.nickname, profileImageUrl: me.profileImageUrl ?? null, starProfile: null }
+      ? { id: me.id, nickname: activeProfile?.displayName ?? me.nickname, profileImageUrl: activeProfile?.profileImageUrl ?? me.profileImageUrl ?? null, activityProfile: activeProfile, starProfile: null }
       : null;
     const others = [...unique.values()].filter((author) => author.id !== me?.id);
     return (own ? [own, ...others] : others).slice(0, 7);
-  }, [posts, me]);
+  }, [posts, me, activeProfile]);
   function openProfile(author: StarFeedAuthor) {
+    if (author.activityProfile?.id) {
+      router.push({ pathname: "/character/[profileId]", params: { profileId: author.activityProfile.id } } as never);
+      return;
+    }
     if (author.id) {
       router.push({ pathname: "/profile/[userId]", params: { userId: author.id } } as never);
     } else {
       setSelectedProfile(author);
-    }
-  }
-
-  async function submitPost() {
-    const body = draft.trim();
-    if (!body) return;
-    setFeedback(null);
-    try {
-      await createPost({
-        kind: activePostKind,
-        body,
-        media: uploadedMedia.map((item) => ({ objectPath: item.objectPath, mediaType: "image" })),
-        targetStarProfileId: activePostKind === "star" ? equippedStar?.id ?? null : targetStarProfileId,
-      });
-      setFeedback(activePostKind === "fan" ? (targetStarProfileId ? "STAR 응원글을 게시했고 FAN XP 5를 기록했습니다." : "FAN 글을 게시했고 FAN XP 2를 기록했습니다.") : "공식 STAR 기록을 게시했습니다.");
-      setDraft("");
-      setUploadedMedia([]);
-      setComposerOpen(false);
-    } catch (err) {
-      setFeedback(errorMessage(err, "게시글을 올리지 못했어요. 잠시 후 다시 시도해 주세요."));
     }
   }
 
@@ -355,20 +336,6 @@ export default function FeedScreen() {
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
     } catch {
       setFeedback("댓글을 남기지 못했어요.");
-    }
-  }
-
-  async function addImages() {
-    if (isUploadingMedia || uploadedMedia.length >= 4) return;
-    setFeedback(null);
-    setIsUploadingMedia(true);
-    try {
-      const selected = await pickAndUploadImages();
-      if (selected) setUploadedMedia((current) => [...current, ...selected].slice(0, 4));
-    } catch (err) {
-      setFeedback(errorMessage(err, "이미지를 업로드하지 못했습니다."));
-    } finally {
-      setIsUploadingMedia(false);
     }
   }
 
@@ -405,22 +372,25 @@ export default function FeedScreen() {
     <NeonBackdrop style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.feedTabs}>
-          {(["recommended", "following"] as const).map((item) => {
-            const active = feedFilter === item;
+          {(["star", "fan"] as const).map((item) => {
+            const active = feedMode === item;
             return (
-              <Pressable key={item} onPress={() => setFeedFilter(item)} style={styles.feedTabPressable}>
+              <Pressable key={item} onPress={() => selectFeedMode(item)} style={styles.feedTabPressable}>
                 {active ? (
                   <LinearGradient colors={["#481378", "#1B0737"]} style={styles.feedTabActive}>
-                    <Text style={styles.feedTabActiveText}>{item === "recommended" ? "추천 ·" : "팔로잉"}</Text>
+                    <Text style={styles.feedTabActiveText}>{item === "star" ? "STAR" : "FAN"}</Text>
                   </LinearGradient>
-                ) : <Text style={styles.feedTabText}>{item === "recommended" ? "추천" : "팔로잉"}</Text>}
+                ) : <Text style={styles.feedTabText}>{item === "star" ? "STAR" : "FAN"}</Text>}
               </Pressable>
             );
           })}
         </View>
-        <Pressable onPress={() => setComposerOpen((open) => !open)} style={({ pressed }) => [styles.writeButton, pressed && styles.pressed]}>
-          <Feather name={composerOpen ? "x" : "plus"} size={19} color="#B84CFF" />
-          <Text style={styles.writeButtonText}>{composerOpen ? "닫기" : "글쓰기"}</Text>
+        <Pressable
+          onPress={() => router.push({ pathname: "/feed/write", params: { kind: feedMode } } as never)}
+          style={({ pressed }) => [styles.writeButton, pressed && styles.pressed]}
+        >
+          <Feather name="plus" size={19} color="#B84CFF" />
+          <Text style={styles.writeButtonText}>글쓰기</Text>
         </Pressable>
       </View>
 
@@ -436,77 +406,18 @@ export default function FeedScreen() {
             </View>
           </View>
         ))}
-        {composerOpen ? (
-          <LinearGradient colors={["#141025", "#090816"]} style={styles.composer}>
-            <View style={styles.composerHeader}>
-              <View style={styles.composerIcon}><Feather name="edit-3" size={17} color="#A64DFF" /></View>
-              <View style={styles.composerTitleBlock}>
-                <Text style={styles.composerTitle}>{activePostKind === "star" ? "공식 STAR 기록" : "FAN 응원글"}</Text>
-                <Text style={styles.composerSub}>{starUnlocked ? `${starName}에게 전할 이야기를 남겨주세요.` : "STAR 잠금 상태에서도 응원글을 남길 수 있어요."}</Text>
-              </View>
-            </View>
-            <View style={styles.kindSwitch}>
-              {(["fan", "star"] as StarFeedWritableKind[]).map((kind) => {
-                const active = activePostKind === kind;
-                const disabled = kind === "star" && !officialStarReady;
-                return (
-                  <Pressable key={kind} disabled={disabled} onPress={() => setPostKind(kind)} style={[styles.kindButton, active && styles.kindButtonActive, disabled && styles.kindButtonDisabled]}>
-                    {disabled ? <Feather name="lock" size={11} color="#676173" /> : null}
-                    <Text style={[styles.kindButtonText, active && styles.kindButtonTextActive]}>{kind === "fan" ? "FAN 응원글" : "공식 STAR 기록"}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={`오늘 ${starName}에게 보내는 이야기를 적어주세요.`}
-              placeholderTextColor="#817A8C"
-              multiline
-              maxLength={500}
-              style={styles.composerInput}
-            />
-            <View style={styles.mediaComposerRow}>
-              <Pressable disabled={isUploadingMedia || uploadedMedia.length >= 4} onPress={() => void addImages()} style={styles.mediaAddButton}>
-                {isUploadingMedia ? <ActivityIndicator size="small" color="#E1C7FF" /> : <Feather name="image" size={16} color="#E1C7FF" />}
-                <Text style={styles.mediaAddText}>{isUploadingMedia ? "업로드 중" : `사진 ${uploadedMedia.length}/4`}</Text>
-              </Pressable>
-              {uploadedMedia.map((item) => <Pressable key={item.objectPath} onPress={() => setUploadedMedia((current) => current.filter((media) => media.objectPath !== item.objectPath))}><Image source={{ uri: item.localUri }} style={styles.mediaPreview} contentFit="cover" /></Pressable>)}
-            </View>
-            {activePostKind === "fan" ? (
-              <View style={styles.targetPicker}>
-                <Text style={styles.targetPickerLabel}>응원 대상 (선택)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.targetPickerRow}>
-                  <Pressable onPress={() => setTargetStarProfileId(null)} style={[styles.targetButton, targetStarProfileId === null && styles.targetButtonActive]}>
-                    <Text style={[styles.targetButtonText, targetStarProfileId === null && styles.targetButtonTextActive]}>전체 FAN</Text>
-                  </Pressable>
-                  {targetStarProfiles.map((star) => (
-                    <Pressable key={star.id} onPress={() => setTargetStarProfileId(star.id)} style={[styles.targetButton, targetStarProfileId === star.id && styles.targetButtonActive]}>
-                      <Text style={[styles.targetButtonText, targetStarProfileId === star.id && styles.targetButtonTextActive]} numberOfLines={1}>{star.displayName}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
-            {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
-            <Pressable disabled={!canPost} onPress={() => void submitPost()} style={[styles.postButton, { opacity: canPost ? 1 : 0.42 }]}>
-              <Text style={styles.postButtonText}>{isCreatingPost ? "올리는 중" : "게시하기"}</Text>
-            </Pressable>
-          </LinearGradient>
-        ) : null}
-
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stories}>
           {storyAuthors.map((author, index) => <StoryItem key={author.id ?? `${author.nickname}-${index}`} author={author} index={index} isOwn={author.id === me?.id} onPress={() => openProfile(author)} />)}
         </ScrollView>
 
-        {feedback && !composerOpen ? <Text style={styles.feedbackBanner}>{feedback}</Text> : null}
+        {feedback ? <Text style={styles.feedbackBanner}>{feedback}</Text> : null}
 
         {isLoading || isFetching ? (
           <View style={styles.stateBox}><ActivityIndicator color={neon.purple} /><Text style={styles.stateText}>피드를 불러오는 중이에요.</Text></View>
         ) : error ? (
           <Pressable onPress={() => void refetch()} style={styles.stateBox}><Text style={styles.stateTitle}>피드를 불러오지 못했어요</Text><Text style={styles.stateText}>눌러서 다시 시도해 주세요.</Text></Pressable>
-        ) : posts.length === 0 ? (
-          <View style={styles.stateBox}><Text style={styles.stateTitle}>{feedFilter === "following" ? "팔로잉 피드가 비어 있어요" : "아직 추천 피드가 비어 있어요"}</Text><Text style={styles.stateText}>{feedFilter === "following" ? "STAR를 팔로우하면 새 게시물이 여기에 보여요." : "첫 FAN 응원글을 남겨보세요."}</Text></View>
+        ) : visiblePosts.length === 0 ? (
+          <View style={styles.stateBox}><Text style={styles.stateTitle}>{feedMode === "star" ? "아직 STAR 기록이 없어요" : "아직 FAN 피드가 비어 있어요"}</Text><Text style={styles.stateText}>{feedMode === "star" ? "STAR 활동과 성장 결과가 여기에 모입니다." : "첫 FAN 응원글을 남겨보세요."}</Text></View>
         ) : (
           <View style={styles.feedList}>
             {visiblePosts.map((post) => (
@@ -573,29 +484,6 @@ const styles = StyleSheet.create({
   storyName: { color: "#C4BFCA", fontFamily: "Inter_400Regular", fontSize: 9, maxWidth: 52 },
   storyRole: { color: "#C047FF", fontFamily: "Inter_500Medium", fontSize: 9, marginTop: 2 },
   verified: { width: 11, height: 11, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#7B35FF" },
-  composer: { borderRadius: 18, borderWidth: 1, borderColor: "rgba(133,75,210,0.34)", padding: 14, gap: 11, overflow: "hidden" },
-  composerHeader: { flexDirection: "row", gap: 10, alignItems: "center" },
-  composerIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(98,35,174,0.32)" },
-  composerTitleBlock: { flex: 1 },
-  composerTitle: { color: neon.text, fontFamily: "Inter_700Bold", fontSize: 14 },
-  composerSub: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 3 },
-  kindSwitch: { height: 38, borderRadius: 20, borderWidth: 1, borderColor: "rgba(130,75,194,0.36)", padding: 3, flexDirection: "row" },
-  kindButton: { flex: 1, borderRadius: 17, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 5 },
-  kindButtonActive: { backgroundColor: "#F4F0FF" },
-  kindButtonDisabled: { opacity: 0.48 },
-  kindButtonText: { color: "#7D7689", fontFamily: "Inter_600SemiBold", fontSize: 11 },
-  kindButtonTextActive: { color: "#080611" },
-  targetPicker: { gap: 6 },
-  targetPickerLabel: { color: "#AFA7BC", fontFamily: "Inter_500Medium", fontSize: 11 },
-  targetPickerRow: { gap: 7, paddingVertical: 2 },
-  targetButton: { maxWidth: 130, borderRadius: 999, borderWidth: 1, borderColor: "rgba(130,75,194,0.36)", paddingHorizontal: 11, paddingVertical: 7, backgroundColor: "rgba(8,7,18,0.72)" },
-  targetButtonActive: { borderColor: "#B84CFF", backgroundColor: "#F4F0FF" },
-  targetButtonText: { color: "#AFA7BC", fontFamily: "Inter_600SemiBold", fontSize: 10 },
-  targetButtonTextActive: { color: "#080611" },
-  composerInput: { minHeight: 82, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: "rgba(125,70,180,0.32)", backgroundColor: "rgba(7,7,18,0.82)", color: neon.text, fontFamily: "Inter_400Regular", fontSize: 13, textAlignVertical: "top" },
-  feedback: { color: "#FF7770", fontFamily: "Inter_500Medium", fontSize: 11 },
-  postButton: { height: 40, borderRadius: 14, backgroundColor: "#6F3EAA", alignItems: "center", justifyContent: "center" },
-  postButtonText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 12 },
   profileSheetBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.62)" },
   profileSheet: { maxHeight: "78%", minHeight: 360, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: "#0D0A1D", borderWidth: 1, borderColor: "rgba(166,77,255,0.42)", padding: 20 },
   profileClose: { alignSelf: "flex-end", padding: 4 },
@@ -623,10 +511,6 @@ const styles = StyleSheet.create({
   followButton: { borderWidth: 1, borderColor: "#7E36D7", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   followButtonActive: { borderColor: "#4F4A58", backgroundColor: "#211D29" },
   followButtonText: { color: "#E1C7FF", fontFamily: "Inter_600SemiBold", fontSize: 11 },
-  mediaComposerRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  mediaAddButton: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#593079", borderRadius: 10, paddingHorizontal: 10, height: 38 },
-  mediaAddText: { color: "#E1C7FF", fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  mediaPreview: { width: 38, height: 38, borderRadius: 8 },
   resultDraftCard: { backgroundColor: "#191126", borderColor: "#7138A2", borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
   resultDraftEyebrow: { color: "#D7A7FF", fontFamily: "Inter_700Bold", fontSize: 11 },
   resultDraftTitle: { color: "#F2EDF7", fontFamily: "Inter_700Bold", fontSize: 15 },

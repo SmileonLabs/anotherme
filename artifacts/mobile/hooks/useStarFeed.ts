@@ -8,6 +8,7 @@ export interface StarFeedAuthor {
   id: string | null;
   nickname: string;
   profileImageUrl: string | null;
+  activityProfile: { id: string; type: string; handle: string; displayName: string; profileImageUrl: string | null } | null;
   starProfile: { id: string; displayName: string; imageUrl: string | null; stage: string; followedByMe: boolean } | null;
 }
 

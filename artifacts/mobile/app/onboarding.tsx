@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { customFetch } from "@workspace/api-client-react";
+import { crossAlert } from "@/lib/crossAlert";
 
 export const ONBOARDING_KEY = "anotherme.onboarding.v1";
 
@@ -80,17 +82,26 @@ export default function OnboardingScreen() {
   const { width: SCREEN_W } = useWindowDimensions();
   const scrollRef = React.useRef<ScrollView>(null);
   const [page, setPage] = React.useState(0);
+  const [finishing, setFinishing] = React.useState(false);
 
   const isLast = page === SLIDES.length - 1;
 
   const finish = React.useCallback(async () => {
+    if (finishing) return;
+    setFinishing(true);
     try {
+      // The authenticated API creates the account's default FAN activity profile
+      // idempotently. Onboarding completion therefore cannot leave a user without
+      // an active profile, including after reinstalling the app.
+      await customFetch("/api/users/me/profiles", { responseType: "json" });
       await AsyncStorage.setItem(ONBOARDING_KEY, "1");
+      router.replace("/(tabs)");
     } catch {
-      // ignore persistence errors — worst case onboarding shows again
+      crossAlert("시작할 수 없어요", "네트워크 연결을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      setFinishing(false);
     }
-    router.replace("/(tabs)");
-  }, [router]);
+  }, [finishing, router]);
 
   const goNext = React.useCallback(() => {
     if (isLast) {
@@ -105,7 +116,7 @@ export default function OnboardingScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <Pressable hitSlop={8} onPress={finish} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
+        <Pressable hitSlop={8} disabled={finishing} onPress={finish} style={({ pressed }) => ({ opacity: pressed || finishing ? 0.5 : 1 })}>
           <Text style={[styles.skip, { color: colors.mutedForeground }]}>건너뛰기</Text>
         </Pressable>
       </View>
@@ -187,13 +198,14 @@ export default function OnboardingScreen() {
         </View>
         <Pressable
           onPress={goNext}
+          disabled={finishing}
           style={({ pressed }) => [
             styles.cta,
             { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
           ]}
         >
           <Text style={[styles.ctaText, { color: colors.background }]}>
-            {isLast ? "시작하기" : "다음"}
+            {finishing ? "프로필 준비 중…" : isLast ? "시작하기" : "다음"}
           </Text>
         </Pressable>
       </View>

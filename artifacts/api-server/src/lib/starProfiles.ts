@@ -2,6 +2,8 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { getAddress } from "viem";
 import {
   DEFAULT_STAR_STATS,
+  characterGrowthEventsTable,
+  characterProfilesTable,
   db,
   starGrowthEventsTable,
   starProfilesTable,
@@ -559,6 +561,44 @@ export async function recordStarActivity(params: {
         imageUrl: stage?.imageUrl ?? originalImage,
       })
       .where(eq(starProfilesTable.id, locked.id));
+
+    const [characterProfile] = await tx
+      .select({ id: characterProfilesTable.id })
+      .from(characterProfilesTable)
+      .where(eq(characterProfilesTable.id, locked.id))
+      .for("update");
+    if (characterProfile) {
+      await tx
+        .insert(characterGrowthEventsTable)
+        .values({
+          profileId: locked.id,
+          ownerUserId: params.userId,
+          sourceKey: `star:${params.sourceKey}`,
+          eventType: params.eventType,
+          xpDelta: params.xp,
+          statChanges: cleanStats,
+          beforeLevel,
+          afterLevel,
+          beforeXp,
+          afterXp,
+          metadata: params.metadata ?? {},
+        })
+        .onConflictDoNothing({ target: characterGrowthEventsTable.sourceKey });
+      await tx
+        .update(characterProfilesTable)
+        .set({
+          xp: afterXp,
+          level: afterLevel,
+          stats: {
+            charm: nextStats.charm,
+            stagePresence: nextStats.stagePresence,
+            bond: nextStats.bond,
+            lore: nextStats.lore,
+          },
+          profileImageUrl: stage?.imageUrl ?? originalImage,
+        })
+        .where(eq(characterProfilesTable.id, locked.id));
+    }
     granted = true;
   });
 

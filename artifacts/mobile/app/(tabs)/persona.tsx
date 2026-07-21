@@ -24,6 +24,7 @@ import { useWalletVerification, type WalletStatus } from "@/hooks/useWalletVerif
 import { usePersonaAnalysis } from "@/hooks/usePersonaAnalysis";
 import { gradients, gradientsDark } from "@/constants/colors";
 import { useMediaUri } from "@/hooks/useMediaUri";
+import { useCharacterProfiles, type CharacterProfileView } from "@/hooks/useCharacterProfiles";
 
 type StatKey =
   | "logic"
@@ -202,6 +203,12 @@ export function PersonaScreen({
   } = usePlayMode();
   const { state: torimia, requirements: torimiaRequirements } = useTorimia();
   const { status: walletStatus } = useWalletVerification();
+  const {
+    activeProfile: activeCharacterProfile,
+    profiles: characterProfiles,
+    activateProfile: activateCharacterProfile,
+    isActivating: isActivatingCharacter,
+  } = useCharacterProfiles();
 
   const [eventsExpanded, setEventsExpanded] = React.useState(false);
   const { analyze, isAnalyzing, analysisError, analysisNotice } = usePersonaAnalysis({
@@ -291,6 +298,10 @@ export function PersonaScreen({
                 starUnlocked={starUnlocked}
                 equippedStar={equippedStar}
                 starProfiles={starProfiles}
+                characterProfiles={characterProfiles}
+                activeCharacterProfile={activeCharacterProfile}
+                isActivatingCharacter={isActivatingCharacter}
+                onActivateCharacter={activateCharacterProfile}
                 isEquippingStar={isActivatingStar}
                 onEquipStar={async (starProfileId) => {
                   await activateStar(starProfileId);
@@ -758,6 +769,10 @@ function MyDashboard({
   starUnlocked,
   equippedStar,
   starProfiles,
+  characterProfiles,
+  activeCharacterProfile,
+  isActivatingCharacter,
+  onActivateCharacter,
   isEquippingStar,
   onEquipStar,
   onSelectFan,
@@ -783,6 +798,10 @@ function MyDashboard({
   starUnlocked: boolean;
   equippedStar: EquippedStar | null;
   starProfiles: EquippedStar[];
+  characterProfiles: CharacterProfileView[];
+  activeCharacterProfile: CharacterProfileView | null;
+  isActivatingCharacter: boolean;
+  onActivateCharacter: (profileId: string) => Promise<unknown>;
   isEquippingStar: boolean;
   onEquipStar: (starProfileId: string) => Promise<void>;
   onSelectFan: () => void;
@@ -795,6 +814,9 @@ function MyDashboard({
   onAnalyze: () => void;
 }) {
   const [inventoryOpen, setInventoryOpen] = React.useState(false);
+  const profileDisplayName = activeCharacterProfile?.displayName ?? nickname;
+  const profileHandle = activeCharacterProfile?.handle ?? `anotherme_${nickname.toLocaleLowerCase().replace(/\s+/g, "")}`;
+  const profileIntro = activeCharacterProfile?.statusMessage ?? intro;
   const isStarMode = mode === "star";
   const isStarLocked = isStarMode && !equippedStar;
   const displayLevel = isStarMode ? equippedStar?.level ?? 1 : level;
@@ -816,26 +838,39 @@ function MyDashboard({
         { icon: "book-open" as const, label: "세계관", value: equippedStar?.stats.lore ?? 0, color: "#D679FF" },
       ]
     : CANONICAL_FAN_STAT_META.map((stat) => ({ ...stat, value: stats?.[stat.key] ?? 0 }));
-  const inventoryItems = [
-    {
-      key: "fan",
-      title: "FAN",
-      subtitle: "기본 캐릭터",
-      source: require("../../assets/images/fan-slime.png") as ImageSource,
-      active: !equippedStar,
-      onPress: onSelectFan,
-    },
-    ...starProfiles.map((star) => ({
-      key: star.id,
-      title: star.displayName,
-      subtitle: star.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
-      source: star.imageUrl
-        ? ({ uri: star.imageUrl } as ImageSource)
-        : (require("../../assets/images/star-character-cutout.png") as ImageSource),
-      active: equippedStar?.id === star.id,
-      onPress: () => void onEquipStar(star.id),
-    })),
-  ];
+  const inventoryItems = characterProfiles.length > 0
+    ? characterProfiles.map((profile) => ({
+        key: profile.id,
+        title: profile.displayName,
+        subtitle: profile.type === "star" ? "STAR 캐릭터" : profile.type === "official_ai" ? "공식 AI" : "FAN 캐릭터",
+        source: profile.profileImageUrl
+          ? ({ uri: profile.profileImageUrl } as ImageSource)
+          : profile.type === "fan"
+            ? (require("../../assets/images/fan-slime.png") as ImageSource)
+            : (require("../../assets/images/star-character-cutout.png") as ImageSource),
+        active: profile.id === activeCharacterProfile?.id,
+        onPress: () => void onActivateCharacter(profile.id),
+      }))
+    : [
+        {
+          key: "fan",
+          title: "FAN",
+          subtitle: "기본 캐릭터",
+          source: require("../../assets/images/fan-slime.png") as ImageSource,
+          active: !equippedStar,
+          onPress: onSelectFan,
+        },
+        ...starProfiles.map((star) => ({
+          key: star.id,
+          title: star.displayName,
+          subtitle: star.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
+          source: star.imageUrl
+            ? ({ uri: star.imageUrl } as ImageSource)
+            : (require("../../assets/images/star-character-cutout.png") as ImageSource),
+          active: equippedStar?.id === star.id,
+          onPress: () => void onEquipStar(star.id),
+        })),
+      ];
 
   return (
     <View style={styles.dashboardContent}>
@@ -843,15 +878,15 @@ function MyDashboard({
         <View pointerEvents="none" style={styles.dashboardProfileGlow} />
         <View pointerEvents="none" style={styles.dashboardConstellation}><View style={styles.constellationDot} /><View style={styles.constellationLine} /></View>
         <LinearGradient colors={["#E052FF", "#6534FF", "#38D9FF"]} style={styles.dashboardAvatarRing}>
-          <View style={styles.dashboardAvatarInset}><Avatar uri={avatarUri} name={nickname} size={112} /></View>
+          <View style={styles.dashboardAvatarInset}><Avatar uri={activeCharacterProfile?.profileImageUrl ?? avatarUri} name={profileDisplayName} size={112} /></View>
         </LinearGradient>
         <View style={styles.dashboardProfileCopy}>
-          <Text style={styles.dashboardNickname}>{nickname}님</Text>
-          <Text style={styles.dashboardHandle}>@anotherme_{nickname.toLocaleLowerCase().replace(/\s+/g, "")}</Text>
+          <Text style={styles.dashboardNickname}>{profileDisplayName}</Text>
+          <Text style={styles.dashboardHandle}>@{profileHandle}</Text>
           <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>직업</Text><Text style={styles.dashboardTagValue}>가희</Text></View>
           <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>이름</Text><Text style={styles.dashboardTagValue}>{equippedStar?.displayName ?? "비비사랑"}</Text></View>
           <Text style={styles.identityStatus}>{equippedStar ? `장착 STAR · ${equippedStar.displayName}` : "FAN · 응원 중인 STAR 없음"}</Text>
-          <Text style={styles.dashboardIntro} numberOfLines={2}>{intro}</Text>
+          <Text style={styles.dashboardIntro} numberOfLines={2}>{profileIntro}</Text>
           <View style={styles.dashboardSocialRow}>
             <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>게시물</Text><Text style={styles.dashboardSocialValue}>{activityCount}</Text></View>
             <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>팔로워</Text><Text style={styles.dashboardSocialValue}>{social.followerCount}</Text></View>
@@ -885,14 +920,14 @@ function MyDashboard({
       <View style={styles.dashboardInfoGrid}>
         <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
           <Text style={styles.dashboardCardTitle}>기본 정보 ✦</Text>
-          <DashboardInfoRow icon="user" label="닉네임" value={`${nickname}님`} onPress={onEditProfile} />
-          <DashboardInfoRow icon="message-circle" label="소개" value={intro} onPress={onEditProfile} />
+          <DashboardInfoRow icon="user" label="프로필 이름" value={profileDisplayName} onPress={onEditProfile} />
+          <DashboardInfoRow icon="message-circle" label="프로필 소개" value={profileIntro} onPress={onEditProfile} />
         </LinearGradient>
         <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
           <Text style={styles.dashboardCardTitle}>지갑 정보 ✦</Text>
           <DashboardInfoRow icon="link" label="지갑 연결 상태" value={walletStatus?.walletVerified ? "연결됨" : "미연결"} accent={walletStatus?.walletVerified} />
           <DashboardInfoRow icon="credit-card" label="지갑 주소" value={formatWalletAddress(walletStatus?.walletAddress)} />
-          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(1 + starProfiles.length)} />
+          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(characterProfiles.length || 1 + starProfiles.length)} />
           <Pressable onPress={onWallet} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}><Text style={styles.dashboardOutlineText}>지갑 관리</Text></Pressable>
         </LinearGradient>
       </View>
@@ -916,7 +951,7 @@ function MyDashboard({
             {inventoryItems.map((item) => (
               <Pressable
                 key={item.key}
-                disabled={isEquippingStar}
+                disabled={isEquippingStar || isActivatingCharacter || item.active}
                 onPress={item.onPress}
                 style={({ pressed }) => [
                   styles.dashboardInventoryItem,

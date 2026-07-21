@@ -32,3 +32,4 @@ export * from "./nftRpg";
 export * from "./officialAi";
 export * from "./adminAudit";
 export * from "./adminRoles";
+export * from "./characterProfiles";

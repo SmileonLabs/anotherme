@@ -8,6 +8,7 @@ import {
   messageLinkPreviewsTable,
   messageStickersTable,
   messagesTable,
+  characterProfilesTable,
   usersTable,
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
@@ -39,6 +40,8 @@ import {
   setMemberReadSeq,
   type ReadTarget,
 } from "../lib/readReceipts";
+import { ensureCharacterProfileState } from "../lib/characterProfiles";
+import type { CharacterProfileView } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 
@@ -79,6 +82,13 @@ interface MessagePayload {
   createdAt: string;
   readCount: number;
   sender: PublicUserPayload | null;
+  senderProfile: {
+    id: string;
+    type: string;
+    handle: string;
+    displayName: string;
+    profileImageUrl: string | null;
+  } | null;
   replyTo: {
     id: string;
     senderId: string;
@@ -148,7 +158,8 @@ async function serializeMessages(
         .filter((id): id is string => !!id),
     ),
   );
-  const [deletedRows, replyRows, stickerRows, linkRows] = await Promise.all([
+  const profileIds = Array.from(new Set(messages.flatMap((message) => message.senderProfileId ? [message.senderProfileId] : [])));
+  const [deletedRows, replyRows, stickerRows, linkRows, profiles] = await Promise.all([
     db
       .select({ messageId: messageDeletionsTable.messageId })
       .from(messageDeletionsTable)
@@ -175,6 +186,9 @@ async function serializeMessages(
       .select()
       .from(messageLinkPreviewsTable)
       .where(inArray(messageLinkPreviewsTable.messageId, messageIds)),
+    profileIds.length > 0
+      ? db.select().from(characterProfilesTable).where(inArray(characterProfilesTable.id, profileIds))
+      : Promise.resolve([]),
   ]);
 
   const deletedForViewer = new Set(deletedRows.map((row) => row.messageId));
@@ -199,6 +213,7 @@ async function serializeMessages(
           .where(inArray(usersTable.id, Array.from(userIds)))
       : [];
   const userById = new Map(users.map((user) => [user.id, user]));
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
 
   return messages
     .filter((message) => !deletedForViewer.has(message.id))
@@ -217,6 +232,7 @@ async function serializeMessages(
         ? deletedForViewer.has(reply.id)
         : false;
       const link = linkByMessage.get(message.id);
+      const senderProfile = message.senderProfileId ? profileById.get(message.senderProfileId) : null;
       return {
         id: message.id,
         roomId: message.roomId,
@@ -236,6 +252,9 @@ async function serializeMessages(
         createdAt: message.createdAt.toISOString(),
         readCount,
         sender: toPublicUser(userById.get(message.senderId)),
+        senderProfile: senderProfile
+          ? { id: senderProfile.id, type: senderProfile.type, handle: senderProfile.handle, displayName: senderProfile.displayName, profileImageUrl: senderProfile.profileImageUrl }
+          : null,
         replyTo: reply
           ? {
               id: reply.id,
@@ -297,6 +316,7 @@ async function serializeMessage(
 function serializeCreatedMessage(
   message: DbMessage,
   sender: DbUser | undefined,
+  senderProfile: CharacterProfileView,
 ): MessagePayload {
   return {
     id: message.id,
@@ -316,6 +336,13 @@ function serializeCreatedMessage(
     createdAt: message.createdAt.toISOString(),
     readCount: 0,
     sender: toPublicUser(sender),
+    senderProfile: {
+      id: senderProfile.id,
+      type: senderProfile.type,
+      handle: senderProfile.handle,
+      displayName: senderProfile.displayName,
+      profileImageUrl: senderProfile.profileImageUrl,
+    },
     replyTo: null,
     stickerBadges: [],
     linkPreview: null,
@@ -494,6 +521,8 @@ router.post(
     // sticker code, or file metadata), so room previews and push notifications
     // use a label.
     const preview = previewForMessage(input.type, input.content);
+    const profileState = await ensureCharacterProfileState(userId);
+    const activeProfileId = profileState.activeProfile.id;
     const directRoom = await getDirectRoomPeer(raw, userId);
     if (directRoom.isDirect && !directRoom.peerId) {
       res.status(409).json({ error: "Invalid direct room membership" });
@@ -545,6 +574,7 @@ router.post(
         .values({
           roomId: raw,
           senderId: userId,
+          senderProfileId: activeProfileId,
           content: input.content,
           type: input.type,
           replyToMessageId: input.replyToMessageId,
@@ -601,7 +631,7 @@ router.post(
     // optimistically in this request. Hydrate those responses fully; the common
     // newly-created path only needs the lightweight acknowledgement above.
     const payload = createdResult.created
-      ? serializeCreatedMessage(message, sender)
+      ? serializeCreatedMessage(message, sender, profileState.activeProfile)
       : await serializeMessage(
           message,
           userId,
@@ -976,6 +1006,7 @@ router.post(
       forwarded.value.type,
       forwarded.value.content,
     );
+    const activeProfileId = (await ensureCharacterProfileState(userId)).activeProfile.id;
     const directRoom = await getDirectRoomPeer(targetRoomId, userId);
     if (directRoom.isDirect && !directRoom.peerId) {
       res.status(409).json({ error: "Invalid direct room membership" });
@@ -1031,6 +1062,7 @@ router.post(
         .values({
           roomId: targetRoomId,
           senderId: userId,
+          senderProfileId: activeProfileId,
           content: forwarded.value.content,
           type: forwarded.value.type,
           clientMessageId: forwarded.value.clientMessageId,

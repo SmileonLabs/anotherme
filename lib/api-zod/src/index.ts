@@ -26,3 +26,10 @@ export { CreateClanWarBody, SubmitClanWarArgumentBody } from "./generated/api";
 // expose the type-only shape under an explicit alias.
 export { ResolveStarFeedReportBody } from "./generated/api";
 export type { ResolveStarFeedReportBody as ResolveStarFeedReportBodyType } from "./generated/types";
+
+// Keep the runtime validation schema canonical while preserving access to the
+// generated request body type without a barrel export collision.
+export { UpdateMyActiveCharacterProfileBody } from "./generated/api";
+export type { UpdateMyActiveCharacterProfileBody as UpdateMyActiveCharacterProfileBodyType } from "./generated/types/updateMyActiveCharacterProfileBody";
+export { UpdateMyCharacterProfileBody } from "./generated/api";
+export type { UpdateMyCharacterProfileBody as UpdateMyCharacterProfileBodyType } from "./generated/types/updateMyCharacterProfileBody";

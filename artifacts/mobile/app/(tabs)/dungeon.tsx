@@ -134,10 +134,9 @@ export default function LifeQuestLobbyScreen() {
 
         {missionReady && activeQuest ? (
           <Pressable
-            onPress={() =>
-              router.push({ pathname: "/dungeon/[id]", params: { id: activeQuest.id } })
-            }
-            style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+            disabled
+            accessibilityState={{ disabled: true }}
+            accessibilityLabel="진행 중인 성장 RPG 준비 중"
           >
             <LinearGradient
               colors={(isDark ? gradientsDark : gradients).soft}
@@ -164,11 +163,11 @@ export default function LifeQuestLobbyScreen() {
         ) : null}
 
         <Pressable
-          onPress={() => start(null)}
-          disabled={busy || !missionReady}
-          style={({ pressed }) => [
+          disabled
+          accessibilityState={{ disabled: true }}
+          style={[
             styles.randomBtn,
-            { backgroundColor: colors.primary, opacity: pressed || busy || !missionReady ? 0.55 : 1 },
+            { backgroundColor: colors.primary, opacity: 0.55 },
           ]}
         >
           {starting === "random" ? (
@@ -188,14 +187,14 @@ export default function LifeQuestLobbyScreen() {
             return (
               <Pressable
                 key={t.key}
-                onPress={() => start(t.key)}
-                disabled={busy || !missionReady}
-                style={({ pressed }) => [
+                disabled
+                accessibilityState={{ disabled: true }}
+                style={[
                   styles.themeCard,
                   {
                     backgroundColor: colors.card,
                     borderColor: colors.border,
-                    opacity: pressed || !missionReady || (busy && !loading) ? 0.6 : 1,
+                    opacity: 0.6,
                   },
                 ]}
               >
@@ -250,9 +249,9 @@ function MissionGate({
       <Text style={[styles.gateBody, { color: colors.mutedForeground }]}>{body}</Text>
       {starUnlocked && hasStar && mode !== "star" ? (
         <Pressable
-          onPress={onSwitchStar}
-          disabled={isChanging}
-          style={[styles.gateButton, { backgroundColor: colors.primary, opacity: isChanging ? 0.7 : 1 }]}
+          disabled
+          accessibilityState={{ disabled: true }}
+          style={[styles.gateButton, { backgroundColor: colors.primary, opacity: 0.55 }]}
         >
           {isChanging ? <ActivityIndicator color="#fff" /> : <Text style={styles.gateButtonText}>STAR 모드로 전환</Text>}
         </Pressable>
@@ -314,11 +313,11 @@ function TorimiaPanel({
       ) : null}
       {!promoted ? (
         <Pressable
-          onPress={onOpen}
-          disabled={!canOpen || isOpening}
+          disabled
+          accessibilityState={{ disabled: true }}
           style={[
             styles.torimiaButton,
-            { backgroundColor: canOpen ? "#8B5CF6" : colors.border, opacity: isOpening ? 0.75 : 1 },
+            { backgroundColor: canOpen ? "#8B5CF6" : colors.border, opacity: 0.55 },
           ]}
         >
           {isOpening ? (

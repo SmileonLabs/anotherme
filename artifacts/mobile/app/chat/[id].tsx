@@ -853,8 +853,8 @@ export default function ChatScreen() {
             isMe={isMe}
             isDM={isDM}
             isAnotherMe={isAnotherMe}
-            senderName={isAnotherMe ? anotherMeOwnerName : userDisplayName(item.sender as any, "")}
-            senderAvatar={(item.sender as any)?.profileImageUrl}
+            senderName={isAnotherMe ? anotherMeOwnerName : (item.senderProfile?.displayName ?? userDisplayName(item.sender as any, ""))}
+            senderAvatar={item.senderProfile?.profileImageUrl ?? (item.sender as any)?.profileImageUrl}
             time={formatMsgTime(item.createdAt)}
             type={item.type}
             imageUri={item.type === "image" ? item.content : undefined}

@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useGetMe, useUpdateMe } from "@workspace/api-client-react";
+import { useGetMe } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
 import { ImageTooLargeError, uploadBlob } from "@/lib/uploadImage";
 import { Avatar } from "@/components/Avatar";
@@ -24,14 +24,15 @@ import { ImageCropModal } from "@/components/ImageCropModal";
 import { useColors } from "@/hooks/useColors";
 import { profileHistoryQueryKey } from "@/hooks/useProfileHistory";
 import { starFeedQueryKey } from "@/hooks/useStarFeed";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { data: me, refetch } = useGetMe();
-  const updateMe = useUpdateMe();
+  const { data: me } = useGetMe();
+  const { activeProfile, updateProfile, isUpdating } = useCharacterProfiles();
 
   const [nickname, setNickname] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -41,13 +42,13 @@ export default function EditProfileScreen() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (me) {
-      setNickname(me.nickname);
-      setStatusMessage(me.statusMessage ?? "");
+    if (activeProfile) {
+      setNickname(activeProfile.displayName);
+      setStatusMessage(activeProfile.statusMessage ?? "");
     }
-  }, [me]);
+  }, [activeProfile]);
 
-  const previewUri = imagePath !== undefined ? imagePath : me?.profileImageUrl;
+  const previewUri = imagePath !== undefined ? imagePath : activeProfile?.profileImageUrl;
 
   const handlePickAvatar = async () => {
     if (uploading) return;
@@ -105,22 +106,24 @@ export default function EditProfileScreen() {
     }
   };
 
-  const saving = uploading || updateMe.isPending;
+  const saving = uploading || isUpdating;
 
   const handleSave = async () => {
     if (!nickname.trim()) {
       crossAlert("닉네임을 입력해주세요");
       return;
     }
+    if (!activeProfile) {
+      crossAlert("오류", "활성 프로필을 불러오지 못했습니다.");
+      return;
+    }
     try {
-      await updateMe.mutateAsync({
-        data: {
-          nickname: nickname.trim(),
-          statusMessage: statusMessage.trim() || null,
-          ...(imagePath !== undefined ? { profileImageUrl: imagePath } : {}),
-        },
+      await updateProfile({
+        profileId: activeProfile.id,
+        displayName: nickname.trim(),
+        statusMessage: statusMessage.trim() || null,
+        ...(imagePath !== undefined ? { profileImageUrl: imagePath } : {}),
       });
-      await refetch();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: starFeedQueryKey }),
         queryClient.invalidateQueries({ queryKey: profileHistoryQueryKey }),
@@ -143,7 +146,7 @@ export default function EditProfileScreen() {
       >
         <View style={styles.avatarSection}>
           <Pressable onPress={handlePickAvatar} disabled={uploading} style={styles.avatarPress}>
-            <Avatar uri={previewUri} name={me?.nickname ?? "?"} size={90} />
+            <Avatar uri={previewUri} name={activeProfile?.displayName ?? "?"} size={90} />
             <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
               {uploading ? (
                 <ActivityIndicator color="#fff" size="small" />
@@ -162,12 +165,12 @@ export default function EditProfileScreen() {
 
         <View style={styles.form}>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>닉네임</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>활동 프로필 이름</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.input, color: colors.foreground, borderColor: colors.border }]}
               value={nickname}
               onChangeText={setNickname}
-              placeholder="닉네임"
+              placeholder="프로필 이름"
               placeholderTextColor={colors.mutedForeground}
               maxLength={30}
             />

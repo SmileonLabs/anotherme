@@ -10,6 +10,8 @@ if (fs.existsSync(barrel)) {
   const markers = new Map([
     ["export * from './globalSearchResponse';", "// GlobalSearchResponse is exported from generated/api as the canonical Zod schema."],
     ["export * from './blockSearchTrendingTermBody';", "// BlockSearchTrendingTermBody is exported from generated/api as the canonical Zod schema."],
+    ["export * from './updateMyActiveCharacterProfileBody';", "// UpdateMyActiveCharacterProfileBody is exported from generated/api as the canonical Zod schema."],
+    ["export * from './updateMyCharacterProfileBody';", "// UpdateMyCharacterProfileBody is exported from generated/api as the canonical Zod schema."],
   ]);
   let next = source;
   for (const [marker, replacement] of markers) next = next.replace(marker, replacement);

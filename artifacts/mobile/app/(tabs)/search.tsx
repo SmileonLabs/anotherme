@@ -222,18 +222,16 @@ export default function SearchScreen() {
           <Feather name="search" size={22} color="#8F8C9E" />
           <TextInput
             value={query}
-            onChangeText={setQuery}
-            placeholder="비비, 팬아트, 퀸, 미션 검색"
+            editable={false}
+            selectTextOnFocus={false}
+            placeholder="검색 기능 준비 중"
             placeholderTextColor="#777486"
             style={styles.input}
             autoCapitalize="none"
             returnKeyType="search"
           />
-          {query ? <Pressable accessibilityRole="button" accessibilityLabel="검색어 지우기" onPress={() => setQuery("")} hitSlop={12}>
-            <Feather name="x" size={19} color="#B14CFF" />
-          </Pressable> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel={`검색 필터: ${selectedFilterLabel}`} onPress={() => { setPendingSearchType(searchType); setFilterOpen(true); }} hitSlop={12}>
-            <Feather name="sliders" size={19} color="#B14CFF" />
+          <Pressable disabled accessibilityState={{ disabled: true }} accessibilityLabel="검색 필터 준비 중" hitSlop={12}>
+            <Feather name="sliders" size={19} color="#5F5969" />
           </Pressable>
         </View>
 
@@ -268,7 +266,7 @@ export default function SearchScreen() {
         >
           {trendingQuery.isLoading ? <ActivityIndicator color={neon.purple} style={styles.trendingLoader} /> : trendingQuery.data?.items.length ? <View style={styles.trendingRow}>
             {trendingQuery.data.items.map((item) => (
-              <Pressable key={item.term} onPress={() => setQuery(item.term)} style={styles.trendingItem}>
+              <Pressable key={item.term} disabled accessibilityState={{ disabled: true }} style={styles.trendingItem}>
                 <Text style={styles.trendingRank}>{item.rank}.</Text>
                 <Text style={styles.trendingText} numberOfLines={1}>{item.term}</Text>
                 {item.change > 0 ? <Feather name="arrow-up-right" size={12} color={neon.magenta} /> : item.change < 0 ? <Feather name="arrow-down-right" size={12} color={neon.cyan} /> : null}

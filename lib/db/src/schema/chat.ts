@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { characterProfilesTable } from "./characterProfiles";
 
 export const chatRoomsTable = pgTable("chat_rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -45,6 +46,7 @@ export const messagesTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     roomId: uuid("room_id").notNull().references(() => chatRoomsTable.id, { onDelete: "cascade" }),
     senderId: uuid("sender_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    senderProfileId: uuid("sender_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     authorKind: text("author_kind").notNull().default("user"),
     type: text("type").notNull().default("text"),
     content: text("content").notNull(),
@@ -64,6 +66,7 @@ export const messagesTable = pgTable(
     // room_id and orders by created_at — the hottest query under 3s polling.
     index("messages_room_id_created_at_idx").on(t.roomId, t.createdAt),
     index("messages_room_id_room_seq_idx").on(t.roomId, t.roomSeq),
+    index("messages_sender_profile_id_idx").on(t.senderProfileId),
     uniqueIndex("messages_room_id_room_seq_unique_idx")
       .on(t.roomId, t.roomSeq)
       .where(sql`${t.roomSeq} > 0`),

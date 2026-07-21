@@ -30,6 +30,7 @@ import { usePlayMode } from "@/hooks/usePlayMode";
 import { pvtWalletQueryKey } from "@/hooks/usePvtWallet";
 import { useStarFeed, type StarFeedPost } from "@/hooks/useStarFeed";
 import { useMediaUri } from "@/hooks/useMediaUri";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 import { FAN_STAT_META } from "@/constants/fanStats";
 
 const BONUS_GRADIENT = ["#3B2A6B", "#5B3FA0"] as const;
@@ -143,6 +144,7 @@ export default function HomeScreen() {
     refetch: refetchPlayMode,
     setMode,
   } = usePlayMode();
+  const { activeProfile, profiles: characterProfiles, activateProfile } = useCharacterProfiles();
   const equippedStarImageUri = useMediaUri(equippedStar?.imageUrl);
   const { posts: feedPosts, refetch: refetchFeed } = useStarFeed();
   const { data: myClan, refetch: refetchClan } = useGetMyClan();
@@ -286,7 +288,14 @@ export default function HomeScreen() {
     if (nextMode === "star" && (!starUnlocked || !equippedStar)) {
       return;
     }
-    void setMode(nextMode);
+    const candidate = nextMode === "star"
+      ? characterProfiles.find((profile) => profile.id === equippedStar?.id && profile.status === "active")
+      : characterProfiles.find((profile) => profile.type === "fan" && profile.status === "active");
+    if (candidate && candidate.id !== activeProfile?.id) {
+      void activateProfile(candidate.id);
+    } else {
+      void setMode(nextMode);
+    }
   };
   const playPrimaryLabel = activePlayMode === "star"
     ? equippedStar
@@ -457,8 +466,9 @@ export default function HomeScreen() {
 
           <View style={styles.playCardActions}>
             <Pressable
-              onPress={handlePlayPrimaryPress}
-              style={({ pressed }) => [styles.playActionPrimary, { opacity: pressed ? 0.86 : 1 }]}
+              disabled
+              accessibilityState={{ disabled: true }}
+              style={[styles.playActionPrimary, styles.playActionDisabled]}
             >
               <Feather name={playPrimaryIcon} size={15} color="#fff" />
               <Text style={styles.playActionPrimaryText} numberOfLines={1}>
@@ -466,9 +476,9 @@ export default function HomeScreen() {
               </Text>
             </Pressable>
             <Pressable
-              onPress={() => router.push("/profile/ranking")}
-              disabled={starLocked}
-              style={({ pressed }) => [styles.playActionGhost, starLocked && styles.playActionDisabled, { opacity: pressed ? 0.72 : 1 }]}
+              disabled
+              accessibilityState={{ disabled: true }}
+              style={[styles.playActionGhost, styles.playActionDisabled]}
             >
               <Feather name="bar-chart-2" size={15} color="#E8DDFF" />
               <Text style={styles.playActionGhostText}>상세 성장 리포트</Text>
@@ -479,14 +489,25 @@ export default function HomeScreen() {
 
         {/* Daily quests */}
         <View style={styles.missionSection}>
+          <View style={styles.missionHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="미션 더보기"
+              onPress={() => router.push("/(tabs)/dungeon" as never)}
+              style={({ pressed }) => [styles.missionMore, pressed && { opacity: 0.65 }]}
+            >
+              <Text style={styles.missionMoreText}>미션 더보기</Text>
+              <Feather name="chevron-right" size={15} color="#BCA7E8" />
+            </Pressable>
+          </View>
           <View style={styles.questRow}>
             {todayMissions.map((mission) => (
               <Pressable
                 key={mission.key}
-                accessibilityRole="button"
-                accessibilityLabel={`${mission.title} 바로가기`}
-                onPress={mission.onPress}
-                style={({ pressed }) => [styles.missionCard, { borderColor: `${mission.color}66`, opacity: pressed ? 0.78 : 1 }]}
+                disabled
+                accessibilityState={{ disabled: true }}
+                accessibilityLabel={`${mission.title} 준비 중`}
+                style={[styles.missionCard, { borderColor: `${mission.color}66` }]}
               >
                 <LinearGradient
                   pointerEvents="none"
@@ -505,10 +526,10 @@ export default function HomeScreen() {
         </View>
 
         <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="토로미아 문으로 가기"
-          onPress={() => router.push("/(tabs)/dungeon" as never)}
-          style={({ pressed }) => [styles.torimiaBanner, { opacity: pressed ? 0.84 : 1 }]}
+          disabled
+          accessibilityState={{ disabled: true }}
+          accessibilityLabel="토로미아 콘텐츠 준비 중"
+          style={styles.torimiaBanner}
         >
           <LinearGradient
             colors={["#150827", "#090518", "#12113A"]}
@@ -982,6 +1003,9 @@ const styles = StyleSheet.create({
   missionSection: {
     gap: 0,
   },
+  missionHeader: { flexDirection: "row", justifyContent: "flex-end", marginBottom: 8 },
+  missionMore: { flexDirection: "row", alignItems: "center", gap: 2, paddingVertical: 4 },
+  missionMoreText: { color: "#BCA7E8", fontSize: 12, fontFamily: "Inter_700Bold" },
   questRow: { flexDirection: "row", gap: 8 },
   missionCard: {
     flex: 1,

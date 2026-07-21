@@ -5,6 +5,7 @@ import { db, starProfilesTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { ensurePlayModeState } from "../lib/fanStar";
 import { recordReward } from "../lib/growth";
+import { ensureCharacterProfileState } from "../lib/characterProfiles";
 import {
   STAR_FEED_COMMENT_BODY_MAX,
   STAR_FEED_LIST_LIMIT_DEFAULT,
@@ -160,6 +161,7 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
     body: parsed.data.body,
     media: parsed.data.media,
     authorStarProfileId: playState?.equippedStar?.id ?? null,
+    authorProfileId: (await ensureCharacterProfileState(req.dbUser!.id)).activeProfile.id,
     targetStarProfileId: kind === "star" ? playState?.equippedStar?.id ?? null : parsed.data.targetStarProfileId ?? null,
   });
   if (kind === "star") await createStarPostActivities(post);
