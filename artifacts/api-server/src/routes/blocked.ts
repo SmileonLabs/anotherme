@@ -6,6 +6,7 @@ import { blockedUsersTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { toPublicUser } from "../lib/publicUser";
 import { lockUserPair } from "../lib/chatDelivery";
+import { getActiveCharacterIdentityMap } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 const blockUserSchema = z.object({ blockedUserId: z.uuid() }).strict();
@@ -17,10 +18,17 @@ router.get("/blocked", requireAuth, async (req, res): Promise<void> => {
     .from(blockedUsersTable)
     .where(eq(blockedUsersTable.blockerUserId, userId));
 
+  const identities = await getActiveCharacterIdentityMap(blocked.map((row) => row.blockedUserId));
   const users = await Promise.all(
     blocked.map(async (b) => {
       const [u] = await db.select().from(usersTable).where(eq(usersTable.id, b.blockedUserId));
-      return u ? toPublicUser(u) : null;
+      const profile = u ? identities.get(u.id) ?? null : null;
+      return u ? {
+        ...toPublicUser(u),
+        nickname: profile?.displayName ?? u.nickname,
+        profileImageUrl: profile?.profileImageUrl ?? null,
+        profile,
+      } : null;
     }),
   );
 

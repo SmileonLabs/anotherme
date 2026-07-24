@@ -11,6 +11,7 @@ export {
   GetUsersUserIdPostsParams,
   GetUsersUserIdGrowthRecordsParams,
   GetUsersUserIdBattleResultsParams,
+  GetPublicCharacterProfileParams,
   PostFanCommunitiesIdBroadcastsBody,
   PostFanCommunitiesIdMissionsBody,
 } from "./generated/api";

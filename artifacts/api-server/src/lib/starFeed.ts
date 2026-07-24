@@ -58,6 +58,7 @@ export interface StarFeedPostView {
   title: string;
   body: string;
   metadata: Record<string, unknown> | null;
+  hashtags: string[];
   media: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }>;
   status: string;
   visibility: string;
@@ -81,6 +82,7 @@ type PostRow = {
   title: string;
   body: string;
   metadata: Record<string, unknown> | null;
+  hashtags: string[];
   media: Array<{ objectPath: string; mediaType: "image" | "video"; altText?: string }> | null;
   status: string;
   visibility: string;
@@ -105,12 +107,22 @@ type PostRow = {
 const targetStarProfilesTable = alias(starProfilesTable, "target_star_profiles");
 
 function serializeAuthor(row: Pick<PostRow, "authorUserId" | "authorNickname" | "authorProfileImageUrl" | "authorActivityProfileId" | "authorActivityProfileType" | "authorActivityProfileHandle" | "authorActivityProfileName" | "authorActivityProfileImageUrl" | "authorStarProfileId" | "authorStarDisplayName" | "authorStarImageUrl" | "authorStarStage">, followedStarProfileIds = new Set<string>()): StarFeedAuthorView {
+  const characterProfileImageUrl =
+    row.authorActivityProfileType === "fan" &&
+    row.authorActivityProfileImageUrl === row.authorProfileImageUrl
+      ? null
+      : row.authorActivityProfileImageUrl;
   return {
     id: row.authorActivityProfileId,
     nickname: row.authorActivityProfileName ?? row.authorNickname ?? "STAR 공식",
-    profileImageUrl: row.authorActivityProfileImageUrl ?? row.authorProfileImageUrl,
+    // An activity profile must never fall back to the private account photo.
+    // Legacy FAN rows may still contain a copied account image, so treat an
+    // identical URL as missing and let the client render its character asset.
+    profileImageUrl: row.authorActivityProfileId
+      ? characterProfileImageUrl
+      : null,
     activityProfile: row.authorActivityProfileId && row.authorActivityProfileType && row.authorActivityProfileHandle && row.authorActivityProfileName
-      ? { id: row.authorActivityProfileId, type: row.authorActivityProfileType, handle: row.authorActivityProfileHandle, displayName: row.authorActivityProfileName, profileImageUrl: row.authorActivityProfileImageUrl }
+      ? { id: row.authorActivityProfileId, type: row.authorActivityProfileType, handle: row.authorActivityProfileHandle, displayName: row.authorActivityProfileName, profileImageUrl: characterProfileImageUrl }
       : null,
     starProfile: row.authorStarProfileId && row.authorStarDisplayName && row.authorStarStage
       ? { id: row.authorStarProfileId, displayName: row.authorStarDisplayName, imageUrl: row.authorStarImageUrl, stage: row.authorStarStage, followedByMe: followedStarProfileIds.has(row.authorStarProfileId) }
@@ -189,6 +201,7 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
     title: row.title,
     body: row.body,
     metadata: serializeMetadataForViewer(row, meUserId),
+    hashtags: row.hashtags ?? [],
     media: row.media ?? [],
     status: row.status,
     visibility: row.visibility,
@@ -238,6 +251,7 @@ async function selectPostRows(where?: ReturnType<typeof eq>): Promise<PostRow[]>
       title: starFeedPostsTable.title,
       body: starFeedPostsTable.body,
       metadata: starFeedPostsTable.metadata,
+      hashtags: starFeedPostsTable.hashtags,
       media: starFeedPostsTable.media,
       status: starFeedPostsTable.status,
       visibility: starFeedPostsTable.visibility,
@@ -273,8 +287,10 @@ export async function listStarFeedPosts(
   meUserId: string,
   limit = STAR_FEED_LIST_LIMIT_DEFAULT,
   scope: "recommended" | "following" = "recommended",
-): Promise<StarFeedPostView[]> {
+  cursor?: string,
+): Promise<{ items: StarFeedPostView[]; nextCursor: string | null }> {
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
+  const viewerProfileId = (await ensureCharacterProfileState(meUserId)).activeProfile.id;
   const rows = await db
     .select({
       id: starFeedPostsTable.id,
@@ -282,6 +298,7 @@ export async function listStarFeedPosts(
       title: starFeedPostsTable.title,
       body: starFeedPostsTable.body,
       metadata: starFeedPostsTable.metadata,
+      hashtags: starFeedPostsTable.hashtags,
       media: starFeedPostsTable.media,
       status: starFeedPostsTable.status,
       visibility: starFeedPostsTable.visibility,
@@ -307,9 +324,13 @@ export async function listStarFeedPosts(
     .leftJoin(characterProfilesTable, eq(characterProfilesTable.id, starFeedPostsTable.authorProfileId))
     .leftJoin(starProfilesTable, eq(starProfilesTable.id, starFeedPostsTable.authorStarProfileId))
     .leftJoin(targetStarProfilesTable, eq(targetStarProfilesTable.id, starFeedPostsTable.targetStarProfileId))
-    .where(sql`${scope === "following" ? sql`
+    .where(and(sql`${scope === "following" ? sql`
       (${starFeedPostsTable.authorUserId} = ${meUserId}
-       OR EXISTS (SELECT 1 FROM star_profile_follows sf WHERE sf.follower_user_id = ${meUserId} AND sf.star_profile_id = ${starFeedPostsTable.authorStarProfileId}))
+       OR EXISTS (
+         SELECT 1 FROM character_profile_follows cpf
+         WHERE cpf.follower_profile_id = ${viewerProfileId}
+           AND cpf.followed_profile_id = ${starFeedPostsTable.authorProfileId}
+       ))
       AND ${starFeedPostsTable.visibility} = 'PUBLIC' AND ${starFeedPostsTable.status} = 'PUBLISHED'
     ` : sql`
       (${starFeedPostsTable.visibility} = 'PUBLIC' AND ${starFeedPostsTable.status} = 'PUBLISHED')
@@ -322,11 +343,15 @@ export async function listStarFeedPosts(
              OR (f.user_b_id = ${meUserId} AND f.user_a_id = ${starFeedPostsTable.authorUserId})
         )
       )
-    `}`)
+    `}`, ...(cursor ? [lt(starFeedPostsTable.createdAt, new Date(cursor))] : [])))
     .orderBy(desc(starFeedPostsTable.createdAt))
     .limit(safeLimit);
 
-  return decoratePosts(meUserId, rows);
+  const items = await decoratePosts(meUserId, rows);
+  return {
+    items,
+    nextCursor: rows.length === safeLimit ? rows[rows.length - 1].createdAt.toISOString() : null,
+  };
 }
 
 export async function listPublicStarFeedPostsByAuthor(
@@ -345,6 +370,7 @@ export async function listPublicStarFeedPostsByAuthor(
       title: starFeedPostsTable.title,
       body: starFeedPostsTable.body,
       metadata: starFeedPostsTable.metadata,
+      hashtags: starFeedPostsTable.hashtags,
       media: starFeedPostsTable.media,
       status: starFeedPostsTable.status,
       visibility: starFeedPostsTable.visibility,
@@ -556,6 +582,17 @@ export async function cheerStarFeedPost(meUserId: string, postId: string, actorP
     .values({ postId, userId: meUserId, profileId, reactionType: "cheer" })
     .onConflictDoNothing({ target: [starFeedReactionsTable.postId, starFeedReactionsTable.profileId] });
 
+  return getStarFeedPost(meUserId, postId);
+}
+
+export async function uncheerStarFeedPost(meUserId: string, postId: string, actorProfileId?: string): Promise<StarFeedPostView | null> {
+  const post = await getStarFeedPost(meUserId, postId);
+  if (!post) return null;
+  const profileId = actorProfileId ?? (await ensureCharacterProfileState(meUserId)).activeProfile.id;
+  await db.delete(starFeedReactionsTable).where(and(
+    eq(starFeedReactionsTable.postId, postId),
+    eq(starFeedReactionsTable.profileId, profileId),
+  ));
   return getStarFeedPost(meUserId, postId);
 }
 

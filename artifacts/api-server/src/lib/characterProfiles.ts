@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
   activeCharacterProfilesTable,
   characterProfileFollowsTable,
@@ -11,6 +11,7 @@ import {
   officialAiAccountsTable,
   officialAiCharacterProfilesTable,
   starCharacterProfilesTable,
+  starFeedPostsTable,
   starProfilesTable,
   userPlayModesTable,
   usersTable,
@@ -45,12 +46,81 @@ export interface CharacterProfileState {
   profiles: CharacterProfileView[];
 }
 
+export interface ActiveCharacterIdentity {
+  id: string;
+  type: CharacterProfileType;
+  handle: string;
+  displayName: string;
+  profileImageUrl: string | null;
+  statusMessage: string | null;
+}
+
+/**
+ * Resolves the public identity for member-facing surfaces. This is the single
+ * boundary that prevents the legacy account photo from leaking back into UI.
+ */
+export async function getActiveCharacterIdentityMap(
+  userIds: string[],
+): Promise<Map<string, ActiveCharacterIdentity>> {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      userId: activeCharacterProfilesTable.userId,
+      id: characterProfilesTable.id,
+      type: characterProfilesTable.type,
+      handle: characterProfilesTable.handle,
+      displayName: characterProfilesTable.displayName,
+      profileImageUrl: characterProfilesTable.profileImageUrl,
+      statusMessage: characterProfilesTable.statusMessage,
+      accountProfileImageUrl: usersTable.profileImageUrl,
+    })
+    .from(activeCharacterProfilesTable)
+    .innerJoin(
+      characterProfilesTable,
+      eq(characterProfilesTable.id, activeCharacterProfilesTable.activeProfileId),
+    )
+    .innerJoin(usersTable, eq(usersTable.id, activeCharacterProfilesTable.userId))
+    .where(inArray(activeCharacterProfilesTable.userId, uniqueIds));
+
+  return new Map(
+    rows.map((row) => [
+      row.userId,
+      {
+        id: row.id,
+        type: row.type,
+        handle: row.handle,
+        displayName: row.displayName,
+        profileImageUrl:
+          row.type === "fan" && row.profileImageUrl === row.accountProfileImageUrl
+            ? null
+            : row.profileImageUrl,
+        statusMessage: row.statusMessage,
+      },
+    ]),
+  );
+}
+
 function fanHandle(userId: string): string {
   return `fan-${userId.replaceAll("-", "")}`;
 }
 
 function starHandle(profileId: string): string {
   return `star-${profileId.replaceAll("-", "")}`;
+}
+
+async function sanitizeFanProfileImageUrl(
+  userId: string,
+  candidate: string | null | undefined,
+): Promise<string | null | undefined> {
+  if (!candidate) return candidate;
+  const [account] = await db
+    .select({ profileImageUrl: usersTable.profileImageUrl })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return candidate === account?.profileImageUrl ? null : candidate;
 }
 
 async function ensureLegacyProfileRows(userId: string): Promise<void> {
@@ -88,7 +158,9 @@ async function ensureLegacyProfileRows(userId: string): Promise<void> {
           type: "fan",
           handle: fanHandle(userId),
           displayName: user.nickname,
-          profileImageUrl: user.profileImageUrl,
+          // FAN profiles are character identities. Account photos belong to
+          // the private member account and must not become character avatars.
+          profileImageUrl: null,
           statusMessage: user.statusMessage,
           level: legacyFan.level,
           xp: legacyFan.xp,
@@ -231,20 +303,26 @@ async function ensureLegacyProfileRows(userId: string): Promise<void> {
 }
 
 async function readCharacterProfileState(userId: string): Promise<CharacterProfileState> {
-  const [selection] = await db
-    .select()
-    .from(activeCharacterProfilesTable)
-    .where(eq(activeCharacterProfilesTable.userId, userId));
-  const profiles = await db
-    .select()
-    .from(characterProfilesTable)
-    .where(
-      and(
-        eq(characterProfilesTable.ownerUserId, userId),
-        isNull(characterProfilesTable.archivedAt),
-      ),
-    )
-    .orderBy(asc(characterProfilesTable.type), desc(characterProfilesTable.updatedAt));
+  const [[selection], profiles, [account]] = await Promise.all([
+    db
+      .select()
+      .from(activeCharacterProfilesTable)
+      .where(eq(activeCharacterProfilesTable.userId, userId)),
+    db
+      .select()
+      .from(characterProfilesTable)
+      .where(
+        and(
+          eq(characterProfilesTable.ownerUserId, userId),
+          isNull(characterProfilesTable.archivedAt),
+        ),
+      )
+      .orderBy(asc(characterProfilesTable.type), desc(characterProfilesTable.updatedAt)),
+    db
+      .select({ profileImageUrl: usersTable.profileImageUrl })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId)),
+  ]);
   if (!selection || profiles.length === 0) throw new Error("Character profile state is unavailable");
 
   const views = profiles.map<CharacterProfileView>((profile) => ({
@@ -252,7 +330,10 @@ async function readCharacterProfileState(userId: string): Promise<CharacterProfi
     type: profile.type,
     handle: profile.handle,
     displayName: profile.displayName,
-    profileImageUrl: profile.profileImageUrl,
+    profileImageUrl:
+      profile.type === "fan" && profile.profileImageUrl === account?.profileImageUrl
+        ? null
+        : profile.profileImageUrl,
     statusMessage: profile.statusMessage,
     status: profile.status,
     level: profile.level,
@@ -285,7 +366,7 @@ export async function resolveCharacterProfileActor(
     (error as Error & { code?: string }).code = "PROFILE_NOT_OWNED";
     throw error;
   }
-  if (profile.status !== "active") {
+  if (profile.status !== "active" && profile.status !== "torimia") {
     const error = new Error("Profile is unavailable");
     (error as Error & { code?: string }).code = "PROFILE_UNAVAILABLE";
     throw error;
@@ -299,10 +380,12 @@ export async function createFanCharacterProfile(
     displayName: string;
     handle?: string;
     profileImageUrl?: string | null;
+    customizeDefault?: boolean;
     customization: Record<string, unknown>;
   },
 ): Promise<CharacterProfileState> {
   await ensureLegacyProfileRows(userId);
+  const safeProfileImageUrl = await sanitizeFanProfileImageUrl(userId, input.profileImageUrl);
   const state = await readCharacterProfileState(userId);
   const fanProfiles = state.profiles.filter((profile) => profile.type === "fan");
   const fanDetails = await db
@@ -313,18 +396,15 @@ export async function createFanCharacterProfile(
     && fanDetails.length === 1
     && Object.keys(fanDetails[0]!.customization).length === 0;
 
-  if (!firstFanIsUncustomized && !canCreateAdditionalFan(fanProfiles)) {
-    const error = new Error("An existing FAN must reach Torimia before another FAN can be created");
-    (error as Error & { code?: string }).code = "FAN_EXPANSION_LOCKED";
-    throw error;
-  }
-
-  if (firstFanIsUncustomized) {
+  if (firstFanIsUncustomized && input.customizeDefault === true) {
     const profile = fanProfiles[0]!;
     await db.transaction(async (tx) => {
       await tx.update(characterProfilesTable).set({
         displayName: input.displayName,
-        profileImageUrl: input.profileImageUrl ?? profile.profileImageUrl,
+        profileImageUrl:
+          input.profileImageUrl === undefined
+            ? profile.profileImageUrl
+            : safeProfileImageUrl ?? null,
         metadata: { ...profile.metadata, onboardingCustomized: true },
         updatedAt: new Date(),
       }).where(eq(characterProfilesTable.id, profile.id));
@@ -332,6 +412,12 @@ export async function createFanCharacterProfile(
         .where(eq(fanCharacterProfilesTable.profileId, profile.id));
     });
     return activateCharacterProfile(userId, profile.id);
+  }
+
+  if (!canCreateAdditionalFan(fanProfiles)) {
+    const error = new Error("An existing FAN must reach Torimia before another FAN can be created");
+    (error as Error & { code?: string }).code = "FAN_EXPANSION_LOCKED";
+    throw error;
   }
 
   const generation = fanProfiles.length + 1;
@@ -343,8 +429,8 @@ export async function createFanCharacterProfile(
       type: "fan",
       handle,
       displayName: input.displayName,
-      profileImageUrl: input.profileImageUrl ?? null,
-      stats: { charm: 0, supportPower: 0, bond: 0, influence: 0 },
+      profileImageUrl: safeProfileImageUrl ?? null,
+      stats: { fanPower: 0, supportPower: 0, empathy: 0, story: 0 },
       metadata: { onboardingCustomized: true, generation },
     }).returning();
     const profile = rows[0];
@@ -378,7 +464,11 @@ export async function archiveCharacterProfile(
     (error as Error & { code?: string }).code = "LAST_PROFILE_REQUIRED";
     throw error;
   }
-  const replacement = state.profiles.find((profile) => profile.id !== profileId && profile.status === "active");
+  const replacement = state.profiles.find(
+    (profile) =>
+      profile.id !== profileId &&
+      (profile.status === "active" || profile.status === "torimia"),
+  );
   if (!replacement) {
     const error = new Error("No active replacement profile is available");
     (error as Error & { code?: string }).code = "REPLACEMENT_PROFILE_REQUIRED";
@@ -387,9 +477,34 @@ export async function archiveCharacterProfile(
   await db.transaction(async (tx) => {
     await tx.update(characterProfilesTable).set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(characterProfilesTable.id, profileId), eq(characterProfilesTable.ownerUserId, userId)));
+    if (target.type === "star") {
+      await tx
+        .update(starProfilesTable)
+        .set({ equippedAt: null, updatedAt: new Date() })
+        .where(and(eq(starProfilesTable.id, profileId), eq(starProfilesTable.userId, userId)));
+    }
     if (target.isActive) {
-      await tx.update(activeCharacterProfilesTable).set({ activeProfileId: replacement.id, updatedAt: new Date() })
+      await tx.update(activeCharacterProfilesTable).set({
+        activeProfileId: replacement.id,
+        ...(replacement.type === "fan" ? { lastFanProfileId: replacement.id } : {}),
+        ...(replacement.type === "star" ? { lastStarProfileId: replacement.id } : {}),
+        updatedAt: new Date(),
+      })
         .where(eq(activeCharacterProfilesTable.userId, userId));
+      await tx
+        .update(userPlayModesTable)
+        .set({ currentMode: replacement.type === "star" ? "star" : "fan" })
+        .where(eq(userPlayModesTable.userId, userId));
+      await tx
+        .update(starProfilesTable)
+        .set({ equippedAt: null, updatedAt: new Date() })
+        .where(eq(starProfilesTable.userId, userId));
+      if (replacement.type === "star") {
+        await tx
+          .update(starProfilesTable)
+          .set({ equippedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(starProfilesTable.id, replacement.id), eq(starProfilesTable.userId, userId)));
+      }
     }
   });
   return readCharacterProfileState(userId);
@@ -416,7 +531,7 @@ export async function activateCharacterProfile(
       (error as Error & { code?: string }).code = "PROFILE_NOT_FOUND";
       throw error;
     }
-    if (profile.status !== "active") {
+    if (profile.status !== "active" && profile.status !== "torimia") {
       const error = new Error("Profile is not active");
       (error as Error & { code?: string }).code = "PROFILE_UNAVAILABLE";
       throw error;
@@ -464,9 +579,32 @@ export async function updateCharacterProfile(
   changes: { displayName?: string; profileImageUrl?: string | null; statusMessage?: string | null },
 ): Promise<CharacterProfileState> {
   await ensureLegacyProfileRows(userId);
+  const [target] = await db
+    .select({ type: characterProfilesTable.type })
+    .from(characterProfilesTable)
+    .where(
+      and(
+        eq(characterProfilesTable.id, profileId),
+        eq(characterProfilesTable.ownerUserId, userId),
+        isNull(characterProfilesTable.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (!target) {
+    const error = new Error("Profile not found");
+    (error as Error & { code?: string }).code = "PROFILE_NOT_FOUND";
+    throw error;
+  }
+  const safeChanges =
+    target.type === "fan" && Object.prototype.hasOwnProperty.call(changes, "profileImageUrl")
+      ? {
+          ...changes,
+          profileImageUrl: await sanitizeFanProfileImageUrl(userId, changes.profileImageUrl),
+        }
+      : changes;
   const [updated] = await db
     .update(characterProfilesTable)
-    .set({ ...changes, updatedAt: new Date() })
+    .set({ ...safeChanges, updatedAt: new Date() })
     .where(
       and(
         eq(characterProfilesTable.id, profileId),
@@ -490,27 +628,73 @@ export async function getPublicCharacterProfile(viewerUserId: string, profileId:
     .where(and(eq(characterProfilesTable.id, profileId), isNull(characterProfilesTable.archivedAt)))
     .limit(1);
   if (!profile || (profile.status !== "active" && profile.ownerUserId !== viewerUserId)) return null;
+  const [ownerAccount] = await db
+    .select({ profileImageUrl: usersTable.profileImageUrl })
+    .from(usersTable)
+    .where(eq(usersTable.id, profile.ownerUserId))
+    .limit(1);
   const viewerProfileId = (await ensureCharacterProfileState(viewerUserId)).activeProfile.id;
-  const [[followers], [following], [followedByMe]] = await Promise.all([
+  const [[followers], [following], [followedByMe], [posts]] = await Promise.all([
     db.select({ value: count() }).from(characterProfileFollowsTable).where(eq(characterProfileFollowsTable.followedProfileId, profileId)),
     db.select({ value: count() }).from(characterProfileFollowsTable).where(eq(characterProfileFollowsTable.followerProfileId, profileId)),
     db.select({ value: count() }).from(characterProfileFollowsTable).where(and(eq(characterProfileFollowsTable.followerProfileId, viewerProfileId), eq(characterProfileFollowsTable.followedProfileId, profileId))),
+    db.select({ value: count() }).from(starFeedPostsTable).where(and(eq(starFeedPostsTable.authorProfileId, profileId), eq(starFeedPostsTable.status, "PUBLISHED"))),
   ]);
+  const metadata = profile.metadata ?? {};
+  const metadataCharacterImage =
+    typeof metadata.characterImageUrl === "string"
+      ? metadata.characterImageUrl
+      : typeof metadata.heroImageUrl === "string"
+        ? metadata.heroImageUrl
+        : null;
+  const safeProfileImageUrl =
+    profile.type === "fan" && profile.profileImageUrl === ownerAccount?.profileImageUrl
+      ? null
+      : profile.profileImageUrl;
+  const safeMetadataCharacterImage =
+    metadataCharacterImage === ownerAccount?.profileImageUrl
+      ? null
+      : metadataCharacterImage;
+  const metadataJobLabel =
+    typeof metadata.jobLabel === "string"
+      ? metadata.jobLabel.trim()
+      : typeof metadata.category === "string"
+        ? metadata.category.trim()
+        : "";
+  const normalizedJobKey = profile.jobKey
+    ?.split(/[:_-]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+  const fallbackJobLabel =
+    profile.type === "fan"
+      ? "팬클럽 회원"
+      : profile.type === "official_ai"
+        ? "공식 AI"
+        : "STAR";
   return {
     id: profile.id,
     type: profile.type,
     handle: profile.handle,
     displayName: profile.displayName,
-    profileImageUrl: profile.profileImageUrl,
+    profileImageUrl: safeProfileImageUrl,
     statusMessage: profile.statusMessage,
     level: profile.level,
     xp: profile.xp,
+    jobKey: profile.jobKey,
+    jobStage: profile.jobStage,
+    jobLabel: metadataJobLabel || normalizedJobKey || fallbackJobLabel,
+    characterImageUrl:
+      profile.type === "fan"
+        ? safeMetadataCharacterImage
+        : safeMetadataCharacterImage ?? safeProfileImageUrl,
     stats: profile.stats,
     metadata: profile.metadata,
     isMine: profile.ownerUserId === viewerUserId,
     followedByMe: Number(followedByMe?.value ?? 0) > 0,
     followerCount: Number(followers?.value ?? 0),
     followingCount: Number(following?.value ?? 0),
+    postCount: Number(posts?.value ?? 0),
     ownerUserId: profile.ownerUserId,
   };
 }

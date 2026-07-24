@@ -353,7 +353,8 @@ export default function BattleScreen() {
                   type={m.type}
                   isMe={isMe}
                   senderName={m.sender?.nickname}
-                  senderAvatar={m.sender?.profileImageUrl ?? null}
+                  senderAvatar={(m as any).senderProfile?.profileImageUrl ?? null}
+                  senderCharacterType={(m as any).senderProfile?.type}
                   showSender={!isMe && m.type !== "system"}
                   time={formatMsgTime(m.createdAt)}
                   isDM={m.type === "system"}

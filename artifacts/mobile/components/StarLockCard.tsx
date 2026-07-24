@@ -26,7 +26,13 @@ function errorMessage(err: unknown, fallback: string) {
   return fallback;
 }
 
-export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
+export function StarLockCard({
+  onConnect,
+  onSummoned,
+}: {
+  onConnect?: () => void;
+  onSummoned?: (profileId: string) => void;
+}) {
   const colors = useColors();
   const { scheme } = useThemeMode();
   const isDark = scheme === "dark";
@@ -209,6 +215,7 @@ export function StarLockCard({ onConnect }: { onConnect?: () => void }) {
     try {
       const result = await equipStar(value, selectedCollectionId);
       setFeedback(`${result.equippedStar.displayName} NFT를 장착했어요.`);
+      onSummoned?.(result.equippedStar.id);
     } catch (err) {
       setFeedback(errorMessage(err, "NFT를 장착하지 못했어요."));
     }

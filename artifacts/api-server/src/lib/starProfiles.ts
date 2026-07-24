@@ -2,10 +2,12 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { getAddress } from "viem";
 import {
   DEFAULT_STAR_STATS,
+  activeCharacterProfilesTable,
   characterGrowthEventsTable,
   characterProfilesTable,
   db,
   starGrowthEventsTable,
+  starCharacterProfilesTable,
   starProfilesTable,
   userPlayModesTable,
   userWalletsTable,
@@ -302,14 +304,6 @@ export async function activateStarProfile(params: {
   return active;
 }
 
-async function setStarUnlocked(userId: string): Promise<void> {
-  await db.insert(userPlayModesTable).values({ userId }).onConflictDoNothing();
-  await db
-    .update(userPlayModesTable)
-    .set({ starUnlocked: true, currentMode: "star" })
-    .where(eq(userPlayModesTable.userId, userId));
-}
-
 export async function equipStarNft(params: {
   userId: string;
   tokenId: string;
@@ -388,7 +382,7 @@ export async function equipStarNft(params: {
       eq(starProfilesTable.ownershipStatus, "verified"),
     ));
     const otherTokenProfiles = sameCollectionProfiles.filter((candidate) => candidate.tokenId !== tokenId);
-    if (otherTokenProfiles.length > 0 && !otherTokenProfiles.some((candidate) => candidate.stage === "promoted" || candidate.torimiaOpenedAt !== null)) {
+    if (otherTokenProfiles.some((candidate) => candidate.stage !== "promoted" && candidate.torimiaOpenedAt === null)) {
       throw new StarProfileError("collection_expansion_locked", "같은 컬렉션의 기존 STAR가 토르미아에 도달해야 추가 소환할 수 있어요.");
     }
   }
@@ -419,14 +413,15 @@ export async function equipStarNft(params: {
         ...(nftImageUrl ? { nftImageUrl } : {}),
       }
     : null;
-  const [profile] = await db.transaction(async (tx) => {
+  const profile = await db.transaction(async (tx) => {
     await tx
       .update(starProfilesTable)
       .set({ equippedAt: null })
       .where(eq(starProfilesTable.userId, params.userId));
 
+    let profileRows: StarProfile[];
     if (existingProfile?.userId === params.userId && existingProfile.ownershipStatus === "verified") {
-      return tx.update(starProfilesTable).set({
+      profileRows = await tx.update(starProfilesTable).set({
         walletAddress,
         collectionId: collection?.id ?? null,
         category: collection?.category ?? "idol",
@@ -438,16 +433,15 @@ export async function equipStarNft(params: {
         equippedAt: now,
         updatedAt: now,
       }).where(eq(starProfilesTable.id, existingProfile.id)).returning();
-    }
+    } else {
+      if (existingProfile && existingProfile.userId !== params.userId && existingProfile.ownershipStatus === "verified") {
+        await tx.update(starProfilesTable).set({ ownershipStatus: "transferred", equippedAt: null, updatedAt: now })
+          .where(eq(starProfilesTable.id, existingProfile.id));
+        await tx.update(characterProfilesTable).set({ status: "locked", updatedAt: now })
+          .where(eq(characterProfilesTable.id, existingProfile.id));
+      }
 
-    if (existingProfile && existingProfile.userId !== params.userId && existingProfile.ownershipStatus === "verified") {
-      await tx.update(starProfilesTable).set({ ownershipStatus: "transferred", equippedAt: null, updatedAt: now })
-        .where(eq(starProfilesTable.id, existingProfile.id));
-      await tx.update(characterProfilesTable).set({ status: "locked", updatedAt: now })
-        .where(eq(characterProfilesTable.id, existingProfile.id));
-    }
-
-    return tx.insert(starProfilesTable).values({
+      profileRows = await tx.insert(starProfilesTable).values({
         userId: params.userId,
         walletAddress,
         chainId: config.chainId!,
@@ -463,10 +457,86 @@ export async function equipStarNft(params: {
         equippedAt: now,
       })
       .returning();
+    }
+
+    const nextProfile = profileRows[0];
+    if (!nextProfile) throw new Error("star profile equip failed");
+
+    const characterMetadata = {
+      category: nextProfile.category,
+      starKey: nextProfile.starKey,
+      collectionId: nextProfile.collectionId,
+      ...(collection ? { ipName: collection.ipName } : {}),
+    };
+    await tx
+      .insert(characterProfilesTable)
+      .values({
+        id: nextProfile.id,
+        ownerUserId: params.userId,
+        type: "star",
+        handle: `star-${nextProfile.id.replaceAll("-", "").slice(0, 20)}`,
+        displayName: nextProfile.displayName,
+        profileImageUrl: nextProfile.imageUrl,
+        status: "active",
+        level: nextProfile.level,
+        xp: nextProfile.xp,
+        stats: {
+          charm: nextProfile.stats.charm,
+          stagePresence: nextProfile.stats.stagePresence,
+          bond: nextProfile.stats.bond,
+          lore: nextProfile.stats.lore,
+        },
+        metadata: characterMetadata,
+      })
+      .onConflictDoUpdate({
+        target: characterProfilesTable.id,
+        set: {
+          displayName: nextProfile.displayName,
+          profileImageUrl: nextProfile.imageUrl,
+          status: "active",
+          level: nextProfile.level,
+          xp: nextProfile.xp,
+          stats: {
+            charm: nextProfile.stats.charm,
+            stagePresence: nextProfile.stats.stagePresence,
+            bond: nextProfile.stats.bond,
+            lore: nextProfile.stats.lore,
+          },
+          metadata: characterMetadata,
+          archivedAt: null,
+          updatedAt: now,
+        },
+      });
+    await tx
+      .insert(starCharacterProfilesTable)
+      .values({ profileId: nextProfile.id, starProfileId: nextProfile.id })
+      .onConflictDoNothing();
+    await tx
+      .insert(activeCharacterProfilesTable)
+      .values({
+        userId: params.userId,
+        activeProfileId: nextProfile.id,
+        lastStarProfileId: nextProfile.id,
+      })
+      .onConflictDoUpdate({
+        target: activeCharacterProfilesTable.userId,
+        set: {
+          activeProfileId: nextProfile.id,
+          lastStarProfileId: nextProfile.id,
+          updatedAt: now,
+        },
+      });
+    await tx
+      .insert(userPlayModesTable)
+      .values({ userId: params.userId, starUnlocked: true, currentMode: "star" })
+      .onConflictDoUpdate({
+        target: userPlayModesTable.userId,
+        set: { starUnlocked: true, currentMode: "star" },
+      });
+
+    return nextProfile;
   });
 
-  if (!profile) throw new Error("star profile equip failed");
-  await setStarUnlocked(params.userId);
   await recordStarActivity({
     userId: params.userId,
     starProfileId: profile.id,

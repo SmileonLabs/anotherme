@@ -120,6 +120,8 @@ export default function ProfileHistoryScreen() {
                     uri={item.oldProfileImageUrl}
                     name="이전 프로필"
                     size={46}
+                    crop="face"
+                    characterType="fan"
                   />
                   <Feather
                     name="arrow-right"
@@ -130,6 +132,8 @@ export default function ProfileHistoryScreen() {
                     uri={item.newProfileImageUrl}
                     name="새 프로필"
                     size={46}
+                    crop="face"
+                    characterType="fan"
                   />
                 </View>
               ) : item.oldProfileImageUrl !== null ? (
@@ -138,6 +142,8 @@ export default function ProfileHistoryScreen() {
                     uri={item.oldProfileImageUrl}
                     name="이전 프로필"
                     size={46}
+                    crop="face"
+                    characterType="fan"
                   />
                   <Feather
                     name="arrow-right"

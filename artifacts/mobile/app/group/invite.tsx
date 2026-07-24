@@ -97,7 +97,7 @@ export default function InviteGroupScreen() {
                 ]}
                 onPress={() => toggle(item.id)}
               >
-                <Avatar uri={item.profileImageUrl} name={displayName} size={46} />
+                <Avatar uri={item.profileImageUrl} name={displayName} size={46} crop="face" characterType={item.profile?.type} />
                 <View style={styles.rowInfo}>
                   <Text style={[styles.rowName, { color: colors.foreground }]}>{displayName}</Text>
                   <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.statusMessage || "AnotherMe 사용자"}</Text>

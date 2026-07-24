@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/EmptyState";
 import React from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -29,8 +30,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { playModeQueryKey } from "@/hooks/usePlayMode";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
+import { usePvtWallet } from "@/hooks/usePvtWallet";
 
 type TabKey = "daily" | "weekly" | "achievements";
+const TORIMIA_GATE_COST = 5_000;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "daily", label: "일일" },
@@ -46,13 +50,136 @@ const CATEGORY_ICON: Record<Achievement["category"], keyof typeof Feather.glyphM
   persona: "user",
 };
 
+const BASE_DAILY_QUESTS: readonly Quest[] = [
+  {
+    key: "daily_talk",
+    type: "daily",
+    title: "채팅 참여",
+    description: "채팅에서 메시지를 한 번 보내세요.",
+    progress: 0,
+    target: 1,
+    completed: false,
+    rewardClaimed: false,
+    rewardExp: 10,
+  },
+  {
+    key: "daily_like",
+    type: "daily",
+    title: "좋아요 미션",
+    description: "피드에서 마음에 드는 글을 한 번 응원하세요.",
+    progress: 0,
+    target: 1,
+    completed: false,
+    rewardClaimed: false,
+    rewardExp: 10,
+  },
+  {
+    key: "daily_attendance",
+    type: "daily",
+    title: "출석 미션",
+    description: "오늘 Another Me에 접속하세요.",
+    progress: 1,
+    target: 1,
+    completed: true,
+    rewardClaimed: false,
+    rewardExp: 10,
+  },
+] as const;
+
+const STAR_DAILY_QUEST: Quest = {
+  key: "daily_dungeon",
+  type: "daily",
+  title: "STAR 미션",
+  description: "STAR 미션에서 3번 선택하세요.",
+  progress: 0,
+  target: 3,
+  completed: false,
+  rewardClaimed: false,
+  rewardExp: 15,
+};
+
+const STAR_WEEKLY_QUESTS: readonly Quest[] = [
+  {
+    key: "weekly_dungeon",
+    type: "weekly",
+    title: "STAR 미션 마스터",
+    description: "STAR 미션에서 20번 선택하세요.",
+    progress: 0,
+    target: 20,
+    completed: false,
+    rewardClaimed: false,
+    rewardExp: 100,
+  },
+] as const;
+
+const FAN_WEEKLY_QUESTS: readonly Quest[] = [
+  {
+    key: "weekly_clan",
+    type: "weekly",
+    title: "팬클럽의 기둥",
+    description: "팬클럽 활동을 5번 하세요.",
+    progress: 0,
+    target: 5,
+    completed: false,
+    rewardClaimed: false,
+    rewardExp: 120,
+  },
+  {
+    key: "weekly_growth",
+    type: "weekly",
+    title: "꾸준한 팬 활동",
+    description: "일일 미션을 5개 완료하세요.",
+    progress: 0,
+    target: 5,
+    completed: false,
+    rewardClaimed: false,
+    rewardExp: 150,
+  },
+] as const;
+
+function mergeQuestCatalog(catalog: readonly Quest[], serverQuests: Quest[]): Quest[] {
+  const byKey = new Map(serverQuests.map((quest) => [quest.key, quest]));
+  return catalog.map((definition) => {
+    const serverQuest = byKey.get(definition.key);
+    if (!serverQuest) return { ...definition };
+    return {
+      ...definition,
+      progress: serverQuest.progress,
+      target: serverQuest.target,
+      completed: serverQuest.completed,
+      rewardClaimed: serverQuest.rewardClaimed,
+      rewardExp: serverQuest.rewardExp,
+    };
+  });
+}
+
 export default function QuestsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const {
+    activeProfile,
+    isLoading: profilesLoading,
+    isError: profilesError,
+    refetch: refetchProfiles,
+  } = useCharacterProfiles();
+  const starPointWallet = usePvtWallet();
+  const profileId = activeProfile?.id;
+  const profileQuestQueryKey = [
+    ...getGetMyQuestsQueryKey(),
+    profileId ?? "profile-pending",
+  ] as const;
+  const profileAchievementQueryKey = [
+    ...getGetMyAchievementsQueryKey(),
+    profileId ?? "profile-pending",
+  ] as const;
 
   const [tab, setTab] = React.useState<TabKey>("daily");
+  const [gateNotice, setGateNotice] = React.useState<{
+    title: string;
+    message: string;
+  } | null>(null);
 
   const {
     data: quests = [],
@@ -60,14 +187,34 @@ export default function QuestsScreen() {
     isError: questsError,
     refetch: refetchQuests,
     isRefetching: questsRefetching,
-  } = useGetMyQuests();
+  } = useGetMyQuests({
+    query: {
+      enabled: Boolean(profileId),
+      queryKey: profileQuestQueryKey,
+    },
+    request: {
+      headers: profileId
+        ? { "x-character-profile-id": profileId }
+        : undefined,
+    },
+  });
   const {
     data: achievements = [],
     isLoading: achLoading,
     isError: achError,
     refetch: refetchAchievements,
     isRefetching: achRefetching,
-  } = useGetMyAchievements();
+  } = useGetMyAchievements({
+    query: {
+      enabled: Boolean(profileId),
+      queryKey: profileAchievementQueryKey,
+    },
+    request: {
+      headers: profileId
+        ? { "x-character-profile-id": profileId }
+        : undefined,
+    },
+  });
 
   const [claimingKey, setClaimingKey] = React.useState<string | null>(null);
 
@@ -93,16 +240,77 @@ export default function QuestsScreen() {
     },
   });
 
-  const dailyQuests = quests.filter((q) => q.type === "daily");
-  const weeklyQuests = quests.filter((q) => q.type === "weekly");
+  const isStarProfile = activeProfile?.type === "star";
+  const visibleQuests = quests
+    .filter((quest) => {
+      if (["daily_battle", "daily_clan", "daily_analysis"].includes(quest.key)) return false;
+      if (quest.key === "weekly_debater") return false;
+      if (isStarProfile && ["weekly_clan", "weekly_growth"].includes(quest.key)) return false;
+      if (!isStarProfile && ["daily_dungeon", "weekly_dungeon"].includes(quest.key)) return false;
+      return true;
+    })
+    .map((quest) =>
+      quest.key === "daily_talk"
+        ? {
+            ...quest,
+            title: "채팅 참여",
+            description: "채팅에서 메시지를 한 번 보내세요.",
+          }
+        : quest,
+    );
+  const starAchievementKeys = ["first_dungeon", "first_dungeon_goal"];
+  const fanAchievementKeys = [
+    "first_clan_join",
+    "first_clan_memory",
+    "first_clan_war_win",
+    "clan_create",
+  ];
+  const visibleAchievements = achievements.filter((achievement) =>
+    (isStarProfile ? starAchievementKeys : fanAchievementKeys).includes(achievement.key),
+  );
+  const serverQuestKeys = new Set(visibleQuests.map((quest) => quest.key));
+  const dailyQuests = mergeQuestCatalog(
+    isStarProfile ? [...BASE_DAILY_QUESTS, STAR_DAILY_QUEST] : BASE_DAILY_QUESTS,
+    visibleQuests,
+  );
+  const weeklyQuests = mergeQuestCatalog(
+    isStarProfile ? STAR_WEEKLY_QUESTS : FAN_WEEKLY_QUESTS,
+    visibleQuests,
+  );
 
-  const refetchActive =
-    tab === "achievements" ? refetchAchievements : refetchQuests;
+  const refetchActive = React.useCallback(async () => {
+    if (!activeProfile) {
+      await Promise.all([refetchProfiles(), starPointWallet.refetch()]);
+      return;
+    }
+    if (tab === "achievements") {
+      await Promise.all([refetchAchievements(), starPointWallet.refetch()]);
+      return;
+    }
+    await Promise.all([refetchQuests(), starPointWallet.refetch()]);
+  }, [activeProfile, refetchAchievements, refetchProfiles, refetchQuests, starPointWallet.refetch, tab]);
   const isRefetching =
-    tab === "achievements" ? achRefetching : questsRefetching;
-  const missionTarget = dailyQuests.reduce((sum, quest) => sum + Math.max(quest.target, 1), 0);
-  const missionProgress = dailyQuests.reduce((sum, quest) => sum + Math.min(quest.progress, quest.target), 0);
-  const torimiaProgress = missionTarget > 0 ? Math.min(100, Math.round((missionProgress / missionTarget) * 100)) : 0;
+    starPointWallet.isRefetching ||
+    (tab === "achievements" ? achRefetching : questsRefetching);
+  const starPointBalance = Math.max(0, starPointWallet.data?.balance ?? 0);
+  const torimiaProgress = Math.min(
+    100,
+    Math.floor((starPointBalance / TORIMIA_GATE_COST) * 100),
+  );
+  const torimiaRemaining = Math.max(0, TORIMIA_GATE_COST - starPointBalance);
+  const tryOpenTorimiaGate = React.useCallback(() => {
+    if (starPointBalance < TORIMIA_GATE_COST) {
+      setGateNotice({
+        title: "STAR Point가 부족해요",
+        message: `현재 ${starPointBalance.toLocaleString()} Point를 보유하고 있어요.\n토르미아 문을 열려면 ${torimiaRemaining.toLocaleString()} Point가 더 필요해요.`,
+      });
+      return;
+    }
+    setGateNotice({
+      title: "토르미아 문 열기",
+      message: "5,000 STAR Point를 달성했어요. 실제 문 열기 기능은 추후 업데이트될 예정이에요.",
+    });
+  }, [starPointBalance, torimiaRemaining]);
 
   return (
     <NeonBackdrop style={styles.container}>
@@ -140,14 +348,21 @@ export default function QuestsScreen() {
           />
           <View pointerEvents="none" style={styles.heroGlow} />
           <View style={styles.missionHeroCopy}>
-            <Text style={styles.missionHeroTitle}>토로미아 문 열기 미션</Text>
-            <Text style={styles.missionHeroBody}>1000스타를 소모하여{`\n`}메타버스로 캐릭터를 전송합니다.</Text>
+            <Text style={styles.missionHeroTitle}>토르미아 문 열기</Text>
+            <Text style={styles.missionHeroBody}>5,000 STAR Point를 모아{`\n`}토르미아의 문을 여세요.</Text>
             <Text style={styles.missionPercent}>{torimiaProgress}%</Text>
             <View style={styles.missionTrack}><View style={[styles.missionFill, { width: `${torimiaProgress}%` }]} /></View>
-            <Text style={styles.missionRemain}>토로미아 문 열 자격까지 {Math.max(0, 100 - torimiaProgress)}% 남았어요</Text>
+            <Text style={styles.missionBalance}>
+              {starPointBalance.toLocaleString()} / {TORIMIA_GATE_COST.toLocaleString()} STAR Point
+            </Text>
+            <Text style={styles.missionRemain}>
+              문 열기까지 {torimiaRemaining.toLocaleString()} Point 남았어요
+            </Text>
           </View>
           <Pressable
-            onPress={() => router.push("/(tabs)/dungeon")}
+            accessibilityRole="button"
+            accessibilityLabel="토르미아 문 열기 시도"
+            onPress={tryOpenTorimiaGate}
             style={({ pressed }) => [styles.gateButton, pressed && { opacity: 0.78 }]}
           >
             <Text style={styles.gateButtonText}>문 열기 시도</Text>
@@ -167,11 +382,11 @@ export default function QuestsScreen() {
         </View>
 
         {tab === "achievements" ? (
-          achLoading ? (
+          profilesLoading || (!activeProfile && !profilesError) || achLoading ? (
             <Loading colors={colors} />
-          ) : achError ? (
-            <ErrorBlock colors={colors} onRetry={refetchAchievements} />
-          ) : achievements.length === 0 ? (
+          ) : profilesError || achError ? (
+            <ErrorBlock colors={colors} onRetry={refetchActive} />
+          ) : visibleAchievements.length === 0 ? (
             <View style={styles.emptyWrap}>
               <EmptyState
                 icon="award"
@@ -182,9 +397,11 @@ export default function QuestsScreen() {
           ) : (
             <>
               <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-                  STAR 미션과 활동으로 잠금 해제하고 FAN XP 보상을 받으세요.
+                {isStarProfile
+                  ? "STAR 미션으로 잠금 해제하고 STAR XP 보상을 받으세요."
+                  : "팬클럽 활동으로 잠금 해제하고 FAN XP 보상을 받으세요."}
               </Text>
-              {achievements.map((a) => (
+              {visibleAchievements.map((a) => (
                 <AchievementRow
                   key={a.key}
                   achievement={a}
@@ -195,10 +412,10 @@ export default function QuestsScreen() {
               ))}
             </>
           )
-        ) : questsLoading ? (
+        ) : profilesLoading || (!activeProfile && !profilesError) || questsLoading ? (
           <Loading colors={colors} />
-        ) : questsError ? (
-          <ErrorBlock colors={colors} onRetry={refetchQuests} />
+        ) : profilesError || questsError ? (
+          <ErrorBlock colors={colors} onRetry={refetchActive} />
         ) : (
           (() => {
             const list = tab === "daily" ? dailyQuests : weeklyQuests;
@@ -220,6 +437,7 @@ export default function QuestsScreen() {
                   <QuestRow
                     key={q.key}
                     quest={q}
+                    claimSupported={serverQuestKeys.has(q.key)}
                     colors={colors}
                     claiming={claimingKey === `quest:${q.key}`}
                     onClaim={() => claimQuest({ questKey: q.key })}
@@ -234,6 +452,30 @@ export default function QuestsScreen() {
           })()
         )}
       </CustomScrollView>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={gateNotice !== null}
+        onRequestClose={() => setGateNotice(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard}>
+            <View style={styles.noticeIcon}>
+              <Feather name="star" size={25} color="#C873FF" />
+            </View>
+            <Text style={styles.noticeTitle}>{gateNotice?.title}</Text>
+            <Text style={styles.noticeMessage}>{gateNotice?.message}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="토르미아 안내 확인"
+              onPress={() => setGateNotice(null)}
+              style={({ pressed }) => [styles.noticeButton, pressed && { opacity: 0.78 }]}
+            >
+              <Text style={styles.noticeButtonText}>확인</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </NeonBackdrop>
   );
 }
@@ -294,12 +536,14 @@ function questDestination(quest: Quest): string | null {
 
 function QuestRow({
   quest,
+  claimSupported,
   colors,
   claiming,
   onClaim,
   onOpen,
 }: {
   quest: Quest;
+  claimSupported: boolean;
   colors: ReturnType<typeof useColors>;
   claiming: boolean;
   onClaim: () => void;
@@ -354,7 +598,7 @@ function QuestRow({
           <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
             {Math.min(quest.progress, quest.target)} / {quest.target}
           </Text>
-          {quest.completed || quest.rewardClaimed ? (
+          {claimSupported && (quest.completed || quest.rewardClaimed) ? (
             <ClaimButton
               completed={quest.completed}
               claimed={quest.rewardClaimed}
@@ -548,9 +792,17 @@ const styles = StyleSheet.create({
   missionPercent: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 46, lineHeight: 55, marginTop: 22, textShadowColor: "rgba(178,76,255,0.35)", textShadowRadius: 10 },
   missionTrack: { width: "100%", height: 10, borderRadius: 5, backgroundColor: "rgba(100,91,133,0.24)", overflow: "hidden", marginTop: 5 },
   missionFill: { height: "100%", borderRadius: 5, backgroundColor: "#5918FF" },
-  missionRemain: { color: "#8E879A", fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 10 },
+  missionBalance: { color: "#C7BED5", fontFamily: "Inter_600SemiBold", fontSize: 10.5, marginTop: 9 },
+  missionRemain: { color: "#8E879A", fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 3 },
   gateButton: { position: "absolute", right: 14, bottom: 18, width: "38%", height: 48, paddingHorizontal: 16, borderRadius: 25, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#4F12E8", borderWidth: 1, borderColor: "#8A52FF", shadowColor: "#6D28FF", shadowOpacity: 0.55, shadowRadius: 12 },
   gateButtonText: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  noticeBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, backgroundColor: "rgba(1,1,8,0.78)" },
+  noticeCard: { width: "100%", maxWidth: 360, alignItems: "center", paddingHorizontal: 24, paddingTop: 25, paddingBottom: 20, borderRadius: 22, borderWidth: 1, borderColor: "rgba(181,91,255,0.62)", backgroundColor: "#0D0918", shadowColor: "#8B35FF", shadowOpacity: 0.35, shadowRadius: 18 },
+  noticeIcon: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: 26, backgroundColor: "rgba(115,38,214,0.24)" },
+  noticeTitle: { marginTop: 14, color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 19 },
+  noticeMessage: { marginTop: 9, color: "#B8B0C4", fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 20, textAlign: "center" },
+  noticeButton: { width: "100%", height: 46, marginTop: 20, alignItems: "center", justifyContent: "center", borderRadius: 23, backgroundColor: "#7132E8" },
+  noticeButtonText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 14 },
   listTitle: { color: "#F0ECF5", fontFamily: "Inter_700Bold", fontSize: 17, marginTop: 7, marginBottom: 2 },
   intro: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
   center: { paddingVertical: 80, alignItems: "center", gap: 14 },

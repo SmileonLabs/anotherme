@@ -67,17 +67,17 @@ const METRICS: Record<RankingScope, { key: string; label: string }[]> = {
   ],
   fan: [
     { key: "overall", label: "종합" },
-    { key: "fan_power", label: "팬 파워" },
+    { key: "fan_power", label: "매력" },
     { key: "support_power", label: "응원력" },
-    { key: "empathy", label: "공감" },
-    { key: "story", label: "스토리" },
+    { key: "empathy", label: "유대감" },
+    { key: "story", label: "영향력" },
   ],
   star: [
     { key: "overall", label: "종합" },
     { key: "charm", label: "매력" },
-    { key: "stage_presence", label: "무대감" },
-    { key: "bond", label: "유대" },
-    { key: "lore", label: "세계관" },
+    { key: "stage_presence", label: "스타성" },
+    { key: "bond", label: "유대감" },
+    { key: "lore", label: "영향력" },
   ],
   battle: [
     { key: "overall", label: "TP" },
@@ -377,7 +377,13 @@ function RankingRow({
           <Text style={[styles.rankNum, { color: colors.mutedForeground }]}>{item.rank}</Text>
         )}
       </View>
-      <Avatar uri={item.avatarUrl} name={item.displayName} size={40} />
+      <Avatar
+        uri={item.avatarUrl}
+        name={item.displayName}
+        size={40}
+        crop="face"
+        characterType={scope === "star" ? "star" : "fan"}
+      />
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {item.displayName}

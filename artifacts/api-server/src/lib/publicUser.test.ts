@@ -21,6 +21,12 @@ describe("public user privacy", () => {
     expect(result.accountKind).toBe("user");
   });
 
+  it("never exposes the legacy account photo as a public avatar", () => {
+    const account = user("clerk:user");
+    account.profileImageUrl = "/objects/private-account-photo.jpg";
+    expect(toPublicUser(account).profileImageUrl).toBeNull();
+  });
+
   it("classifies non-human accounts without exposing their identifiers", () => {
     expect(publicAccountKind(user("official:bibi"))).toBe("official");
     expect(publicAccountKind(user("system:dungeon-master"))).toBe("system");

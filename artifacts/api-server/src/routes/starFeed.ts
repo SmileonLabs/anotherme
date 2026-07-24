@@ -12,9 +12,11 @@ import {
   STAR_FEED_POST_BODY_MAX,
   STAR_FEED_POST_TITLE_MAX,
   cheerStarFeedPost,
+  uncheerStarFeedPost,
   commentStarFeedPost,
   createStarFeedPost,
   createStarPostActivities,
+  getStarFeedPost,
   listStarFeedPosts,
   listStarFeedActivities,
   markStarFeedActivitiesRead,
@@ -35,6 +37,7 @@ function requestProfileId(req: { header(name: string): string | undefined }): st
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   scope: z.enum(["recommended", "following"]).optional(),
+  cursor: z.string().datetime().optional(),
 });
 
 const createPostBodySchema = z.object({
@@ -66,8 +69,28 @@ router.get("/star-feed/posts", requireAuth, async (req, res): Promise<void> => {
   }
 
   res.json(
-    await listStarFeedPosts(req.dbUser!.id, parsed.data.limit ?? STAR_FEED_LIST_LIMIT_DEFAULT, parsed.data.scope ?? "recommended"),
+    await listStarFeedPosts(
+      req.dbUser!.id,
+      parsed.data.limit ?? STAR_FEED_LIST_LIMIT_DEFAULT,
+      parsed.data.scope ?? "recommended",
+      parsed.data.cursor,
+    ),
   );
+});
+
+router.get("/star-feed/posts/:id", requireAuth, async (req, res): Promise<void> => {
+  const postId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (!z.string().uuid().safeParse(postId).success) {
+    res.status(400).json({ error: "invalid", message: "잘못된 게시물 주소예요." });
+    return;
+  }
+
+  const post = await getStarFeedPost(req.dbUser!.id, postId);
+  if (!post || post.status !== "PUBLISHED") {
+    res.status(404).json({ error: "not_found", message: "게시물을 찾을 수 없어요." });
+    return;
+  }
+  res.json(post);
 });
 
 router.get("/star-feed/discover", requireAuth, async (req, res): Promise<void> => {
@@ -172,18 +195,23 @@ router.post("/star-feed/posts", requireAuth, async (req, res): Promise<void> => 
     targetStarProfileId: kind === "fan" ? parsed.data.targetStarProfileId ?? null : null,
   });
   if (kind === "star") await createStarPostActivities(post);
+  const rewardXp = kind === "fan" ? (parsed.data.targetStarProfileId ? 5 : 2) : 0;
+  let rewardGranted = false;
   if (kind === "fan") {
-    void recordReward({
+    rewardGranted = await recordReward({
       userId: req.dbUser!.id,
       sourceType: "system",
       eventType: "fan_support" as never,
       sourceKey: `fan_support:${post.id}`,
-      expDelta: parsed.data.targetStarProfileId ? 5 : 2,
+      expDelta: rewardXp,
       reason: parsed.data.targetStarProfileId ? "STAR 응원 활동" : "FAN 커뮤니티 활동",
       metadata: { targetStarProfileId: parsed.data.targetStarProfileId ?? null, postId: post.id },
-    }).catch(() => undefined);
+    }).catch(() => false);
   }
-  res.status(201).json(post);
+  res.status(201).json({
+    post,
+    reward: kind === "fan" ? { granted: rewardGranted, xp: rewardGranted ? rewardXp : 0, stat: "FAN XP" } : null,
+  });
 });
 
 router.post("/star-feed/posts/:id/reports", requireAuth, async (req, res): Promise<void> => {
@@ -239,6 +267,17 @@ router.post("/star-feed/posts/:id/reactions", requireAuth, async (req, res): Pro
   const post = await cheerStarFeedPost(req.dbUser!.id, postId, actor.id);
   if (!post) {
     res.status(404).json({ error: "not_found", message: "피드 글을 찾을 수 없어요." });
+    return;
+  }
+  res.json(post);
+});
+
+router.delete("/star-feed/posts/:id/reactions", requireAuth, async (req, res): Promise<void> => {
+  const postId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const actor = await resolveCharacterProfileActor(req.dbUser!.id, requestProfileId(req));
+  const post = await uncheerStarFeedPost(req.dbUser!.id, postId, actor.id);
+  if (!post) {
+    res.status(404).json({ error: "not_found", message: "피드 글을 찾을 수 없습니다." });
     return;
   }
   res.json(post);

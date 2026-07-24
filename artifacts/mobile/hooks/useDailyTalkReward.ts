@@ -37,7 +37,7 @@ export function dailyTalkRewardSyncDescription(status: DailyTalkRewardOntologySy
       return "동기화가 완료되지 않았어요. 나중에 다시 확인해 주세요.";
     case "none":
     default:
-      return "PVT를 받으면 원문 없이 요약/키워드/평가 점수만 동기화돼요.";
+      return "STAR Point를 받으면 원문 없이 요약/키워드/평가 점수만 동기화돼요.";
   }
 }
 

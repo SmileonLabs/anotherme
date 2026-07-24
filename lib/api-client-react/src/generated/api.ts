@@ -98,6 +98,9 @@ import type {
   GetMyCharacterProfileInventory200,
   GetMyCharacterProfileNotifications200,
   GetPersonaRankingsParams,
+  GetPublicCharacterProfileParams,
+  GetSearchRecommendations200,
+  GetSearchRecommendationsParams,
   GetServiceRankingsParams,
   GetStarFeedActivities200Item,
   GetTrendingSearches200,
@@ -169,6 +172,8 @@ import type {
   SearchUsersParams,
   ServiceRanking,
   StarFeedCommentInput,
+  StarFeedCreateResult,
+  StarFeedPage,
   StarFeedPost,
   StarFeedPostInput,
   StarFeedReport,
@@ -448,7 +453,7 @@ export const getGlobalSearchUrl = (params: GlobalSearchParams,) => {
 }
 
 /**
- * @summary Search public users, STAR profiles, and public feed posts
+ * @summary Search public profiles, STAR/FAN identities, public feed posts, and missions
  */
 export const globalSearch = async (params: GlobalSearchParams, options?: RequestInit): Promise<GlobalSearchResponse> => {
 
@@ -495,7 +500,7 @@ export type GlobalSearchQueryError = ErrorType<void>
 
 
 /**
- * @summary Search public users, STAR profiles, and public feed posts
+ * @summary Search public profiles, STAR/FAN identities, public feed posts, and missions
  */
 
 export function useGlobalSearch<TData = Awaited<ReturnType<typeof globalSearch>>, TError = ErrorType<void>>(
@@ -504,6 +509,90 @@ export function useGlobalSearch<TData = Awaited<ReturnType<typeof globalSearch>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGlobalSearchQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSearchRecommendationsUrl = (params?: GetSearchRecommendationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/search/recommendations?${stringifiedParams}` : `/api/search/recommendations`
+}
+
+/**
+ * @summary Get recommended public STAR and FAN character profiles
+ */
+export const getSearchRecommendations = async (params?: GetSearchRecommendationsParams, options?: RequestInit): Promise<GetSearchRecommendations200> => {
+
+  return customFetch<GetSearchRecommendations200>(getGetSearchRecommendationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSearchRecommendationsQueryKey = (params?: GetSearchRecommendationsParams,) => {
+    return [
+    `/api/search/recommendations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSearchRecommendationsQueryOptions = <TData = Awaited<ReturnType<typeof getSearchRecommendations>>, TError = ErrorType<void>>(params?: GetSearchRecommendationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSearchRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSearchRecommendationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSearchRecommendations>>> = ({ signal }) => getSearchRecommendations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSearchRecommendations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSearchRecommendationsQueryResult = NonNullable<Awaited<ReturnType<typeof getSearchRecommendations>>>
+export type GetSearchRecommendationsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get recommended public STAR and FAN character profiles
+ */
+
+export function useGetSearchRecommendations<TData = Awaited<ReturnType<typeof getSearchRecommendations>>, TError = ErrorType<void>>(
+ params?: GetSearchRecommendationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSearchRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSearchRecommendationsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -9747,9 +9836,9 @@ export const getListStarFeedPostsUrl = (params?: ListStarFeedPostsParams,) => {
 /**
  * @summary List STAR feed posts visible to me
  */
-export const listStarFeedPosts = async (params?: ListStarFeedPostsParams, options?: RequestInit): Promise<StarFeedPost[]> => {
+export const listStarFeedPosts = async (params?: ListStarFeedPostsParams, options?: RequestInit): Promise<StarFeedPage> => {
 
-  return customFetch<StarFeedPost[]>(getListStarFeedPostsUrl(params),
+  return customFetch<StarFeedPage>(getListStarFeedPostsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -9824,9 +9913,9 @@ export const getCreateStarFeedPostUrl = () => {
 /**
  * @summary Create a FAN or official STAR feed post
  */
-export const createStarFeedPost = async (starFeedPostInput: StarFeedPostInput, options?: RequestInit): Promise<StarFeedPost> => {
+export const createStarFeedPost = async (starFeedPostInput: StarFeedPostInput, options?: RequestInit): Promise<StarFeedCreateResult> => {
 
-  return customFetch<StarFeedPost>(getCreateStarFeedPostUrl(),
+  return customFetch<StarFeedCreateResult>(getCreateStarFeedPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -9883,6 +9972,83 @@ export const useCreateStarFeedPost = <TError = ErrorType<ApiError | PlayModeErro
       > => {
       return useMutation(getCreateStarFeedPostMutationOptions(options));
     }
+
+export const getGetStarFeedPostUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/posts/${id}`
+}
+
+/**
+ * @summary Get one STAR feed post visible to me
+ */
+export const getStarFeedPost = async (id: string, options?: RequestInit): Promise<StarFeedPost> => {
+
+  return customFetch<StarFeedPost>(getGetStarFeedPostUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStarFeedPostQueryKey = (id: string,) => {
+    return [
+    `/api/star-feed/posts/${id}`
+    ] as const;
+    }
+
+
+export const getGetStarFeedPostQueryOptions = <TData = Awaited<ReturnType<typeof getStarFeedPost>>, TError = ErrorType<ApiError>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarFeedPost>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStarFeedPostQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStarFeedPost>>> = ({ signal }) => getStarFeedPost(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStarFeedPost>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStarFeedPostQueryResult = NonNullable<Awaited<ReturnType<typeof getStarFeedPost>>>
+export type GetStarFeedPostQueryError = ErrorType<ApiError>
+
+
+/**
+ * @summary Get one STAR feed post visible to me
+ */
+
+export function useGetStarFeedPost<TData = Awaited<ReturnType<typeof getStarFeedPost>>, TError = ErrorType<ApiError>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStarFeedPost>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStarFeedPostQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getFollowStarProfileUrl = (id: string,) => {
 
@@ -10092,6 +10258,76 @@ export const useCheerStarFeedPost = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getCheerStarFeedPostMutationOptions(options));
+    }
+
+export const getUncheerStarFeedPostUrl = (id: string,) => {
+
+
+
+
+  return `/api/star-feed/posts/${id}/reactions`
+}
+
+/**
+ * @summary Remove my active profile reaction from a STAR feed post
+ */
+export const uncheerStarFeedPost = async (id: string, options?: RequestInit): Promise<StarFeedPost> => {
+
+  return customFetch<StarFeedPost>(getUncheerStarFeedPostUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUncheerStarFeedPostMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uncheerStarFeedPost>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uncheerStarFeedPost>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['uncheerStarFeedPost'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uncheerStarFeedPost>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  uncheerStarFeedPost(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UncheerStarFeedPostMutationResult = NonNullable<Awaited<ReturnType<typeof uncheerStarFeedPost>>>
+
+    export type UncheerStarFeedPostMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove my active profile reaction from a STAR feed post
+ */
+export const useUncheerStarFeedPost = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uncheerStarFeedPost>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uncheerStarFeedPost>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getUncheerStarFeedPostMutationOptions(options));
     }
 
 export const getCommentStarFeedPostUrl = (id: string,) => {
@@ -13466,20 +13702,29 @@ export function useGetUsersUserIdBattleResults<TData = Awaited<ReturnType<typeof
 
 
 
-export const getGetPublicCharacterProfileUrl = (profileId: string,) => {
+export const getGetPublicCharacterProfileUrl = (profileId: string,
+    params?: GetPublicCharacterProfileParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/profiles/${profileId}`
+  return stringifiedParams.length > 0 ? `/api/profiles/${profileId}?${stringifiedParams}` : `/api/profiles/${profileId}`
 }
 
 /**
  * @summary Get one public activity profile and its posts
  */
-export const getPublicCharacterProfile = async (profileId: string, options?: RequestInit): Promise<PublicCharacterProfileResponse> => {
+export const getPublicCharacterProfile = async (profileId: string,
+    params?: GetPublicCharacterProfileParams, options?: RequestInit): Promise<PublicCharacterProfileResponse> => {
 
-  return customFetch<PublicCharacterProfileResponse>(getGetPublicCharacterProfileUrl(profileId),
+  return customFetch<PublicCharacterProfileResponse>(getGetPublicCharacterProfileUrl(profileId,params),
   {
     ...options,
     method: 'GET'
@@ -13492,23 +13737,25 @@ export const getPublicCharacterProfile = async (profileId: string, options?: Req
 
 
 
-export const getGetPublicCharacterProfileQueryKey = (profileId: string,) => {
+export const getGetPublicCharacterProfileQueryKey = (profileId: string,
+    params?: GetPublicCharacterProfileParams,) => {
     return [
-    `/api/profiles/${profileId}`
+    `/api/profiles/${profileId}`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetPublicCharacterProfileQueryOptions = <TData = Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError = ErrorType<ApiError>>(profileId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetPublicCharacterProfileQueryOptions = <TData = Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError = ErrorType<ApiError>>(profileId: string,
+    params?: GetPublicCharacterProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetPublicCharacterProfileQueryKey(profileId);
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicCharacterProfileQueryKey(profileId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicCharacterProfile>>> = ({ signal }) => getPublicCharacterProfile(profileId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicCharacterProfile>>> = ({ signal }) => getPublicCharacterProfile(profileId,params, { signal, ...requestOptions });
 
 
 
@@ -13526,11 +13773,12 @@ export type GetPublicCharacterProfileQueryError = ErrorType<ApiError>
  */
 
 export function useGetPublicCharacterProfile<TData = Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError = ErrorType<ApiError>>(
- profileId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ profileId: string,
+    params?: GetPublicCharacterProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCharacterProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetPublicCharacterProfileQueryOptions(profileId,options)
+  const queryOptions = getGetPublicCharacterProfileQueryOptions(profileId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

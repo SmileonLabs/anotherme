@@ -173,6 +173,7 @@ function RootStackNav() {
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+      <Stack.Screen name="post/[postId]" options={{ headerShown: false }} />
       <Stack.Screen
         name="chat/[id]"
         options={{
@@ -195,7 +196,7 @@ function RootStackNav() {
       />
       <Stack.Screen
         name="group/create"
-        options={{ title: "그룹 채팅 만들기", headerBackTitle: "Back" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="group/invite"
@@ -216,6 +217,8 @@ function RootStackNav() {
         options={{ title: "프로필 수정", headerBackTitle: "Back" }}
       />
       <Stack.Screen name="profile/create-fan" options={{ headerShown: false }} />
+      <Stack.Screen name="profiles/index" options={{ headerShown: false }} />
+      <Stack.Screen name="profiles/summon-star" options={{ headerShown: false }} />
       <Stack.Screen name="profile/[userId]" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile/history"
@@ -235,7 +238,7 @@ function RootStackNav() {
       />
       <Stack.Screen
         name="pvt/wallet"
-        options={{ title: "PVT Point", headerBackTitle: "Back" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen name="friends/index" options={{ headerShown: false }} />
       <Stack.Screen name="settings/index" options={{ headerShown: false }} />

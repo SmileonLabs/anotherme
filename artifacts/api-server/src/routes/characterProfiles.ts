@@ -17,6 +17,10 @@ import { listPublicStarFeedPostsByAuthor } from "../lib/starFeed";
 
 const router: IRouter = Router();
 const activateSchema = z.object({ profileId: z.uuid() });
+const publicProfileQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(60).optional().default(30),
+  cursor: z.iso.datetime().optional(),
+});
 const updateSchema = z.object({
   displayName: z.string().trim().min(1).max(30).optional(),
   profileImageUrl: z.string().max(1024).nullable().optional(),
@@ -26,6 +30,7 @@ const createFanSchema = z.object({
   displayName: z.string().trim().min(1).max(30),
   handle: z.string().trim().min(3).max(24).optional(),
   profileImageUrl: z.string().max(1024).nullable().optional(),
+  customizeDefault: z.boolean().optional().default(false),
   customization: z.object({
     ageStyle: z.string().trim().min(1).max(30),
     hairStyle: z.string().trim().min(1).max(30),
@@ -157,12 +162,24 @@ router.get("/profiles/:profileId", requireAuth, async (req, res): Promise<void> 
     res.status(400).json({ error: "Invalid profile id" });
     return;
   }
+  const parsedQuery = publicProfileQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "Invalid profile query" });
+    return;
+  }
   const profile = await getPublicCharacterProfile(req.dbUser!.id, parsedId.data);
   if (!profile) {
     res.status(404).json({ error: "PROFILE_NOT_FOUND" });
     return;
   }
-  const posts = await listPublicStarFeedPostsByAuthor(req.dbUser!.id, profile.ownerUserId, 30, undefined, undefined, profile.id);
+  const posts = await listPublicStarFeedPostsByAuthor(
+    req.dbUser!.id,
+    profile.ownerUserId,
+    parsedQuery.data.limit,
+    undefined,
+    parsedQuery.data.cursor,
+    profile.id,
+  );
   const { ownerUserId: _ownerUserId, ...publicProfile } = profile;
   res.json({ profile: publicProfile, posts });
 });

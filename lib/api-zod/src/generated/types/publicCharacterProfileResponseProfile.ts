@@ -16,6 +16,13 @@ export type PublicCharacterProfileResponseProfile = CharacterProfileSummary & ({
   level: number;
   /** @minimum 0 */
   xp: number;
+  /** @nullable */
+  jobKey?: string | null;
+  /** @minimum 0 */
+  jobStage: number;
+  jobLabel: string;
+  /** @nullable */
+  characterImageUrl?: string | null;
   stats: PublicCharacterProfileResponseProfileStats;
   metadata: PublicCharacterProfileResponseProfileMetadata;
   isMine: boolean;
@@ -24,4 +31,6 @@ export type PublicCharacterProfileResponseProfile = CharacterProfileSummary & ({
   followerCount: number;
   /** @minimum 0 */
   followingCount: number;
+  /** @minimum 0 */
+  postCount: number;
 });

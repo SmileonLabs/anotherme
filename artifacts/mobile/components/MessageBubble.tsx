@@ -38,6 +38,7 @@ interface MessageBubbleProps {
   imageUri?: string;
   senderName?: string;
   senderAvatar?: string | null;
+  senderCharacterType?: "fan" | "star" | "official_ai";
   time: string;
   showSender?: boolean;
   readLabel?: string;
@@ -99,6 +100,7 @@ function MessageBubbleComponent({
   imageUri,
   senderName,
   senderAvatar,
+  senderCharacterType,
   time,
   showSender = false,
   readLabel,
@@ -553,7 +555,13 @@ function MessageBubbleComponent({
       ]}
     >
       {!isMe && (
-        <Avatar uri={senderAvatar} name={senderName ?? "?"} size={32} />
+        <Avatar
+          uri={senderAvatar}
+          name={senderName ?? "?"}
+          size={32}
+          crop="face"
+          characterType={senderCharacterType}
+        />
       )}
       <View style={[styles.bubbleWrap, isMe && styles.bubbleWrapMe]}>
         {!isMe && showSender && senderName ? (

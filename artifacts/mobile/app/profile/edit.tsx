@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,11 +28,14 @@ import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { profileId } = useLocalSearchParams<{ profileId?: string }>();
   const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
-  const { activeProfile, updateProfile, isUpdating } = useCharacterProfiles();
+  const { activeProfile, profiles, updateProfile, isUpdating } = useCharacterProfiles();
+  const targetProfile =
+    profiles.find((profile) => profile.id === profileId) ?? activeProfile;
 
   const [nickname, setNickname] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -42,13 +45,13 @@ export default function EditProfileScreen() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (activeProfile) {
-      setNickname(activeProfile.displayName);
-      setStatusMessage(activeProfile.statusMessage ?? "");
+    if (targetProfile) {
+      setNickname(targetProfile.displayName);
+      setStatusMessage(targetProfile.statusMessage ?? "");
     }
-  }, [activeProfile]);
+  }, [targetProfile]);
 
-  const previewUri = imagePath !== undefined ? imagePath : activeProfile?.profileImageUrl;
+  const previewUri = imagePath !== undefined ? imagePath : targetProfile?.profileImageUrl;
 
   const handlePickAvatar = async () => {
     if (uploading) return;
@@ -113,13 +116,13 @@ export default function EditProfileScreen() {
       crossAlert("닉네임을 입력해주세요");
       return;
     }
-    if (!activeProfile) {
-      crossAlert("오류", "활성 프로필을 불러오지 못했습니다.");
+    if (!targetProfile) {
+      crossAlert("오류", "프로필을 불러오지 못했습니다.");
       return;
     }
     try {
       await updateProfile({
-        profileId: activeProfile.id,
+        profileId: targetProfile.id,
         displayName: nickname.trim(),
         statusMessage: statusMessage.trim() || null,
         ...(imagePath !== undefined ? { profileImageUrl: imagePath } : {}),
@@ -146,7 +149,13 @@ export default function EditProfileScreen() {
       >
         <View style={styles.avatarSection}>
           <Pressable onPress={handlePickAvatar} disabled={uploading} style={styles.avatarPress}>
-            <Avatar uri={previewUri} name={activeProfile?.displayName ?? "?"} size={90} />
+            <Avatar
+              uri={previewUri}
+              name={targetProfile?.displayName ?? "?"}
+              size={90}
+              crop="face"
+              characterType={targetProfile?.type ?? "fan"}
+            />
             <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
               {uploading ? (
                 <ActivityIndicator color="#fff" size="small" />

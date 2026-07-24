@@ -35,7 +35,13 @@ export function BibiOfficialEntry({ onOpenRoom }: Props) {
         { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.72 : 1 },
       ]}
     >
-      <Avatar uri={account?.profileImageUrl ?? null} name={displayName} size={42} />
+      <Avatar
+        uri={account?.profileImageUrl ?? null}
+        name={displayName}
+        size={42}
+        crop="face"
+        characterType="official_ai"
+      />
       <View style={styles.copy}>
         <View style={styles.nameRow}>
           <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>{displayName}</Text>

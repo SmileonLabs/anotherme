@@ -14,7 +14,10 @@ const fs = require("fs");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const OUTPUT_DIR = "web-build";
+const OUTPUT_DIR = process.env.PWA_OUTPUT_DIR || "web-build";
+if (path.basename(OUTPUT_DIR) !== OUTPUT_DIR) {
+  throw new Error("PWA_OUTPUT_DIR must be a directory name inside the mobile project");
+}
 
 function toOrigin(value) {
   let urlString = value.trim();
@@ -48,7 +51,7 @@ function getBasePath() {
   return raw === "/" ? "" : raw.replace(/\/+$/, "");
 }
 
-function patchExportedHtml(indexHtmlPath) {
+function patchExportedHtml(indexHtmlPath, basePath) {
   // Best-effort: a patch failure must never block the deploy — the app still
   // works (just without the standalone layout clamp), like the rest of build.js.
   try {
@@ -76,6 +79,18 @@ function patchExportedHtml(indexHtmlPath) {
       }
     }
 
+    const assetBase = basePath || "";
+    const headLinks = [
+      `<link rel="manifest" href="${assetBase}/manifest.webmanifest">`,
+      `<link rel="apple-touch-icon" sizes="180x180" href="${assetBase}/apple-touch-icon.png">`,
+    ];
+    for (const link of headLinks) {
+      const rel = link.match(/rel="([^"]+)"/)?.[1];
+      if (rel && !new RegExp(`<link\\s+rel=["']${rel}["']`, "i").test(html)) {
+        html = html.replace("</head>", `    ${link}\n  </head>`);
+      }
+    }
+
     // Prevent the document itself from rubber-band scrolling. Individual
     // ScrollView/FlatList screens remain scrollable inside this fixed shell.
     const MARKER = "anotherme-pwa-layout-fix";
@@ -84,10 +99,55 @@ function patchExportedHtml(indexHtmlPath) {
       html = html.replace("</head>", style);
     }
 
+    // The native splash is configured in app.json. Mirror it in the exported
+    // PWA so launching from a browser home screen never flashes an empty page
+    // while the JavaScript bundle and authentication provider initialize.
+    const SPLASH_MARKER = "anotherme-boot-splash";
+    if (!html.includes(`id="${SPLASH_MARKER}"`) && /<body[^>]*>/i.test(html)) {
+      const splash = `<div id="${SPLASH_MARKER}" aria-hidden="true"><img src="${assetBase}/icon-512.png" alt=""></div>
+    <style>
+      #${SPLASH_MARKER} { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; background: #05040D; }
+      #${SPLASH_MARKER} img { width: min(44vw, 224px); height: auto; display: block; }
+    </style>
+    <script>
+      (() => {
+        const removeSplash = () => document.getElementById("${SPLASH_MARKER}")?.remove();
+        const observer = new MutationObserver(() => {
+          const root = document.getElementById("root");
+          if (root && root.childNodes.length > 0) {
+            observer.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(removeSplash));
+          }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        window.setTimeout(removeSplash, 8000);
+      })();
+    </script>`;
+      html = html.replace(/<body([^>]*)>/i, `<body$1>\n    ${splash}`);
+    }
+
     fs.writeFileSync(indexHtmlPath, html);
     console.log("Patched index.html for iOS standalone-PWA layout.");
   } catch (err) {
     console.warn(`WARN: could not patch index.html layout: ${err.message}`);
+  }
+}
+
+function copyPwaShellAssets(outPath) {
+  const publicDir = path.join(projectRoot, "public");
+  const files = [
+    "manifest.webmanifest",
+    "icon-192.png",
+    "icon-512.png",
+    "apple-touch-icon.png",
+  ];
+
+  for (const file of files) {
+    const source = path.join(publicDir, file);
+    if (!fs.existsSync(source)) {
+      throw new Error(`Missing required PWA shell asset: public/${file}`);
+    }
+    fs.copyFileSync(source, path.join(outPath, file));
   }
 }
 
@@ -265,7 +325,8 @@ async function main() {
   //     viewport leaves the whole app stuck scrolled to the right on EVERY
   //     screen (there's no browser chrome to snap it back). Clamping the root
   //     elements pins the layout to the viewport.
-  patchExportedHtml(indexHtml);
+  copyPwaShellAssets(outPath);
+  patchExportedHtml(indexHtml, basePath);
   patchExportedFontUrls(outPath, basePath);
 
   console.log(`Web build complete: ${outPath}`);

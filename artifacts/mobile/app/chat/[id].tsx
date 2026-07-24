@@ -854,7 +854,8 @@ export default function ChatScreen() {
             isDM={isDM}
             isAnotherMe={isAnotherMe}
             senderName={isAnotherMe ? anotherMeOwnerName : (item.senderProfile?.displayName ?? userDisplayName(item.sender as any, ""))}
-            senderAvatar={item.senderProfile?.profileImageUrl ?? (item.sender as any)?.profileImageUrl}
+            senderAvatar={item.senderProfile?.profileImageUrl ?? null}
+            senderCharacterType={item.senderProfile?.type as "fan" | "star" | "official_ai" | undefined}
             time={formatMsgTime(item.createdAt)}
             type={item.type}
             imageUri={item.type === "image" ? item.content : undefined}
@@ -910,6 +911,7 @@ export default function ChatScreen() {
         title={headerTitle}
         subtitle={`${headerSubtitle} · ${myChatIdentity}`}
         avatarUri={otherMember?.profileImageUrl}
+        avatarCharacterType={otherMember?.profile?.type}
         isDirect={isDirect}
         isGroupRoom={isGroupRoom}
         isDungeon={isDungeon}

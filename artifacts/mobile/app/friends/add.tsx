@@ -166,7 +166,7 @@ export default function AddFriendScreen() {
         ) : null}
         {shouldSearch && searchResults.map((user) => (
           <View key={user.id} style={[styles.userRow, { borderBottomColor: colors.border }]}>
-            <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
+            <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} crop="face" characterType={user.profile?.type} />
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: colors.foreground }]}>{user.nickname}</Text>
               <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>
@@ -189,7 +189,7 @@ export default function AddFriendScreen() {
           ) : null}
           {availableUsers.map((user) => (
             <View key={user.id} style={[styles.userRow, { borderBottomColor: colors.border }]}>
-              <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
+              <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} crop="face" characterType={user.profile?.type} />
               <View style={styles.userInfo}>
                 <Text style={[styles.userName, { color: colors.foreground }]}>{user.nickname}</Text>
                 <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>

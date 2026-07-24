@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { friendRequestsTable, friendshipsTable, usersTable } from "@workspace/db";
+import { activeCharacterProfilesTable, characterProfilesTable, friendRequestsTable, friendshipsTable, usersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { sendPushToUser } from "../lib/push";
 import { toPublicUser } from "../lib/publicUser";
+import { getActiveCharacterIdentityMap } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 const friendRequestSchema = z.object({ toUserId: z.uuid() }).strict();
@@ -52,12 +53,51 @@ router.get("/friends", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const friends = await Promise.all(
-    friendRows.map(async ({ userId: fid, alias }) => {
-      const [u] = await db.select().from(usersTable).where(eq(usersTable.id, fid));
-      return u ? toPublic(u, alias) : null;
-    }),
+  const [friendUsers, activeProfiles] = await Promise.all([
+    db.select().from(usersTable).where(inArray(usersTable.id, friendIds)),
+    db
+      .select()
+      .from(activeCharacterProfilesTable)
+      .where(inArray(activeCharacterProfilesTable.userId, friendIds)),
+  ]);
+  const activeProfileIdByUserId = new Map(
+    activeProfiles.map((row) => [row.userId, row.activeProfileId]),
   );
+  const activeProfileIds = activeProfiles.map((row) => row.activeProfileId);
+  const characterProfiles = activeProfileIds.length
+    ? await db
+        .select()
+        .from(characterProfilesTable)
+        .where(inArray(characterProfilesTable.id, activeProfileIds))
+    : [];
+  const characterProfileById = new Map(
+    characterProfiles.map((profile) => [profile.id, profile]),
+  );
+  const friendUserById = new Map(friendUsers.map((user) => [user.id, user]));
+  const friends = friendRows.map(({ userId: friendId, alias }) => {
+    const user = friendUserById.get(friendId);
+    if (!user) return null;
+    const profileId = activeProfileIdByUserId.get(friendId);
+    const profile = profileId ? characterProfileById.get(profileId) : null;
+    const characterProfileImageUrl =
+      profile?.type === "fan" && profile.profileImageUrl === user.profileImageUrl
+        ? null
+        : profile?.profileImageUrl ?? null;
+    return {
+      ...toPublic(user, alias),
+      profileImageUrl: characterProfileImageUrl,
+      displayName: alias || profile?.displayName || user.nickname,
+      profile: profile
+        ? {
+            id: profile.id,
+            type: profile.type,
+            handle: profile.handle,
+            displayName: profile.displayName,
+            profileImageUrl: characterProfileImageUrl,
+          }
+        : null,
+    };
+  });
 
   res.json(friends.filter(Boolean));
 });
@@ -266,6 +306,7 @@ router.get("/friend-requests/incoming", requireAuth, async (req, res): Promise<v
     .from(friendRequestsTable)
     .where(and(eq(friendRequestsTable.toUserId, myId), eq(friendRequestsTable.status, "pending")));
 
+  const identities = await getActiveCharacterIdentityMap(requests.map((request) => request.fromUserId));
   const result = await Promise.all(
     requests.map(async (r) => {
       const [u] = await db.select().from(usersTable).where(eq(usersTable.id, r.fromUserId));
@@ -275,7 +316,12 @@ router.get("/friend-requests/incoming", requireAuth, async (req, res): Promise<v
         toUserId: r.toUserId,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
-        user: u ? toPublicUser(u) : null,
+        user: u ? {
+          ...toPublicUser(u),
+          nickname: identities.get(u.id)?.displayName ?? u.nickname,
+          profileImageUrl: identities.get(u.id)?.profileImageUrl ?? null,
+          profile: identities.get(u.id) ?? null,
+        } : null,
       };
     }),
   );
@@ -290,6 +336,7 @@ router.get("/friend-requests/outgoing", requireAuth, async (req, res): Promise<v
     .from(friendRequestsTable)
     .where(and(eq(friendRequestsTable.fromUserId, myId), eq(friendRequestsTable.status, "pending")));
 
+  const identities = await getActiveCharacterIdentityMap(requests.map((request) => request.toUserId));
   const result = await Promise.all(
     requests.map(async (r) => {
       const [u] = await db.select().from(usersTable).where(eq(usersTable.id, r.toUserId));
@@ -299,7 +346,12 @@ router.get("/friend-requests/outgoing", requireAuth, async (req, res): Promise<v
         toUserId: r.toUserId,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
-        user: u ? toPublicUser(u) : null,
+        user: u ? {
+          ...toPublicUser(u),
+          nickname: identities.get(u.id)?.displayName ?? u.nickname,
+          profileImageUrl: identities.get(u.id)?.profileImageUrl ?? null,
+          profile: identities.get(u.id) ?? null,
+        } : null,
       };
     }),
   );

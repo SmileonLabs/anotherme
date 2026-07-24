@@ -45,7 +45,7 @@ export default function BlockedScreen() {
       }
       renderItem={({ item }) => (
         <View style={[styles.row, { borderBottomColor: colors.border }]}>
-          <Avatar uri={item.profileImageUrl} name={item.nickname} size={46} />
+          <Avatar uri={item.profileImageUrl} name={item.nickname} size={46} crop="face" characterType={item.profile?.type} />
           <View style={styles.info}>
             <Text style={[styles.name, { color: colors.foreground }]}>{item.nickname}</Text>
             <Text style={[styles.email, { color: colors.mutedForeground }]}>{item.statusMessage || "AnotherMe 사용자"}</Text>

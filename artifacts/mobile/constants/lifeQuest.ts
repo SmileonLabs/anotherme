@@ -58,9 +58,9 @@ export function themeMeta(key: string, promoted = false): LifeQuestThemeMeta {
 /** Korean labels for STAR stats a mission choice can grow. */
 export const STAT_LABEL: Record<string, string> = {
   charm: "매력",
-  stagePresence: "무대감",
-  bond: "팬 유대",
-  lore: "서사",
+  stagePresence: "스타성",
+  bond: "유대감",
+  lore: "영향력",
   logic: "논리",
   empathy: "공감",
   wit: "재치",

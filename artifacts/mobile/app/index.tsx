@@ -1,22 +1,13 @@
 import { useAuth } from "@clerk/expo";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Redirect } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from "react-native";
 import { neon } from "@/constants/colors";
-import { ONBOARDING_KEY } from "./onboarding";
 
 export default function Index() {
   const { isLoaded, isSignedIn } = useAuth();
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
-  const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY)
-      .then((v) => setOnboarded(v === "1"))
-      .catch(() => setOnboarded(true));
-  }, []);
 
   useEffect(() => {
     if (isLoaded) {
@@ -44,7 +35,7 @@ export default function Index() {
     };
   }, [isLoaded]);
 
-  if (!isLoaded || onboarded === null) {
+  if (!isLoaded) {
     if (debugInfo) {
       return (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: neon.background }}>
@@ -71,7 +62,7 @@ export default function Index() {
   }
 
   if (isSignedIn) {
-    return <Redirect href={onboarded ? "/(tabs)" : "/onboarding"} />;
+    return <Redirect href="/(tabs)" />;
   }
 
   return <Redirect href="/(auth)/sign-in" />;

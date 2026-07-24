@@ -13,6 +13,7 @@ import {
 import { computeLevel } from "./growth";
 import { computeIdentity } from "./personaIdentity";
 import { getTorimiaState } from "./torimia";
+import { getActiveCharacterIdentityMap } from "./characterProfiles";
 
 export const CLAN_LIST_LIMIT_DEFAULT = 30;
 export const CLAN_LIST_LIMIT_MAX = 100;
@@ -143,7 +144,6 @@ async function loadMembers(clanId: string, limit?: number): Promise<ClanMemberVi
       contributionExp: clanMembersTable.contributionExp,
       joinedAt: clanMembersTable.joinedAt,
       nickname: usersTable.nickname,
-      avatarUrl: usersTable.profileImageUrl,
       xp: personasTable.xp,
       stats: personasTable.stats,
     })
@@ -158,6 +158,7 @@ async function loadMembers(clanId: string, limit?: number): Promise<ClanMemberVi
     );
 
   const sliced = typeof limit === "number" ? rows.slice(0, limit) : rows;
+  const identities = await getActiveCharacterIdentityMap(sliced.map((row) => row.userId));
 
   return sliced.map((r) => {
     const stats: PersonaStats = { ...DEFAULT_PERSONA_STATS, ...(r.stats ?? {}) };
@@ -166,7 +167,7 @@ async function loadMembers(clanId: string, limit?: number): Promise<ClanMemberVi
     return {
       userId: r.userId,
       displayName: `${r.nickname?.trim() || "나"}의 어나더 미`,
-      avatarUrl: r.avatarUrl ?? null,
+      avatarUrl: identities.get(r.userId)?.profileImageUrl ?? null,
       level,
       title: identity.title,
       archetype: identity.archetypeKey,

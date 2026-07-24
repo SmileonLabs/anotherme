@@ -40,7 +40,11 @@ import {
   setMemberReadSeq,
   type ReadTarget,
 } from "../lib/readReceipts";
-import { ensureCharacterProfileState, resolveCharacterProfileActor } from "../lib/characterProfiles";
+import {
+  ensureCharacterProfileState,
+  getActiveCharacterIdentityMap,
+  resolveCharacterProfileActor,
+} from "../lib/characterProfiles";
 import type { CharacterProfileView } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
@@ -63,6 +67,14 @@ interface PublicUserPayload {
   accountKind: "user" | "official" | "system";
   profileImageUrl: string | null;
   statusMessage: string | null;
+  profile?: {
+    id: string;
+    type: string;
+    handle: string;
+    displayName: string;
+    profileImageUrl: string | null;
+    statusMessage?: string | null;
+  } | null;
 }
 
 interface MessagePayload {
@@ -119,7 +131,7 @@ function toPublicUser(user: DbUser | undefined): PublicUserPayload | null {
     id: user.id,
     nickname: user.nickname,
     accountKind: publicAccountKind(user),
-    profileImageUrl: user.profileImageUrl ?? null,
+    profileImageUrl: null,
     statusMessage: user.statusMessage ?? null,
   };
 }
@@ -214,6 +226,7 @@ async function serializeMessages(
       : [];
   const userById = new Map(users.map((user) => [user.id, user]));
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const activeIdentityByUserId = await getActiveCharacterIdentityMap(Array.from(userIds));
 
   return messages
     .filter((message) => !deletedForViewer.has(message.id))
@@ -232,7 +245,10 @@ async function serializeMessages(
         ? deletedForViewer.has(reply.id)
         : false;
       const link = linkByMessage.get(message.id);
-      const senderProfile = message.senderProfileId ? profileById.get(message.senderProfileId) : null;
+      const senderProfile =
+        (message.senderProfileId ? profileById.get(message.senderProfileId) : null) ??
+        activeIdentityByUserId.get(message.senderId) ??
+        null;
       return {
         id: message.id,
         roomId: message.roomId,
@@ -259,7 +275,7 @@ async function serializeMessages(
           ? {
               id: reply.id,
               senderId: reply.senderId,
-              senderName: userById.get(reply.senderId)?.nickname ?? null,
+              senderName: activeIdentityByUserId.get(reply.senderId)?.displayName ?? userById.get(reply.senderId)?.nickname ?? null,
               type: reply.type,
               content: replyDeletedForViewer
                 ? "삭제된 메시지"
@@ -273,7 +289,16 @@ async function serializeMessages(
             code: sticker.code,
             userId: sticker.userId,
             createdAt: sticker.createdAt.toISOString(),
-            user: toPublicUser(userById.get(sticker.userId)),
+            user: (() => {
+              const user = userById.get(sticker.userId);
+              const profile = activeIdentityByUserId.get(sticker.userId) ?? null;
+              return user ? {
+                ...toPublicUser(user)!,
+                nickname: profile?.displayName ?? user.nickname,
+                profileImageUrl: profile?.profileImageUrl ?? null,
+                profile,
+              } : null;
+            })(),
           }),
         ),
         linkPreview:
@@ -1326,7 +1351,7 @@ router.get(
         id: u.id,
         nickname: u.nickname,
         accountKind: publicAccountKind(u),
-        profileImageUrl: u.profileImageUrl ?? null,
+        profileImageUrl: null,
         statusMessage: u.statusMessage ?? null,
       })),
     );

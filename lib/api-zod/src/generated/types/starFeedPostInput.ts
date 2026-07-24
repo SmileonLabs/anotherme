@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { StarFeedMedia } from './starFeedMedia';
 import type { StarFeedPostInputKind } from './starFeedPostInputKind';
 
 export interface StarFeedPostInput {
@@ -21,4 +22,6 @@ export interface StarFeedPostInput {
      * @nullable
      */
   targetStarProfileId?: string | null;
+  /** @maxItems 4 */
+  media?: StarFeedMedia[];
 }

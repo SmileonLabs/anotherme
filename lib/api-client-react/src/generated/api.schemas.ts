@@ -370,6 +370,30 @@ export interface BibiOfficialProfile {
   statusMessage?: string | null;
 }
 
+export type ChatRoomCategory = typeof ChatRoomCategory[keyof typeof ChatRoomCategory];
+
+
+export const ChatRoomCategory = {
+  direct: 'direct',
+  fanclub: 'fanclub',
+  counseling: 'counseling',
+  friend_finding: 'friend_finding',
+  meetup: 'meetup',
+  casual: 'casual',
+  peer: 'peer',
+  karaoke: 'karaoke',
+  growth_rpg: 'growth_rpg',
+  talk_battle: 'talk_battle',
+} as const;
+
+export type ChatRoomVisibility = typeof ChatRoomVisibility[keyof typeof ChatRoomVisibility];
+
+
+export const ChatRoomVisibility = {
+  private: 'private',
+  invite_only: 'invite_only',
+} as const;
+
 export interface MessageSummary {
   id: string;
   senderId: string;
@@ -391,6 +415,26 @@ export const PublicUserAccountKind = {
   system: 'system',
 } as const;
 
+export type PublicCharacterIdentityType = typeof PublicCharacterIdentityType[keyof typeof PublicCharacterIdentityType];
+
+
+export const PublicCharacterIdentityType = {
+  fan: 'fan',
+  star: 'star',
+  official_ai: 'official_ai',
+} as const;
+
+export interface PublicCharacterIdentity {
+  id: string;
+  type: PublicCharacterIdentityType;
+  handle: string;
+  displayName: string;
+  /** @nullable */
+  profileImageUrl: string | null;
+  /** @nullable */
+  statusMessage?: string | null;
+}
+
 export interface PublicUser {
   id: string;
   nickname: string;
@@ -402,15 +446,21 @@ export interface PublicUser {
   friendAlias?: string | null;
   /** friendAlias when set, otherwise nickname. */
   displayName?: string;
-  /** @nullable */
+  /**
+     * Active character avatar. The legacy member account photo is never exposed.
+     * @nullable
+     */
   profileImageUrl?: string | null;
   /** @nullable */
   statusMessage?: string | null;
+  profile?: PublicCharacterIdentity | null;
 }
 
 export interface ChatRoom {
   id: string;
   type: string;
+  category: ChatRoomCategory;
+  visibility: ChatRoomVisibility;
   /** @nullable */
   name?: string | null;
   /** @nullable */
@@ -541,6 +591,21 @@ export const StarFeedPostVisibility = {
   PUBLIC: 'PUBLIC',
 } as const;
 
+export type StarFeedMediaMediaType = typeof StarFeedMediaMediaType[keyof typeof StarFeedMediaMediaType];
+
+
+export const StarFeedMediaMediaType = {
+  image: 'image',
+  video: 'video',
+} as const;
+
+export interface StarFeedMedia {
+  objectPath: string;
+  mediaType: StarFeedMediaMediaType;
+  /** @maxLength 160 */
+  altText?: string;
+}
+
 export interface StarProfileTarget {
   id: string;
   displayName: string;
@@ -555,6 +620,9 @@ export interface StarFeedPost {
   body: string;
   /** @nullable */
   metadata?: StarFeedPostMetadata;
+  hashtags: string[];
+  /** @maxItems 4 */
+  media: StarFeedMedia[];
   visibility: StarFeedPostVisibility;
   createdAt: string;
   author: StarFeedAuthor;
@@ -587,6 +655,33 @@ export interface StarFeedPostInput {
      * @nullable
      */
   targetStarProfileId?: string | null;
+  /** @maxItems 4 */
+  media?: StarFeedMedia[];
+}
+
+export interface StarFeedPage {
+  items: StarFeedPost[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
+export type StarFeedRewardStat = typeof StarFeedRewardStat[keyof typeof StarFeedRewardStat];
+
+
+export const StarFeedRewardStat = {
+  FAN_XP: 'FAN XP',
+} as const;
+
+export interface StarFeedReward {
+  granted: boolean;
+  /** @minimum 0 */
+  xp: number;
+  stat: StarFeedRewardStat;
+}
+
+export interface StarFeedCreateResult {
+  post: StarFeedPost;
+  reward: StarFeedReward | null;
 }
 
 export interface StarProfileFollowState {
@@ -1275,7 +1370,10 @@ export interface UserProfile {
   clerkId: string;
   email: string;
   nickname: string;
-  /** @nullable */
+  /**
+     * Deprecated legacy field. Always null; use the active character profile.
+     * @nullable
+     */
   profileImageUrl?: string | null;
   /** @nullable */
   statusMessage?: string | null;
@@ -1417,11 +1515,6 @@ export interface UserProfileUpdate {
      * @nullable
      */
   statusMessage?: string | null;
-  /**
-     * @maxLength 2048
-     * @nullable
-     */
-  profileImageUrl?: string | null;
   notificationEnabled?: boolean;
   talkAnalysisEnabled?: boolean;
 }
@@ -1468,17 +1561,31 @@ export const GlobalSearchResponseType = {
   all: 'all',
   users: 'users',
   stars: 'stars',
+  fans: 'fans',
   posts: 'posts',
+  missions: 'missions',
+} as const;
+
+export type GlobalSearchResponseUsersItemProfileType = typeof GlobalSearchResponseUsersItemProfileType[keyof typeof GlobalSearchResponseUsersItemProfileType];
+
+
+export const GlobalSearchResponseUsersItemProfileType = {
+  fan: 'fan',
+  star: 'star',
+  official_ai: 'official_ai',
 } as const;
 
 export type GlobalSearchResponseUsersItem = {
   id: string;
   nickname: string;
+  handle: string;
   /** @nullable */
   profileImageUrl: string | null;
   /** @nullable */
   statusMessage: string | null;
+  profileType: GlobalSearchResponseUsersItemProfileType;
   isMe: boolean;
+  followedByMe: boolean;
 };
 
 export type GlobalSearchResponseStarProfilesItem = {
@@ -1501,14 +1608,56 @@ export type GlobalSearchResponsePostsItem = {
   createdAt: string;
 };
 
+export type GlobalSearchResponseMissionsItemType = typeof GlobalSearchResponseMissionsItemType[keyof typeof GlobalSearchResponseMissionsItemType];
+
+
+export const GlobalSearchResponseMissionsItemType = {
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export type GlobalSearchResponseMissionsItem = {
+  key: string;
+  type: GlobalSearchResponseMissionsItemType;
+  title: string;
+  description: string;
+  target: number;
+  rewardExp: number;
+  metric: string;
+};
+
 export interface GlobalSearchResponse {
   query: string;
   type: GlobalSearchResponseType;
   users: GlobalSearchResponseUsersItem[];
   starProfiles: GlobalSearchResponseStarProfilesItem[];
   posts: GlobalSearchResponsePostsItem[];
+  missions: GlobalSearchResponseMissionsItem[];
   /** @nullable */
   nextCursor: string | null;
+}
+
+export type SearchRecommendationType = typeof SearchRecommendationType[keyof typeof SearchRecommendationType];
+
+
+export const SearchRecommendationType = {
+  fan: 'fan',
+  star: 'star',
+  official_ai: 'official_ai',
+} as const;
+
+export interface SearchRecommendation {
+  id: string;
+  type: SearchRecommendationType;
+  handle: string;
+  displayName: string;
+  /** @nullable */
+  profileImageUrl: string | null;
+  /** @nullable */
+  statusMessage: string | null;
+  level: number;
+  followedByMe: boolean;
+  recommendationReason: string;
 }
 
 export interface FriendAliasInput {
@@ -1557,13 +1706,39 @@ export const RoomInputType = {
   group: 'group',
 } as const;
 
+export type RoomInputCategory = typeof RoomInputCategory[keyof typeof RoomInputCategory];
+
+
+export const RoomInputCategory = {
+  direct: 'direct',
+  fanclub: 'fanclub',
+  counseling: 'counseling',
+  friend_finding: 'friend_finding',
+  meetup: 'meetup',
+  casual: 'casual',
+  peer: 'peer',
+  karaoke: 'karaoke',
+  growth_rpg: 'growth_rpg',
+  talk_battle: 'talk_battle',
+} as const;
+
+export type RoomInputVisibility = typeof RoomInputVisibility[keyof typeof RoomInputVisibility];
+
+
+export const RoomInputVisibility = {
+  private: 'private',
+  invite_only: 'invite_only',
+} as const;
+
 export interface RoomInput {
   type: RoomInputType;
   /**
-     * @maxLength 120
+     * @maxLength 30
      * @nullable
      */
   name?: string | null;
+  category?: RoomInputCategory;
+  visibility?: RoomInputVisibility;
   /** @maxItems 100 */
   memberIds: string[];
 }
@@ -2480,6 +2655,13 @@ export type PublicCharacterProfileResponseProfile = CharacterProfileSummary & ({
   level: number;
   /** @minimum 0 */
   xp: number;
+  /** @nullable */
+  jobKey?: string | null;
+  /** @minimum 0 */
+  jobStage: number;
+  jobLabel: string;
+  /** @nullable */
+  characterImageUrl?: string | null;
   stats: PublicCharacterProfileResponseProfileStats;
   metadata: PublicCharacterProfileResponseProfileMetadata;
   isMine: boolean;
@@ -2488,6 +2670,8 @@ export type PublicCharacterProfileResponseProfile = CharacterProfileSummary & ({
   followerCount: number;
   /** @minimum 0 */
   followingCount: number;
+  /** @minimum 0 */
+  postCount: number;
 });
 
 export type PublicCharacterProfileResponsePosts = {
@@ -2543,8 +2727,22 @@ export const GlobalSearchType = {
   all: 'all',
   users: 'users',
   stars: 'stars',
+  fans: 'fans',
   posts: 'posts',
+  missions: 'missions',
 } as const;
+
+export type GetSearchRecommendationsParams = {
+/**
+ * @minimum 4
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type GetSearchRecommendations200 = {
+  items: SearchRecommendation[];
+};
 
 export type GetTrendingSearchesParams = {
 /**
@@ -2790,7 +2988,17 @@ export type ListStarFeedPostsParams = {
  * @maximum 100
  */
 limit?: number;
+scope?: ListStarFeedPostsScope;
+cursor?: string;
 };
+
+export type ListStarFeedPostsScope = typeof ListStarFeedPostsScope[keyof typeof ListStarFeedPostsScope];
+
+
+export const ListStarFeedPostsScope = {
+  recommended: 'recommended',
+  following: 'following',
+} as const;
 
 export type DiscoverStarFeedByHashtagParams = {
 tag: string;
@@ -2847,6 +3055,9 @@ export type CreateMyFanCharacterProfileBody = {
      * @nullable
      */
   profileImageUrl?: string | null;
+  /** Onboarding-only flag. When true, an uncustomized default FAN is completed in place. Ordinary FAN-add flows must omit it so an existing profile is never overwritten.
+   */
+  customizeDefault?: boolean;
   customization: CreateMyFanCharacterProfileBodyCustomization;
 };
 
@@ -2965,6 +3176,15 @@ export type GetUsersUserIdBattleResultsParams = {
 /**
  * @minimum 1
  * @maximum 100
+ */
+limit?: number;
+cursor?: string;
+};
+
+export type GetPublicCharacterProfileParams = {
+/**
+ * @minimum 1
+ * @maximum 60
  */
 limit?: number;
 cursor?: string;

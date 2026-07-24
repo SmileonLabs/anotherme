@@ -45,7 +45,7 @@ export function DailyTalkRewardCard({ onClaim, onOpenDraft, onOpenWallet, onOpen
   const description = status?.canClaim || hasDraft
     ? "AI가 오늘의 대화를 요약하고, 보상 수령 시 Another Me 동기화 데이터로 반영해요."
     : reasonText(status?.reason);
-  const buttonLabel = hasDraft ? "일기 확인하기" : status?.claimedToday ? "내 PVT 보기" : "PVT 받고 동기화";
+  const buttonLabel = hasDraft ? "일기 확인하기" : status?.claimedToday ? "내 STAR Point 보기" : "STAR Point 받고 동기화";
 
   function handlePress() {
     if (hasDraft && status?.rewardId) {
@@ -71,11 +71,11 @@ export function DailyTalkRewardCard({ onClaim, onOpenDraft, onOpenWallet, onOpen
         </View>
         <Pressable onPress={onOpenWallet} style={styles.walletPill}>
           <Feather name="database" size={13} color="#FDE68A" />
-          <Text style={styles.walletText}>{(wallet?.balance ?? 0).toLocaleString()} PVT</Text>
+          <Text style={styles.walletText}>{(wallet?.balance ?? 0).toLocaleString()} STAR Point</Text>
         </Pressable>
       </View>
 
-      <Text style={styles.copy}>오늘 대화 요약을 제공하고 PVT Point와 Another Me 동기화를 받습니다.</Text>
+      <Text style={styles.copy}>오늘 대화 요약을 제공하고 STAR Point와 Another Me 동기화를 받습니다.</Text>
 
       {canCollapseDetails ? (
         <Pressable onPress={() => setExpanded((value) => !value)} style={styles.expandButton}>

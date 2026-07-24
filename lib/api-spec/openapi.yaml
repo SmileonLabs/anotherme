@@ -90,7 +90,7 @@ paths:
     get:
       operationId: globalSearch
       tags: [users]
-      summary: Search public users, STAR profiles, and public feed posts
+      summary: Search public profiles, STAR/FAN identities, public feed posts, and missions
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -99,7 +99,7 @@ paths:
           schema: { type: string, minLength: 2, maxLength: 80 }
         - in: query
           name: type
-          schema: { type: string, enum: [all, users, stars, posts], default: all }
+          schema: { type: string, enum: [all, users, stars, fans, posts, missions], default: all }
         - in: query
           name: limit
           schema: { type: integer, minimum: 1, maximum: 30, default: 20 }
@@ -111,6 +111,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/GlobalSearchResponse"
         "400": { description: Invalid search query }
+        "401": { description: Unauthorized }
+
+  /search/recommendations:
+    get:
+      operationId: getSearchRecommendations
+      tags: [users]
+      summary: Get recommended public STAR and FAN character profiles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 4, maximum: 30, default: 12 }
+      responses:
+        "200":
+          description: Recommended profiles for the active character profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchRecommendation"
+        "400": { description: Invalid recommendation request }
         "401": { description: Unauthorized }
 
   /search/trending:
@@ -3304,16 +3330,27 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
-            default: 30
+            default: 20
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [recommended, following]
+            default: recommended
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: Visible STAR feed posts, newest first
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/StarFeedPost"
+                $ref: "#/components/schemas/StarFeedPage"
         "400":
           description: Invalid limit
           content:
@@ -3337,7 +3374,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StarFeedPost"
+                $ref: "#/components/schemas/StarFeedCreateResult"
         "400":
           description: Invalid post body
           content:
@@ -3362,6 +3399,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
+
+  /star-feed/posts/{id}:
+    get:
+      operationId: getStarFeedPost
+      tags: [star-feed]
+      summary: Get one STAR feed post visible to me
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: STAR feed post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarFeedPost"
+        "400":
+          description: Invalid post id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Post was not found or is not visible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /star-feed/star-profiles/{id}/follow:
     post:
@@ -3423,6 +3491,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: uncheerStarFeedPost
+      tags: [star-feed]
+      summary: Remove my active profile reaction from a STAR feed post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: STAR feed post after removing the reaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+        "404":
+          description: Post not found or not visible to the caller
 
   /star-feed/posts/{id}/comments:
     post:
@@ -3808,6 +3894,13 @@ paths:
                 displayName: { type: string, minLength: 1, maxLength: 30 }
                 handle: { type: string, minLength: 3, maxLength: 24 }
                 profileImageUrl: { type: [string, "null"], maxLength: 1024 }
+                customizeDefault:
+                  type: boolean
+                  default: false
+                  description: >
+                    Onboarding-only flag. When true, an uncustomized default FAN
+                    is completed in place. Ordinary FAN-add flows must omit it so
+                    an existing profile is never overwritten.
                 customization:
                   type: object
                   required: [ageStyle, hairStyle, skinTone, genderExpression]
@@ -4528,7 +4621,10 @@ paths:
       tags: [users]
       summary: Get one public activity profile and its posts
       security: [{ bearerAuth: [] }]
-      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 60, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
       responses:
         "200":
           description: Public activity profile
@@ -5211,7 +5307,7 @@ components:
 
     StarFeedPost:
       type: object
-      required: [id, kind, title, body, visibility, createdAt, author, targetStarProfile, reactionCount, commentCount, reactedByMe, recentComments]
+      required: [id, kind, title, body, hashtags, media, visibility, createdAt, author, targetStarProfile, reactionCount, commentCount, reactedByMe, recentComments]
       properties:
         id:
           type: string
@@ -5225,6 +5321,14 @@ components:
         metadata:
           type: ["object", "null"]
           additionalProperties: true
+        hashtags:
+          type: array
+          items: { type: string }
+        media:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StarFeedMedia"
         visibility:
           type: string
           enum: [PRIVATE, FRIENDS, PUBLIC]
@@ -5267,6 +5371,48 @@ components:
           type: [string, "null"]
           format: uuid
           description: Optional STAR being supported by a FAN post; null means the neutral FAN profile.
+        media:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StarFeedMedia"
+
+    StarFeedMedia:
+      type: object
+      required: [objectPath, mediaType]
+      properties:
+        objectPath: { type: string }
+        mediaType: { type: string, enum: [image, video] }
+        altText: { type: string, maxLength: 160 }
+
+    StarFeedPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StarFeedPost" }
+        nextCursor:
+          type: [string, "null"]
+          format: date-time
+
+    StarFeedCreateResult:
+      type: object
+      required: [post, reward]
+      properties:
+        post: { $ref: "#/components/schemas/StarFeedPost" }
+        reward:
+          oneOf:
+            - $ref: "#/components/schemas/StarFeedReward"
+            - type: "null"
+
+    StarFeedReward:
+      type: object
+      required: [granted, xp, stat]
+      properties:
+        granted: { type: boolean }
+        xp: { type: integer, minimum: 0 }
+        stat: { type: string, enum: ["FAN XP"] }
 
     StarProfileTarget:
       type: object
@@ -6096,6 +6242,7 @@ components:
           type: string
         profileImageUrl:
           type: ["string", "null"]
+          description: Deprecated legacy field. Always null; use the active character profile.
         statusMessage:
           type: ["string", "null"]
         pushToken:
@@ -6104,6 +6251,25 @@ components:
           type: boolean
         createdAt:
           type: string
+
+    PublicCharacterIdentity:
+      type: object
+      required: [id, type, handle, displayName, profileImageUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [fan, star, official_ai]
+        handle:
+          type: string
+        displayName:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        statusMessage:
+          type: ["string", "null"]
 
     PersonaStats:
       type: object
@@ -6354,9 +6520,6 @@ components:
         statusMessage:
           type: ["string", "null"]
           maxLength: 200
-        profileImageUrl:
-          type: ["string", "null"]
-          maxLength: 2048
         notificationEnabled:
           type: boolean
         talkAnalysisEnabled:
@@ -6399,21 +6562,24 @@ components:
 
     GlobalSearchResponse:
       type: object
-      required: [query, type, users, starProfiles, posts, nextCursor]
+      required: [query, type, users, starProfiles, posts, missions, nextCursor]
       properties:
         query: { type: string }
-        type: { type: string, enum: [all, users, stars, posts] }
+        type: { type: string, enum: [all, users, stars, fans, posts, missions] }
         users:
           type: array
           items:
             type: object
-            required: [id, nickname, profileImageUrl, statusMessage, isMe]
+            required: [id, nickname, handle, profileImageUrl, statusMessage, profileType, isMe, followedByMe]
             properties:
               id: { type: string, format: uuid }
               nickname: { type: string }
+              handle: { type: string }
               profileImageUrl: { type: [string, "null"] }
               statusMessage: { type: [string, "null"] }
+              profileType: { type: string, enum: [fan, star, official_ai] }
               isMe: { type: boolean }
+              followedByMe: { type: boolean }
         starProfiles:
           type: array
           items:
@@ -6438,7 +6604,34 @@ components:
               body: { type: string }
               kind: { type: string }
               createdAt: { type: string, format: date-time }
+        missions:
+          type: array
+          items:
+            type: object
+            required: [key, type, title, description, target, rewardExp, metric]
+            properties:
+              key: { type: string }
+              type: { type: string, enum: [daily, weekly] }
+              title: { type: string }
+              description: { type: string }
+              target: { type: integer }
+              rewardExp: { type: integer }
+              metric: { type: string }
         nextCursor: { type: [string, "null"] }
+
+    SearchRecommendation:
+      type: object
+      required: [id, type, handle, displayName, profileImageUrl, statusMessage, level, followedByMe, recommendationReason]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [fan, star, official_ai] }
+        handle: { type: string }
+        displayName: { type: string }
+        profileImageUrl: { type: [string, "null"] }
+        statusMessage: { type: [string, "null"] }
+        level: { type: integer }
+        followedByMe: { type: boolean }
+        recommendationReason: { type: string }
 
     PublicUser:
       type: object
@@ -6459,8 +6652,13 @@ components:
           description: friendAlias when set, otherwise nickname.
         profileImageUrl:
           type: ["string", "null"]
+          description: Active character avatar. The legacy member account photo is never exposed.
         statusMessage:
           type: ["string", "null"]
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/PublicCharacterIdentity"
+            - type: "null"
 
     FriendAliasInput:
       type: object
@@ -6513,12 +6711,18 @@ components:
 
     ChatRoom:
       type: object
-      required: [id, type, createdAt]
+      required: [id, type, category, visibility, createdAt]
       properties:
         id:
           type: string
         type:
           type: string
+        category:
+          type: string
+          enum: [direct, fanclub, counseling, friend_finding, meetup, casual, peer, karaoke, growth_rpg, talk_battle]
+        visibility:
+          type: string
+          enum: [private, invite_only]
         name:
           type: ["string", "null"]
         ownerId:
@@ -6591,7 +6795,13 @@ components:
           enum: [direct, group]
         name:
           type: ["string", "null"]
-          maxLength: 120
+          maxLength: 30
+        category:
+          type: string
+          enum: [direct, fanclub, counseling, friend_finding, meetup, casual, peer, karaoke, growth_rpg, talk_battle]
+        visibility:
+          type: string
+          enum: [private, invite_only]
         memberIds:
           type: array
           maxItems: 100
@@ -7978,17 +8188,22 @@ components:
           allOf:
             - $ref: "#/components/schemas/CharacterProfileSummary"
             - type: object
-              required: [level, xp, stats, metadata, isMine, followedByMe, followerCount, followingCount]
+              required: [level, xp, jobStage, jobLabel, stats, metadata, isMine, followedByMe, followerCount, followingCount, postCount]
               properties:
                 statusMessage: { type: ["string", "null"] }
                 level: { type: integer, minimum: 1 }
                 xp: { type: integer, minimum: 0 }
+                jobKey: { type: ["string", "null"] }
+                jobStage: { type: integer, minimum: 0 }
+                jobLabel: { type: string }
+                characterImageUrl: { type: ["string", "null"] }
                 stats: { type: object, additionalProperties: { type: number } }
                 metadata: { type: object, additionalProperties: true }
                 isMine: { type: boolean }
                 followedByMe: { type: boolean }
                 followerCount: { type: integer, minimum: 0 }
                 followingCount: { type: integer, minimum: 0 }
+                postCount: { type: integer, minimum: 0 }
         posts:
           type: object
           required: [items, nextCursor]

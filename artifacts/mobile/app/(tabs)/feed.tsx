@@ -1,3 +1,5 @@
+export { default } from "@/components/FeedScreenV2";
+/*
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,6 +24,7 @@ import {
   type StarFeedWritableKind,
 } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
+import FeedScreenV2 from "@/components/FeedScreenV2";
 
 type ColorTokens = ReturnType<typeof useColors>;
 
@@ -80,7 +83,13 @@ function StoryItem({ author, index, isOwn, onPress }: { author: StarFeedAuthor; 
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${author.nickname} 프로필 보기`} style={({ pressed }) => [styles.storyItem, pressed && styles.pressed]}>
       <LinearGradient colors={["#F044D0", "#7B35FF", "#24D6E8"]} style={styles.storyRing}>
         <View style={styles.storyAvatarInset}>
-          <Avatar uri={author.profileImageUrl} name={author.nickname} size={50} />
+          <Avatar
+            uri={author.profileImageUrl}
+            name={author.nickname}
+            size={50}
+            crop="face"
+            characterType={author.activityProfile?.type}
+          />
         </View>
         {isOwn ? <View style={styles.storyPlus}><Feather name="plus" size={12} color="#FFFFFF" /></View> : null}
       </LinearGradient>
@@ -145,7 +154,15 @@ function FeedPostCard({
     >
       <View pointerEvents="none" style={styles.cardGlow} />
       <View style={styles.feedHeader}>
-        <Pressable onPress={() => onProfilePress(post.author)} accessibilityRole="button" accessibilityLabel={`${post.author.nickname} 프로필 보기`} style={styles.avatarRing}><Avatar uri={post.author.profileImageUrl} name={post.author.nickname} size={44} /></Pressable>
+        <Pressable onPress={() => onProfilePress(post.author)} accessibilityRole="button" accessibilityLabel={`${post.author.nickname} 프로필 보기`} style={styles.avatarRing}>
+          <Avatar
+            uri={post.author.profileImageUrl}
+            name={post.author.nickname}
+            size={44}
+            crop="face"
+            characterType={post.author.activityProfile?.type}
+          />
+        </Pressable>
         <View style={styles.feedIdentity}>
           <View style={styles.authorRow}>
             <Text style={styles.feedAuthor} numberOfLines={1}>{post.author.nickname}</Text>
@@ -242,7 +259,7 @@ function FeedPostCard({
   );
 }
 
-export default function FeedScreen() {
+function LegacyFeedScreen() {
   const router = useRouter();
   const { postId } = useLocalSearchParams<{ postId?: string }>();
   const colors = useColors();
@@ -303,14 +320,14 @@ export default function FeedScreen() {
       if (!unique.has(key)) unique.set(key, post.author);
     });
     const own = me?.id && activeProfile?.id
-      ? { id: activeProfile.id, nickname: activeProfile.displayName ?? me.nickname, profileImageUrl: activeProfile.profileImageUrl ?? me.profileImageUrl ?? null, activityProfile: activeProfile, starProfile: null }
+      ? { id: activeProfile.id, nickname: activeProfile.displayName ?? me.nickname, profileImageUrl: activeProfile.profileImageUrl ?? null, activityProfile: activeProfile, starProfile: null }
       : null;
     const others = [...unique.values()].filter((author) => author.id !== activeProfile?.id);
     return (own ? [own, ...others] : others).slice(0, 7);
   }, [posts, me, activeProfile]);
   function openProfile(author: StarFeedAuthor) {
     if (author.activityProfile?.id) {
-      router.push({ pathname: "/character/[profileId]", params: { profileId: author.activityProfile.id } } as never);
+      router.push({ pathname: "/(tabs)/character/[profileId]", params: { profileId: author.activityProfile.id } } as never);
       return;
     }
     if (author.id) {
@@ -446,7 +463,7 @@ export default function FeedScreen() {
           <View style={styles.profileSheetBackdrop}>
             <View style={styles.profileSheet}>
               <Pressable onPress={() => setSelectedProfile(null)} style={styles.profileClose}><Feather name="x" size={20} color="#D8D2E0" /></Pressable>
-              <View style={styles.profileHero}><View style={styles.profileAvatar}><Avatar uri={selectedProfile.profileImageUrl} name={selectedProfile.nickname} size={72} /></View><Text style={styles.profileName}>{selectedProfile.nickname}</Text><Text style={styles.profileRole}>{selectedProfile.starProfile ? `STAR · ${selectedProfile.starProfile.displayName}` : "FAN"}</Text></View>
+              <View style={styles.profileHero}><View style={styles.profileAvatar}><Avatar uri={selectedProfile.profileImageUrl} name={selectedProfile.nickname} size={72} crop="face" characterType={selectedProfile.activityProfile?.type} /></View><Text style={styles.profileName}>{selectedProfile.nickname}</Text><Text style={styles.profileRole}>{selectedProfile.starProfile ? `STAR · ${selectedProfile.starProfile.displayName}` : "FAN"}</Text></View>
               {selectedProfile.starProfile ? <Text style={styles.profileMeta}>NFT 단계: {selectedProfile.starProfile.stage === "promoted" ? "PROMOTED" : "ASPIRING"}</Text> : null}
               {selectedProfile.id === me?.id ? (
                 <Pressable onPress={() => { setSelectedProfile(null); router.push("/profile/edit"); }} style={styles.profileFollow}><Text style={styles.profileFollowText}>내 프로필 관리</Text></Pressable>
@@ -462,6 +479,8 @@ export default function FeedScreen() {
     </NeonBackdrop>
   );
 }
+
+export default FeedScreenV2;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -550,3 +569,4 @@ const styles = StyleSheet.create({
   stateTitle: { color: neon.text, fontFamily: "Inter_700Bold", fontSize: 14 },
   stateText: { color: neon.muted, fontFamily: "Inter_400Regular", fontSize: 11 },
 });
+*/

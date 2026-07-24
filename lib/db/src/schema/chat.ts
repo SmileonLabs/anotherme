@@ -6,6 +6,8 @@ import { characterProfilesTable } from "./characterProfiles";
 export const chatRoomsTable = pgTable("chat_rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   type: text("type").notNull(),
+  category: text("category").notNull().default("casual"),
+  visibility: text("visibility").notNull().default("private"),
   name: text("name"),
   ownerId: uuid("owner_id").references(() => usersTable.id),
   lastMessage: text("last_message"),
@@ -14,7 +16,9 @@ export const chatRoomsTable = pgTable("chat_rooms", {
   pinnedMessageId: uuid("pinned_message_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (t) => [
+  index("chat_rooms_type_category_updated_at_idx").on(t.type, t.category, t.updatedAt),
+]);
 
 export const chatRoomMembersTable = pgTable(
   "chat_room_members",

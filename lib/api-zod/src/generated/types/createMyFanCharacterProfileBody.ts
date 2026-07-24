@@ -23,5 +23,8 @@ export type CreateMyFanCharacterProfileBody = {
      * @nullable
      */
   profileImageUrl?: string | null;
+  /** Onboarding-only flag. When true, an uncustomized default FAN is completed in place. Ordinary FAN-add flows must omit it so an existing profile is never overwritten.
+   */
+  customizeDefault?: boolean;
   customization: CreateMyFanCharacterProfileBodyCustomization;
 };

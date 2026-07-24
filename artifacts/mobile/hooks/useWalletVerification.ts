@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
 import { playModeQueryKey, type PlayModeState } from "@/hooks/usePlayMode";
+import { characterProfilesQueryKey } from "@/hooks/useCharacterProfiles";
 
 export interface WalletStatus {
   walletAddress: string | null;
@@ -150,6 +151,7 @@ export function useWalletVerification() {
       queryClient.setQueryData(playModeQueryKey, result.state);
       queryClient.invalidateQueries({ queryKey: walletStatusQueryKey });
       queryClient.invalidateQueries({ queryKey: walletNftInventoryQueryKey });
+      queryClient.invalidateQueries({ queryKey: characterProfilesQueryKey });
     },
   });
 

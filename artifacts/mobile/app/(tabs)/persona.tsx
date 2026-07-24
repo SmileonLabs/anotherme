@@ -1,15 +1,23 @@
 import { CustomScrollView } from "@/components/CustomScroll";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ScrollView } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ScrollView,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { Image, type ImageSource } from "expo-image";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useGetMe,
   useGetMyPersona,
   useGetMyPersonaCard,
+  useGetPublicCharacterProfile,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { PersonaCard } from "@/components/PersonaCard";
@@ -17,14 +25,23 @@ import { StarLockCard } from "@/components/StarLockCard";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { useColors } from "@/hooks/useColors";
 import { useThemeMode } from "@/hooks/useThemeMode";
-import { usePlayMode, type FanProfileState } from "@/hooks/usePlayMode";
-import { FAN_STAT_META as CANONICAL_FAN_STAT_META } from "@/constants/fanStats";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import {
+  FAN_STAT_META as CANONICAL_FAN_STAT_META,
+  readFanStat,
+} from "@/constants/fanStats";
 import { useTorimia, type TorimiaRequirement } from "@/hooks/useTorimia";
-import { useWalletVerification, type WalletStatus } from "@/hooks/useWalletVerification";
+import {
+  useWalletVerification,
+  type WalletStatus,
+} from "@/hooks/useWalletVerification";
 import { usePersonaAnalysis } from "@/hooks/usePersonaAnalysis";
 import { gradients, gradientsDark } from "@/constants/colors";
-import { useMediaUri } from "@/hooks/useMediaUri";
-import { useCharacterProfiles, type CharacterProfileView } from "@/hooks/useCharacterProfiles";
+import {
+  useCharacterProfiles,
+  type CharacterProfileView,
+} from "@/hooks/useCharacterProfiles";
+import { usePvtWallet } from "@/hooks/usePvtWallet";
 
 type StatKey =
   | "logic"
@@ -56,10 +73,10 @@ const FAN_STAT_META: {
   icon: keyof typeof Feather.glyphMap;
   color: string;
 }[] = [
-  { key: "fanPower", label: "팬 파워", icon: "zap", color: "#7C5CFC" },
-  { key: "supportPower", label: "응원력", icon: "heart", color: "#FF6B9D" },
-  { key: "empathy", label: "공감", icon: "users", color: "#00B488" },
-  { key: "story", label: "스토리", icon: "book-open", color: "#F5A623" },
+  { key: "fanPower", label: "매력", icon: "heart", color: "#F062D7" },
+  { key: "supportPower", label: "응원력", icon: "volume-2", color: "#20E4E5" },
+  { key: "empathy", label: "유대감", icon: "message-circle", color: "#39D9FF" },
+  { key: "story", label: "영향력", icon: "award", color: "#F6C733" },
 ];
 
 const STAR_STAT_META: {
@@ -69,9 +86,9 @@ const STAR_STAT_META: {
   color: string;
 }[] = [
   { key: "charm", label: "매력", icon: "star", color: "#F59E0B" },
-  { key: "stagePresence", label: "무대감", icon: "radio", color: "#4F7BF5" },
-  { key: "bond", label: "유대", icon: "link", color: "#00B488" },
-  { key: "lore", label: "서사", icon: "book", color: "#7C5CFC" },
+  { key: "stagePresence", label: "스타성", icon: "star", color: "#FFE02F" },
+  { key: "bond", label: "유대감", icon: "message-circle", color: "#39D9FF" },
+  { key: "lore", label: "영향력", icon: "award", color: "#F6C733" },
 ];
 
 const STAT_LABELS: Record<StatKey, string> = {
@@ -110,10 +127,15 @@ function formatEventTime(iso: string): string {
   if (diffHr < 24) return `${diffHr}시간 전`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay}일 전`;
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("ko-KR", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
-function syncStateLabel(state?: "not_started" | "forming" | "synced" | null): string {
+function syncStateLabel(
+  state?: "not_started" | "forming" | "synced" | null,
+): string {
   if (state === "synced") return "동기화 안정화";
   if (state === "forming") return "동기화 형성 중";
   return "동기화 전";
@@ -121,7 +143,9 @@ function syncStateLabel(state?: "not_started" | "forming" | "synced" | null): st
 
 function formatWalletAddress(address?: string | null): string {
   if (!address) return "미연결";
-  return address.length > 12 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
+  return address.length > 12
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : address;
 }
 
 function modeLabel(mode: "fan" | "star") {
@@ -189,7 +213,11 @@ export function PersonaScreen({
 
   const { data: me } = useGetMe();
   const { data: persona, isLoading, isError, refetch } = useGetMyPersona();
-  const { data: card, isError: isCardError, refetch: refetchCard } = useGetMyPersonaCard();
+  const {
+    data: card,
+    isError: isCardError,
+    refetch: refetchCard,
+  } = useGetMyPersonaCard();
   const {
     mode,
     fanProfile,
@@ -202,22 +230,36 @@ export function PersonaScreen({
     setMode,
   } = usePlayMode();
   const { state: torimia, requirements: torimiaRequirements } = useTorimia();
-  const { status: walletStatus } = useWalletVerification();
+  const {
+    status: walletStatus,
+    inventory: walletInventory,
+    isLoadingStatus: isWalletStatusLoading,
+    isLoadingInventory: isWalletInventoryLoading,
+  } = useWalletVerification();
   const {
     activeProfile: activeCharacterProfile,
     profiles: characterProfiles,
     activateProfile: activateCharacterProfile,
     isActivating: isActivatingCharacter,
   } = useCharacterProfiles();
+  const { data: publicCharacterProfile } = useGetPublicCharacterProfile(
+    activeCharacterProfile?.id ?? "",
+  );
+  const { data: starPointWallet, isLoading: isStarPointLoading } =
+    usePvtWallet();
 
   const [eventsExpanded, setEventsExpanded] = React.useState(false);
-  const { analyze, isAnalyzing, analysisError, analysisNotice } = usePersonaAnalysis({
-    refetchPersona: refetch,
-    refetchCard,
-  });
+  const { analyze, isAnalyzing, analysisError, analysisNotice } =
+    usePersonaAnalysis({
+      refetchPersona: refetch,
+      refetchCard,
+    });
 
   const scrollToStarLock = React.useCallback(() => {
-    scrollRef.current?.scrollTo({ y: Math.max(0, starLockY - 12), animated: true });
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, starLockY - 12),
+      animated: true,
+    });
   }, [starLockY]);
 
   React.useEffect(() => {
@@ -228,8 +270,16 @@ export function PersonaScreen({
 
   const fanLevel = fanProfile?.level ?? persona?.level ?? 1;
   const ontologyProfile =
-    ((card as typeof card & { ontologyProfile?: PersonaOntologyProfile | null } | undefined)?.ontologyProfile ??
-      (persona as typeof persona & { ontologyProfile?: PersonaOntologyProfile | null } | undefined)?.ontologyProfile) ??
+    (
+      card as
+        | (typeof card & { ontologyProfile?: PersonaOntologyProfile | null })
+        | undefined
+    )?.ontologyProfile ??
+    (
+      persona as
+        | (typeof persona & { ontologyProfile?: PersonaOntologyProfile | null })
+        | undefined
+    )?.ontologyProfile ??
     null;
   const cardSync = card as (typeof card & PersonaCardSyncFields) | undefined;
   const nextSyncActions = cardSync?.nextActions?.length
@@ -241,30 +291,57 @@ export function PersonaScreen({
       ];
   const syncTimeline = cardSync?.syncTimeline?.length
     ? cardSync.syncTimeline
-    : (ontologyProfile?.evidenceSummary ?? []).slice(0, 3).map((label) => ({ label, createdAt: ontologyProfile?.updatedAt ?? null }));
+    : (ontologyProfile?.evidenceSummary ?? [])
+        .slice(0, 3)
+        .map((label) => ({
+          label,
+          createdAt: ontologyProfile?.updatedAt ?? null,
+        }));
   const recentEvents = persona?.recentEvents ?? [];
-  const visibleRecentEvents = eventsExpanded ? recentEvents : recentEvents.slice(0, 1);
+  const visibleRecentEvents = eventsExpanded
+    ? recentEvents
+    : recentEvents.slice(0, 1);
   return (
     <NeonBackdrop style={styles.container}>
       <View
-        style={[styles.screenHeader, { paddingTop: insets.top + 8, backgroundColor: colors.muted }]}
+        style={[
+          styles.screenHeader,
+          {
+            paddingTop: insets.top + 8,
+            backgroundColor: showOntologyDetails ? colors.muted : "#020208",
+          },
+        ]}
       >
-        {showOntologyDetails ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="뒤로"
-            hitSlop={10}
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.screenBackButton, pressed && { opacity: 0.55 }]}
-          >
-            <Feather name="chevron-left" size={26} color={colors.primary} />
-          </Pressable>
-        ) : null}
-        <Text style={[styles.screenTitle, { color: colors.foreground }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="뒤로"
+          hitSlop={10}
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.screenBackButton,
+            pressed && { opacity: 0.55 },
+          ]}
+        >
+          <Feather
+            name="arrow-left"
+            size={showOntologyDetails ? 26 : 32}
+            color="#F8F5FB"
+          />
+        </Pressable>
+        <Text
+          style={[
+            styles.screenTitle,
+            !showOntologyDetails && styles.dashboardScreenTitle,
+            { color: colors.foreground },
+          ]}
+        >
           {showOntologyDetails ? "Another Me 분석" : "마이페이지"}
         </Text>
       </View>
-      <CustomScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+      <CustomScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+      >
         {isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.primary} />
@@ -286,414 +363,814 @@ export function PersonaScreen({
             {!showOntologyDetails ? (
               <MyDashboard
                 nickname={me?.nickname ?? "나"}
-                avatarUri={me?.profileImageUrl}
+                email={me?.email ?? ""}
                 intro={me?.statusMessage ?? "비비와 함께 성장하는 또 다른 나 ✦"}
                 level={fanLevel}
                 xp={fanProfile?.xp ?? 0}
-                stats={fanProfile?.stats}
-                social={social}
-                activityCount={recentEvents.length}
+                stats={
+                  activeCharacterProfile?.type === "fan"
+                    ? activeCharacterProfile.stats
+                    : fanProfile?.stats
+                }
+                social={
+                  publicCharacterProfile?.profile
+                    ? {
+                        followerCount:
+                          publicCharacterProfile.profile.followerCount,
+                        followingCount:
+                          publicCharacterProfile.profile.followingCount,
+                      }
+                    : social
+                }
+                activityCount={publicCharacterProfile?.profile.postCount ?? 0}
                 walletStatus={walletStatus}
+                walletOwnedCount={walletInventory?.totalOwned ?? 0}
+                walletLoading={
+                  isWalletStatusLoading ||
+                  (walletStatus?.walletVerified === true &&
+                    isWalletInventoryLoading)
+                }
                 mode={mode}
                 starUnlocked={starUnlocked}
                 equippedStar={equippedStar}
-                starProfiles={starProfiles}
-                characterProfiles={characterProfiles}
                 activeCharacterProfile={activeCharacterProfile}
-                isActivatingCharacter={isActivatingCharacter}
-                onActivateCharacter={activateCharacterProfile}
-                isEquippingStar={isActivatingStar}
-                onEquipStar={async (starProfileId) => {
-                  await activateStar(starProfileId);
-                  await setMode("star");
-                }}
-                onSelectFan={() => void setMode("fan")}
-                onStarRegistration={scrollToStarLock}
-                isAnalyzing={isAnalyzing}
+                onStarRegistration={() => router.push("/profiles/summon-star" as never)}
                 onEditProfile={() => router.push("/profile/edit")}
-                onCreateFan={() => router.push("/profile/create-fan" as never)}
-                onWallet={() => router.push("/pvt/wallet" as never)}
-                onNotifications={() => router.push("/settings/notifications")}
+                onProfileManagement={() => router.push("/profiles" as never)}
+                onStarPoint={() => router.push("/pvt/wallet" as never)}
+                onWallet={() => router.push("/profiles/summon-star" as never)}
                 onAccount={() => router.push("/settings")}
-                onAnalyze={() => analyze()}
+                starPointBalance={starPointWallet?.balance ?? 0}
+                starPointLoading={isStarPointLoading}
               />
             ) : null}
             {showOntologyDetails ? (
               <>
-            {/* Hero: identity + level */}
-            <LinearGradient
-              colors={(isDark ? gradientsDark : gradients).soft}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.hero}
-            >
-              <View style={styles.heroAvatarWrap}>
-                <Avatar uri={me?.profileImageUrl} name={me?.nickname ?? "나"} size={84} />
-                <View style={[styles.levelChip, { backgroundColor: colors.foreground }]}>
-                  <Text style={[styles.levelChipText, { color: colors.background }]}>
-                    FAN Lv.{fanLevel}
+                {/* Hero: identity + level */}
+                <LinearGradient
+                  colors={(isDark ? gradientsDark : gradients).soft}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.hero}
+                >
+                  <View style={styles.heroAvatarWrap}>
+                    <Avatar
+                      uri={activeCharacterProfile?.profileImageUrl}
+                      name={me?.nickname ?? "나"}
+                      size={84}
+                      crop="face"
+                      characterType={activeCharacterProfile?.type}
+                    />
+                    <View
+                      style={[
+                        styles.levelChip,
+                        { backgroundColor: colors.foreground },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.levelChipText,
+                          { color: colors.background },
+                        ]}
+                      >
+                        FAN Lv.{fanLevel}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    style={[styles.heroName, { color: colors.foreground }]}
+                    numberOfLines={1}
+                  >
+                    {me?.nickname ?? "나"}의 마이페이지
                   </Text>
-                </View>
-              </View>
-              <Text style={[styles.heroName, { color: colors.foreground }]} numberOfLines={1}>
-                {me?.nickname ?? "나"}의 마이페이지
-              </Text>
-              <Text style={[styles.heroTitle, { color: colors.mutedForeground }]}>
-                FAN/STAR 성장 관리 · Another Me는 신뢰도로 동기화
-              </Text>
+                  <Text
+                    style={[
+                      styles.heroTitle,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    FAN/STAR 성장 관리 · Another Me는 신뢰도로 동기화
+                  </Text>
 
-              <View style={styles.heroBtnRow}>
-                <Pressable
-                  onPress={() => router.push("/profile/ranking")}
-                  style={({ pressed }) => [
-                    styles.rankingBtn,
-                    { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
+                  <View style={styles.heroBtnRow}>
+                    <Pressable
+                      onPress={() => router.push("/profile/ranking")}
+                      style={({ pressed }) => [
+                        styles.rankingBtn,
+                        {
+                          backgroundColor: colors.foreground,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}
+                    >
+                      <Feather
+                        name="bar-chart-2"
+                        size={15}
+                        color={colors.background}
+                      />
+                      <Text
+                        style={[
+                          styles.rankingBtnText,
+                          { color: colors.background },
+                        ]}
+                      >
+                        랭킹 보기
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push("/clan")}
+                      style={({ pressed }) => [
+                        styles.rankingBtn,
+                        {
+                          backgroundColor: "transparent",
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: colors.foreground,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}
+                    >
+                      <Feather
+                        name="shield"
+                        size={15}
+                        color={colors.foreground}
+                      />
+                      <Text
+                        style={[
+                          styles.rankingBtnText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        팬클럽
+                      </Text>
+                    </Pressable>
+                  </View>
+                </LinearGradient>
+
+                {/* Another Me ontology profile */}
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
                   ]}
                 >
-                  <Feather name="bar-chart-2" size={15} color={colors.background} />
-                  <Text style={[styles.rankingBtnText, { color: colors.background }]}>
-                    랭킹 보기
+                  Another Me 프로필
+                </Text>
+                <Text
+                  style={[
+                    styles.sectionDescription,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {ontologyProfile
+                    ? "XP나 레벨이 아니라, 톡 리워드 요약·토크배틀 평가·AI 기억 근거와 신뢰도로 관리됩니다."
+                    : "아직 온톨로지 프로필이 없어요. 이전 FAN/AI 분석값은 숨기고, 실제 동기화 근거가 생길 때만 표시합니다."}
+                </Text>
+                {card ? (
+                  <>
+                    <PersonaCard
+                      card={card}
+                      avatarUri={activeCharacterProfile?.profileImageUrl}
+                      avatarName={me?.nickname ?? "나"}
+                      avatarCharacterType={activeCharacterProfile?.type}
+                    />
+
+                    {/* Next sync recommendations */}
+                    <View
+                      style={[
+                        styles.identityCard,
+                        { backgroundColor: colors.background },
+                      ]}
+                    >
+                      <View style={styles.identityRow}>
+                        <View
+                          style={[
+                            styles.identityIcon,
+                            { backgroundColor: `${colors.primary}18` },
+                          ]}
+                        >
+                          <Feather
+                            name="refresh-cw"
+                            size={15}
+                            color={colors.primary}
+                          />
+                        </View>
+                        <View style={styles.identityBody}>
+                          <Text
+                            style={[
+                              styles.identityLabel,
+                              { color: colors.foreground },
+                            ]}
+                          >
+                            다음 동기화 추천 ·{" "}
+                            {syncStateLabel(cardSync?.syncState)}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.identityText,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            Another Me는 원문 채팅이 아니라 사용자가 선택한
+                            요약/평가/기억 근거만 참고해요.
+                          </Text>
+                          <View style={styles.tagRow}>
+                            {nextSyncActions.map((action) => (
+                              <View
+                                key={action}
+                                style={[
+                                  styles.growthTag,
+                                  { backgroundColor: `${colors.primary}14` },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.growthTagText,
+                                    { color: colors.primary },
+                                  ]}
+                                >
+                                  {action}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Ontology sync evidence */}
+                    <View
+                      style={[
+                        styles.identityCard,
+                        { backgroundColor: colors.background },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.timelineTitle,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        동기화 근거
+                      </Text>
+                      {syncTimeline.length > 0 ? (
+                        syncTimeline.map((item, i) => (
+                          <View
+                            key={`${item.label}-${i}`}
+                            style={styles.timelineRow}
+                          >
+                            <View style={styles.timelineMarkerCol}>
+                              <View
+                                style={[
+                                  styles.timelineDot,
+                                  {
+                                    backgroundColor:
+                                      i === 0 ? colors.primary : colors.border,
+                                  },
+                                ]}
+                              />
+                              {i < syncTimeline.length - 1 ? (
+                                <View
+                                  style={[
+                                    styles.timelineLine,
+                                    { backgroundColor: colors.border },
+                                  ]}
+                                />
+                              ) : null}
+                            </View>
+                            <View style={styles.timelineBody}>
+                              <Text
+                                style={[
+                                  styles.timelineArchetype,
+                                  { color: colors.foreground },
+                                ]}
+                              >
+                                {item.label}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.timelineDate,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                {item.createdAt
+                                  ? formatEventTime(item.createdAt)
+                                  : "동기화 대기"}
+                              </Text>
+                            </View>
+                          </View>
+                        ))
+                      ) : (
+                        <Text
+                          style={[
+                            styles.identityText,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          아직 반영된 온톨로지 근거가 없어요. 톡 리워드 보상
+                          수령, AI 기억 추가, 토크배틀 참여 후 여기에
+                          표시됩니다.
+                        </Text>
+                      )}
+                    </View>
+
+                    {ontologyProfile ? (
+                      <>
+                        <Text
+                          style={[
+                            styles.sectionTitle,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          상세 신호
+                        </Text>
+                        <OntologyProfileCard
+                          profile={ontologyProfile}
+                          colors={colors}
+                        />
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <View
+                    style={[
+                      styles.identityCard,
+                      { backgroundColor: colors.background },
+                    ]}
+                  >
+                    <View style={styles.identityRow}>
+                      <View
+                        style={[
+                          styles.identityIcon,
+                          { backgroundColor: `${colors.primary}18` },
+                        ]}
+                      >
+                        <Feather
+                          name={isCardError ? "alert-circle" : "git-branch"}
+                          size={15}
+                          color={colors.primary}
+                        />
+                      </View>
+                      <View style={styles.identityBody}>
+                        <Text
+                          style={[
+                            styles.identityLabel,
+                            { color: colors.foreground },
+                          ]}
+                        >
+                          온톨로지 프로필 없음
+                        </Text>
+                        <Text
+                          style={[
+                            styles.identityText,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          이전 카드 fallback을 제거했어요. Talk to Earn 보상
+                          수령, AI 기억 추가, 토크배틀 참여, 또는 아래 동기화
+                          분석 후 실제 ontology 근거가 생기면 표시됩니다.
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
+                {/* Recent growth log */}
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  이전 활동 기록
+                </Text>
+                <View
+                  style={[
+                    styles.eventsCard,
+                    { backgroundColor: colors.background },
+                  ]}
+                >
+                  {recentEvents.length > 0 ? (
+                    <>
+                      {visibleRecentEvents.map((ev, i) => {
+                        const icon = SOURCE_ICONS[ev.sourceType] ?? "activity";
+                        const changes = formatStatChanges(ev.statChanges);
+                        return (
+                          <View
+                            key={ev.id}
+                            style={[
+                              styles.eventRow,
+                              {
+                                borderTopColor: colors.border,
+                                borderTopWidth:
+                                  i === 0 ? 0 : StyleSheet.hairlineWidth,
+                              },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.eventIcon,
+                                { backgroundColor: `${colors.primary}18` },
+                              ]}
+                            >
+                              <Feather
+                                name={icon}
+                                size={15}
+                                color={colors.primary}
+                              />
+                            </View>
+                            <View style={styles.eventBody}>
+                              <Text
+                                style={[
+                                  styles.eventTitle,
+                                  { color: colors.foreground },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {ev.reason ?? "성장"}
+                                {changes ? `으로 ${changes}` : ""}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.eventMeta,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                {formatEventTime(ev.createdAt)}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[
+                                styles.eventXp,
+                                { color: colors.primary },
+                              ]}
+                            >
+                              기록
+                            </Text>
+                          </View>
+                        );
+                      })}
+                      {recentEvents.length > 1 ? (
+                        <Pressable
+                          onPress={() => setEventsExpanded((value) => !value)}
+                          style={({ pressed }) => [
+                            styles.eventsToggle,
+                            {
+                              borderTopColor: colors.border,
+                              opacity: pressed ? 0.65 : 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.eventsToggleText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            {eventsExpanded
+                              ? "접기"
+                              : `전체 ${recentEvents.length}개 펼치기`}
+                          </Text>
+                          <Feather
+                            name={
+                              eventsExpanded ? "chevron-up" : "chevron-down"
+                            }
+                            size={15}
+                            color={colors.primary}
+                          />
+                        </Pressable>
+                      ) : null}
+                    </>
+                  ) : (
+                    <View style={styles.eventsEmpty}>
+                      <Feather
+                        name="clock"
+                        size={20}
+                        color={colors.mutedForeground}
+                      />
+                      <Text
+                        style={[
+                          styles.eventsEmptyText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        아직 활동 기록이 없어요.{"\n"}톡 리워드와 토크배틀을
+                        시작해 보세요.
+                      </Text>
+                      <Pressable
+                        onPress={() => router.push("/(tabs)/battle")}
+                        style={({ pressed }) => [
+                          styles.emptyCta,
+                          {
+                            backgroundColor: colors.foreground,
+                            opacity: pressed ? 0.85 : 1,
+                          },
+                        ]}
+                      >
+                        <Feather
+                          name="mic"
+                          size={14}
+                          color={colors.background}
+                        />
+                        <Text
+                          style={[
+                            styles.emptyCtaText,
+                            { color: colors.background },
+                          ]}
+                        >
+                          토크배틀 시작
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+
+                {/* AI analysis */}
+                <View style={styles.analysisHeader}>
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      styles.analysisHeaderTitle,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Another Me 동기화 분석
                   </Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => analyze()}
+                    disabled={isAnalyzing}
+                    style={({ pressed }) => [
+                      styles.analyzeBtn,
+                      {
+                        backgroundColor: `${colors.primary}18`,
+                        opacity: isAnalyzing ? 0.7 : pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    {isAnalyzing ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Feather
+                        name="refresh-cw"
+                        size={13}
+                        color={colors.primary}
+                      />
+                    )}
+                    <Text
+                      style={[styles.analyzeBtnText, { color: colors.primary }]}
+                    >
+                      {isAnalyzing ? "분석 중…" : "AI 분석 업데이트"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View
+                  style={[
+                    styles.summaryCard,
+                    { backgroundColor: colors.background },
+                  ]}
+                >
+                  {analysisError ? (
+                    <View style={styles.analysisErrorRow}>
+                      <Feather name="alert-circle" size={16} color="#EF4444" />
+                      <Text
+                        style={[
+                          styles.analysisErrorText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {analysisError}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {analysisNotice ? (
+                    <View style={styles.analysisNoticeRow}>
+                      <Feather name="info" size={16} color={colors.primary} />
+                      <Text
+                        style={[
+                          styles.analysisErrorText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {analysisNotice}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {isAnalyzing ? (
+                    <View style={styles.summaryEmpty}>
+                      <ActivityIndicator color={colors.primary} />
+                      <Text
+                        style={[
+                          styles.summaryEmptyText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        기존 활동을 ontology evidence로 변환하고 있어요…
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.summaryEmpty}>
+                      <Feather
+                        name="cpu"
+                        size={20}
+                        color={colors.mutedForeground}
+                      />
+                      <Text
+                        style={[
+                          styles.summaryEmptyText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        이전 AI 분석 상세값은 더 이상 표시하거나 저장하지
+                        않아요. "AI 분석 업데이트"는 결과를 Another Me 최근 반영
+                        내역에만 비동기로 보냅니다.
+                        {persona?.lastAnalyzedAt
+                          ? `\n마지막 요청: ${formatEventTime(persona.lastAnalyzedAt)}`
+                          : ""}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* How to grow */}
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  성장 구조
+                </Text>
+                <View
+                  style={[
+                    styles.tipsCard,
+                    { backgroundColor: colors.background },
+                  ]}
+                >
+                  <TipRow
+                    icon="message-circle"
+                    text="Talk to Earn 보상 수령 시 요약/키워드/평가 점수만 Another Me에 동기화돼요"
+                    colors={colors}
+                  />
+                  <TipRow
+                    icon="mic"
+                    text="토크배틀 발언 평가는 TP 경쟁과 Another Me 표현 패턴에 반영돼요"
+                    colors={colors}
+                  />
+                  <TipRow
+                    icon="heart"
+                    text="퀘스트와 업적 보상은 FAN XP를 올려요"
+                    colors={colors}
+                  />
+                  <TipRow
+                    icon="star"
+                    text="STAR NFT를 장착하면 STAR 미션과 별도 STAR XP가 열려요"
+                    colors={colors}
+                    last
+                  />
+                </View>
+
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  계정 상태
+                </Text>
+                <AccountStateCard
+                  colors={colors}
+                  mode={mode}
+                  starUnlocked={starUnlocked}
+                  equippedStarName={equippedStar?.displayName ?? null}
+                  equippedStarStage={equippedStar?.stage ?? null}
+                  walletStatus={walletStatus}
+                />
+
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  FAN 성장
+                </Text>
+                <GrowthSummaryCard
+                  colors={colors}
+                  title="FAN 프로필"
+                  subtitle="채팅, 응원, 토크배틀 활동으로 성장하는 기본 팬 상태입니다."
+                  level={fanProfile?.level ?? 1}
+                  xp={fanProfile?.xp ?? 0}
+                  xpLabel="FAN XP"
+                  stats={fanProfile?.stats}
+                  statMeta={CANONICAL_FAN_STAT_META}
+                />
+
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  STAR 성장
+                </Text>
+                <GrowthSummaryCard
+                  colors={colors}
+                  title={
+                    equippedStar
+                      ? `${equippedStar.displayName} ${starStageLabel(equippedStar.stage)}`
+                      : "장착된 STAR 없음"
+                  }
+                  subtitle={
+                    equippedStar
+                      ? equippedStar.stage === "promoted"
+                        ? `NFT #${equippedStar.tokenId}에 귀속된 공식 STAR 성장 상태입니다.`
+                        : `NFT #${equippedStar.tokenId}에 귀속된 연습생 STAR 성장 상태입니다.`
+                      : starUnlocked
+                        ? "NFT를 장착하면 해당 STAR의 스탯과 성장이 여기에 표시됩니다."
+                        : "STAR NFT 인증 후 캐릭터를 장착하면 열립니다."
+                  }
+                  level={equippedStar?.level ?? 1}
+                  xp={equippedStar?.xp ?? 0}
+                  xpLabel="STAR XP"
+                  stats={equippedStar?.stats}
+                  statMeta={STAR_STAT_META}
+                  disabled={!equippedStar}
+                  footer={
+                    !equippedStar ? (
+                      <Pressable
+                        onPress={scrollToStarLock}
+                        style={({ pressed }) => [
+                          styles.cardAction,
+                          {
+                            backgroundColor: colors.primary,
+                            opacity: pressed ? 0.85 : 1,
+                          },
+                        ]}
+                      >
+                        <Feather
+                          name="star"
+                          size={14}
+                          color={colors.primaryForeground}
+                        />
+                        <Text
+                          style={[
+                            styles.cardActionText,
+                            { color: colors.primaryForeground },
+                          ]}
+                        >
+                          STAR 인증/장착하기
+                        </Text>
+                      </Pressable>
+                    ) : null
+                  }
+                />
+
+                {!equippedStar ? (
+                  <View
+                    style={styles.starLockAnchor}
+                    onLayout={(event) =>
+                      setStarLockY(event.nativeEvent.layout.y)
+                    }
+                  >
+                    <StarLockCard />
+                  </View>
+                ) : null}
+
+                {equippedStar ? (
+                  <TorimiaStatusCard
+                    colors={colors}
+                    promoted={
+                      !!torimia?.promoted || equippedStar.stage === "promoted"
+                    }
+                    canOpen={!!torimia?.canOpen}
+                    requirements={torimiaRequirements}
+                    onMission={() => router.push("/(tabs)/dungeon" as never)}
+                    onFanclub={() => router.push("/clan" as never)}
+                  />
+                ) : null}
+
                 <Pressable
-                  onPress={() => router.push("/clan")}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/battle/create",
+                      params: { mode: "ai" },
+                    })
+                  }
                   style={({ pressed }) => [
-                    styles.rankingBtn,
+                    styles.ctaBtn,
                     {
-                      backgroundColor: "transparent",
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: colors.foreground,
+                      backgroundColor: colors.foreground,
                       opacity: pressed ? 0.85 : 1,
                     },
                   ]}
                 >
-                  <Feather name="shield" size={15} color={colors.foreground} />
-                  <Text style={[styles.rankingBtnText, { color: colors.foreground }]}>
-                    팬클럽
+                  <Feather name="zap" size={18} color={colors.background} />
+                  <Text style={[styles.ctaText, { color: colors.background }]}>
+                    지금 성장하러 가기
                   </Text>
                 </Pressable>
-              </View>
-            </LinearGradient>
-
-            {/* Another Me ontology profile */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Another Me 프로필</Text>
-            <Text style={[styles.sectionDescription, { color: colors.mutedForeground }]}>
-              {ontologyProfile
-                ? "XP나 레벨이 아니라, 톡 리워드 요약·토크배틀 평가·AI 기억 근거와 신뢰도로 관리됩니다."
-                : "아직 온톨로지 프로필이 없어요. 이전 FAN/AI 분석값은 숨기고, 실제 동기화 근거가 생길 때만 표시합니다."}
-            </Text>
-            {card ? (
-              <>
-                <PersonaCard
-                  card={card}
-                  avatarUri={me?.profileImageUrl}
-                  avatarName={me?.nickname ?? "나"}
-                />
-
-                {/* Next sync recommendations */}
-                <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
-                  <View style={styles.identityRow}>
-                    <View style={[styles.identityIcon, { backgroundColor: `${colors.primary}18` }]}>
-                      <Feather name="refresh-cw" size={15} color={colors.primary} />
-                    </View>
-                    <View style={styles.identityBody}>
-                      <Text style={[styles.identityLabel, { color: colors.foreground }]}>
-                        다음 동기화 추천 · {syncStateLabel(cardSync?.syncState)}
-                      </Text>
-                      <Text style={[styles.identityText, { color: colors.mutedForeground }]}>
-                        Another Me는 원문 채팅이 아니라 사용자가 선택한 요약/평가/기억 근거만 참고해요.
-                      </Text>
-                      <View style={styles.tagRow}>
-                        {nextSyncActions.map((action) => (
-                          <View key={action} style={[styles.growthTag, { backgroundColor: `${colors.primary}14` }]}>
-                            <Text style={[styles.growthTagText, { color: colors.primary }]}>{action}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Ontology sync evidence */}
-                <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
-                  <Text style={[styles.timelineTitle, { color: colors.foreground }]}>동기화 근거</Text>
-                  {syncTimeline.length > 0 ? (
-                    syncTimeline.map((item, i) => (
-                      <View key={`${item.label}-${i}`} style={styles.timelineRow}>
-                        <View style={styles.timelineMarkerCol}>
-                          <View style={[styles.timelineDot, { backgroundColor: i === 0 ? colors.primary : colors.border }]} />
-                          {i < syncTimeline.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: colors.border }]} /> : null}
-                        </View>
-                        <View style={styles.timelineBody}>
-                          <Text style={[styles.timelineArchetype, { color: colors.foreground }]}>{item.label}</Text>
-                          <Text style={[styles.timelineDate, { color: colors.mutedForeground }]}>{item.createdAt ? formatEventTime(item.createdAt) : "동기화 대기"}</Text>
-                        </View>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={[styles.identityText, { color: colors.mutedForeground }]}>아직 반영된 온톨로지 근거가 없어요. 톡 리워드 보상 수령, AI 기억 추가, 토크배틀 참여 후 여기에 표시됩니다.</Text>
-                  )}
-                </View>
-
-                {ontologyProfile ? (
-                  <>
-                    <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>상세 신호</Text>
-                    <OntologyProfileCard profile={ontologyProfile} colors={colors} />
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <View style={[styles.identityCard, { backgroundColor: colors.background }]}>
-                <View style={styles.identityRow}>
-                  <View style={[styles.identityIcon, { backgroundColor: `${colors.primary}18` }]}>
-                    <Feather name={isCardError ? "alert-circle" : "git-branch"} size={15} color={colors.primary} />
-                  </View>
-                  <View style={styles.identityBody}>
-                    <Text style={[styles.identityLabel, { color: colors.foreground }]}>온톨로지 프로필 없음</Text>
-                    <Text style={[styles.identityText, { color: colors.mutedForeground }]}>이전 카드 fallback을 제거했어요. Talk to Earn 보상 수령, AI 기억 추가, 토크배틀 참여, 또는 아래 동기화 분석 후 실제 ontology 근거가 생기면 표시됩니다.</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* Recent growth log */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              이전 활동 기록
-            </Text>
-            <View style={[styles.eventsCard, { backgroundColor: colors.background }]}>
-              {recentEvents.length > 0 ? (
-                <>
-                  {visibleRecentEvents.map((ev, i) => {
-                    const icon = SOURCE_ICONS[ev.sourceType] ?? "activity";
-                    const changes = formatStatChanges(ev.statChanges);
-                    return (
-                      <View
-                        key={ev.id}
-                        style={[
-                          styles.eventRow,
-                          {
-                            borderTopColor: colors.border,
-                            borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
-                          },
-                        ]}
-                      >
-                        <View style={[styles.eventIcon, { backgroundColor: `${colors.primary}18` }]}>
-                          <Feather name={icon} size={15} color={colors.primary} />
-                        </View>
-                        <View style={styles.eventBody}>
-                          <Text style={[styles.eventTitle, { color: colors.foreground }]} numberOfLines={1}>
-                            {ev.reason ?? "성장"}
-                            {changes ? `으로 ${changes}` : ""}
-                          </Text>
-                          <Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>
-                            {formatEventTime(ev.createdAt)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.eventXp, { color: colors.primary }]}>기록</Text>
-                      </View>
-                    );
-                  })}
-                  {recentEvents.length > 1 ? (
-                    <Pressable
-                      onPress={() => setEventsExpanded((value) => !value)}
-                      style={({ pressed }) => [
-                        styles.eventsToggle,
-                        {
-                          borderTopColor: colors.border,
-                          opacity: pressed ? 0.65 : 1,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.eventsToggleText, { color: colors.primary }]}>
-                        {eventsExpanded ? "접기" : `전체 ${recentEvents.length}개 펼치기`}
-                      </Text>
-                      <Feather name={eventsExpanded ? "chevron-up" : "chevron-down"} size={15} color={colors.primary} />
-                    </Pressable>
-                  ) : null}
-                </>
-              ) : (
-                <View style={styles.eventsEmpty}>
-                  <Feather name="clock" size={20} color={colors.mutedForeground} />
-                  <Text style={[styles.eventsEmptyText, { color: colors.mutedForeground }]}>
-                    아직 활동 기록이 없어요.{"\n"}톡 리워드와 토크배틀을 시작해 보세요.
-                  </Text>
-                  <Pressable
-                    onPress={() => router.push("/(tabs)/battle")}
-                    style={({ pressed }) => [
-                      styles.emptyCta,
-                      { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
-                    ]}
-                  >
-                    <Feather name="mic" size={14} color={colors.background} />
-                    <Text style={[styles.emptyCtaText, { color: colors.background }]}>토크배틀 시작</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-
-            {/* AI analysis */}
-            <View style={styles.analysisHeader}>
-              <Text style={[styles.sectionTitle, styles.analysisHeaderTitle, { color: colors.mutedForeground }]}>
-                Another Me 동기화 분석
-              </Text>
-              <Pressable
-                onPress={() => analyze()}
-                disabled={isAnalyzing}
-                style={({ pressed }) => [
-                  styles.analyzeBtn,
-                  {
-                    backgroundColor: `${colors.primary}18`,
-                    opacity: isAnalyzing ? 0.7 : pressed ? 0.85 : 1,
-                  },
-                ]}
-              >
-                {isAnalyzing ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Feather name="refresh-cw" size={13} color={colors.primary} />
-                )}
-                <Text style={[styles.analyzeBtnText, { color: colors.primary }]}>
-                  {isAnalyzing ? "분석 중…" : "AI 분석 업데이트"}
-                </Text>
-              </Pressable>
-            </View>
-
-            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
-              {analysisError ? (
-                <View style={styles.analysisErrorRow}>
-                  <Feather name="alert-circle" size={16} color="#EF4444" />
-                  <Text style={[styles.analysisErrorText, { color: colors.mutedForeground }]}>
-                    {analysisError}
-                  </Text>
-                </View>
-              ) : null}
-
-              {analysisNotice ? (
-                <View style={styles.analysisNoticeRow}>
-                  <Feather name="info" size={16} color={colors.primary} />
-                  <Text style={[styles.analysisErrorText, { color: colors.mutedForeground }]}>
-                    {analysisNotice}
-                  </Text>
-                </View>
-              ) : null}
-
-              {isAnalyzing ? (
-                <View style={styles.summaryEmpty}>
-                  <ActivityIndicator color={colors.primary} />
-                  <Text style={[styles.summaryEmptyText, { color: colors.mutedForeground }]}>
-                    기존 활동을 ontology evidence로 변환하고 있어요…
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.summaryEmpty}>
-                  <Feather name="cpu" size={20} color={colors.mutedForeground} />
-                  <Text style={[styles.summaryEmptyText, { color: colors.mutedForeground }]}>
-                    이전 AI 분석 상세값은 더 이상 표시하거나 저장하지 않아요. "AI 분석 업데이트"는 결과를 Another Me 최근 반영 내역에만 비동기로 보냅니다.
-                    {persona?.lastAnalyzedAt ? `\n마지막 요청: ${formatEventTime(persona.lastAnalyzedAt)}` : ""}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* How to grow */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              성장 구조
-            </Text>
-            <View style={[styles.tipsCard, { backgroundColor: colors.background }]}>
-              <TipRow icon="message-circle" text="Talk to Earn 보상 수령 시 요약/키워드/평가 점수만 Another Me에 동기화돼요" colors={colors} />
-              <TipRow icon="mic" text="토크배틀 발언 평가는 TP 경쟁과 Another Me 표현 패턴에 반영돼요" colors={colors} />
-              <TipRow icon="heart" text="퀘스트와 업적 보상은 FAN XP를 올려요" colors={colors} />
-              <TipRow icon="star" text="STAR NFT를 장착하면 STAR 미션과 별도 STAR XP가 열려요" colors={colors} last />
-            </View>
-
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>계정 상태</Text>
-            <AccountStateCard
-              colors={colors}
-              mode={mode}
-              starUnlocked={starUnlocked}
-              equippedStarName={equippedStar?.displayName ?? null}
-              equippedStarStage={equippedStar?.stage ?? null}
-              walletStatus={walletStatus}
-            />
-
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>FAN 성장</Text>
-            <GrowthSummaryCard
-              colors={colors}
-              title="FAN 프로필"
-              subtitle="채팅, 응원, 토크배틀 활동으로 성장하는 기본 팬 상태입니다."
-              level={fanProfile?.level ?? 1}
-              xp={fanProfile?.xp ?? 0}
-              xpLabel="FAN XP"
-              stats={fanProfile?.stats}
-              statMeta={CANONICAL_FAN_STAT_META}
-            />
-
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>STAR 성장</Text>
-            <GrowthSummaryCard
-              colors={colors}
-              title={equippedStar ? `${equippedStar.displayName} ${starStageLabel(equippedStar.stage)}` : "장착된 STAR 없음"}
-              subtitle={
-                equippedStar
-                  ? equippedStar.stage === "promoted"
-                    ? `NFT #${equippedStar.tokenId}에 귀속된 공식 STAR 성장 상태입니다.`
-                    : `NFT #${equippedStar.tokenId}에 귀속된 연습생 STAR 성장 상태입니다.`
-                  : starUnlocked
-                    ? "NFT를 장착하면 해당 STAR의 스탯과 성장이 여기에 표시됩니다."
-                    : "STAR NFT 인증 후 캐릭터를 장착하면 열립니다."
-              }
-              level={equippedStar?.level ?? 1}
-              xp={equippedStar?.xp ?? 0}
-              xpLabel="STAR XP"
-              stats={equippedStar?.stats}
-              statMeta={STAR_STAT_META}
-              disabled={!equippedStar}
-              footer={
-                !equippedStar ? (
-                  <Pressable
-                    onPress={scrollToStarLock}
-                    style={({ pressed }) => [
-                      styles.cardAction,
-                      { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
-                    ]}
-                  >
-                    <Feather name="star" size={14} color={colors.primaryForeground} />
-                    <Text style={[styles.cardActionText, { color: colors.primaryForeground }]}>
-                      STAR 인증/장착하기
-                    </Text>
-                  </Pressable>
-                ) : null
-              }
-            />
-
-            {!equippedStar ? (
-              <View style={styles.starLockAnchor} onLayout={(event) => setStarLockY(event.nativeEvent.layout.y)}>
-                <StarLockCard />
-              </View>
-            ) : null}
-
-            {equippedStar ? (
-              <TorimiaStatusCard
-                colors={colors}
-                promoted={!!torimia?.promoted || equippedStar.stage === "promoted"}
-                canOpen={!!torimia?.canOpen}
-                requirements={torimiaRequirements}
-                onMission={() => router.push("/(tabs)/dungeon" as never)}
-                onFanclub={() => router.push("/clan" as never)}
-              />
-            ) : null}
-
-            <Pressable
-              onPress={() => router.push({ pathname: "/battle/create", params: { mode: "ai" } })}
-              style={({ pressed }) => [
-                styles.ctaBtn,
-                { backgroundColor: colors.foreground, opacity: pressed ? 0.85 : 1 },
-              ]}
-            >
-              <Feather name="zap" size={18} color={colors.background} />
-              <Text style={[styles.ctaText, { color: colors.background }]}>
-                지금 성장하러 가기
-              </Text>
-            </Pressable>
               </>
             ) : null}
           </>
@@ -726,7 +1203,10 @@ function DashboardStat({
       <Feather name={icon} size={17} color={color} />
       <Text style={styles.dashboardStatLabel}>{label}</Text>
       <View style={styles.dashboardStatTrack}>
-        <LinearGradient colors={["#6F35FF", "#D892FF"]} style={[styles.dashboardStatFill, { width: `${width}%` }]} />
+        <LinearGradient
+          colors={["#6F35FF", "#D892FF"]}
+          style={[styles.dashboardStatFill, { width: `${width}%` }]}
+        />
       </View>
       <Text style={styles.dashboardStatValue}>{value}</Text>
     </View>
@@ -750,80 +1230,90 @@ function DashboardInfoRow({
     <View style={styles.dashboardInfoRow}>
       <Feather name={icon} size={16} color="#D6D0DF" />
       <Text style={styles.dashboardInfoLabel}>{label}</Text>
-      <Text style={[styles.dashboardInfoValue, accent && styles.dashboardInfoAccent]} numberOfLines={1}>{value}</Text>
-      {onPress ? <Feather name="chevron-right" size={16} color="#AFA8B9" /> : null}
+      <Text
+        style={[
+          styles.dashboardInfoValue,
+          accent && styles.dashboardInfoAccent,
+        ]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+      {onPress ? (
+        <Feather name="chevron-right" size={16} color="#AFA8B9" />
+      ) : null}
     </View>
   );
-  return onPress ? <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.62 }}>{content}</Pressable> : content;
+  return onPress ? (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => pressed && { opacity: 0.62 }}
+    >
+      {content}
+    </Pressable>
+  ) : (
+    content
+  );
 }
 
 function MyDashboard({
   nickname,
-  avatarUri,
+  email,
   intro,
   level,
   xp,
   stats,
   activityCount,
   walletStatus,
+  walletOwnedCount,
+  walletLoading,
   mode,
   starUnlocked,
   equippedStar,
-  starProfiles,
-  characterProfiles,
   activeCharacterProfile,
-  isActivatingCharacter,
-  onActivateCharacter,
-  isEquippingStar,
-  onEquipStar,
-  onSelectFan,
   onStarRegistration,
-  isAnalyzing,
   onEditProfile,
-  onCreateFan,
+  onProfileManagement,
+  onStarPoint,
   onWallet,
-  onNotifications,
   onAccount,
-  onAnalyze,
+  starPointBalance,
+  starPointLoading,
   social,
 }: {
   nickname: string;
-  avatarUri?: string | null;
+  email: string;
   intro: string;
   level: number;
   xp: number;
-  stats?: FanProfileState["stats"];
+  stats?: Record<string, number>;
   social: { followerCount: number; followingCount: number };
   activityCount: number;
   walletStatus?: WalletStatus;
+  walletOwnedCount: number;
+  walletLoading: boolean;
   mode: "fan" | "star";
   starUnlocked: boolean;
   equippedStar: EquippedStar | null;
-  starProfiles: EquippedStar[];
-  characterProfiles: CharacterProfileView[];
   activeCharacterProfile: CharacterProfileView | null;
-  isActivatingCharacter: boolean;
-  onActivateCharacter: (profileId: string) => Promise<unknown>;
-  isEquippingStar: boolean;
-  onEquipStar: (starProfileId: string) => Promise<void>;
-  onSelectFan: () => void;
   onStarRegistration: () => void;
-  isAnalyzing: boolean;
   onEditProfile: () => void;
-  onCreateFan: () => void;
+  onProfileManagement: () => void;
+  onStarPoint: () => void;
   onWallet: () => void;
-  onNotifications: () => void;
   onAccount: () => void;
-  onAnalyze: () => void;
+  starPointBalance: number;
+  starPointLoading: boolean;
 }) {
-  const [inventoryOpen, setInventoryOpen] = React.useState(false);
   const profileDisplayName = activeCharacterProfile?.displayName ?? nickname;
-  const profileHandle = activeCharacterProfile?.handle ?? `anotherme_${nickname.toLocaleLowerCase().replace(/\s+/g, "")}`;
+  const profileHandle =
+    activeCharacterProfile?.handle ??
+    `anotherme_${nickname.toLocaleLowerCase().replace(/\s+/g, "")}`;
   const profileIntro = activeCharacterProfile?.statusMessage ?? intro;
   const isStarMode = mode === "star";
   const isStarLocked = isStarMode && !equippedStar;
-  const displayLevel = isStarMode ? equippedStar?.level ?? 1 : level;
-  const displayXp = isStarMode ? equippedStar?.xp ?? 0 : xp;
+  const displayLevel = isStarMode ? (equippedStar?.level ?? 1) : level;
+  const displayXp = isStarMode ? (equippedStar?.xp ?? 0) : xp;
   const starLevelStartXp = 50 * Math.max(0, displayLevel - 1) * displayLevel;
   const starNextLevelXp = 50 * displayLevel * (displayLevel + 1);
   const xpInLevel = isStarMode
@@ -835,173 +1325,288 @@ function MyDashboard({
   const xpProgress = Math.min(100, Math.round((xpInLevel / xpForLevel) * 100));
   const statItems = isStarMode
     ? [
-        { icon: "heart" as const, label: "매력", value: equippedStar?.stats.charm ?? 0, color: "#FF62B6" },
-        { icon: "star" as const, label: "무대감", value: equippedStar?.stats.stagePresence ?? 0, color: "#FFE23D" },
-        { icon: "link" as const, label: "유대", value: equippedStar?.stats.bond ?? 0, color: "#39D9FF" },
-        { icon: "book-open" as const, label: "세계관", value: equippedStar?.stats.lore ?? 0, color: "#D679FF" },
-      ]
-    : CANONICAL_FAN_STAT_META.map((stat) => ({ ...stat, value: stats?.[stat.key] ?? 0 }));
-  const inventoryItems = characterProfiles.length > 0
-    ? characterProfiles.map((profile) => ({
-        key: profile.id,
-        title: profile.displayName,
-        subtitle: profile.type === "star" ? "STAR 캐릭터" : profile.type === "official_ai" ? "공식 AI" : "FAN 캐릭터",
-        source: profile.profileImageUrl
-          ? ({ uri: profile.profileImageUrl } as ImageSource)
-          : profile.type === "fan"
-            ? (require("../../assets/images/fan-slime.png") as ImageSource)
-            : (require("../../assets/images/star-character-cutout.png") as ImageSource),
-        active: profile.id === activeCharacterProfile?.id,
-        onPress: () => void onActivateCharacter(profile.id),
-      }))
-    : [
         {
-          key: "fan",
-          title: "FAN",
-          subtitle: "기본 캐릭터",
-          source: require("../../assets/images/fan-slime.png") as ImageSource,
-          active: !equippedStar,
-          onPress: onSelectFan,
+          icon: "heart" as const,
+          label: "매력",
+          value: equippedStar?.stats.charm ?? 0,
+          color: "#FF62B6",
         },
-        ...starProfiles.map((star) => ({
-          key: star.id,
-          title: star.displayName,
-          subtitle: star.stage === "promoted" ? "공식 STAR" : "연습생 STAR",
-          source: star.imageUrl
-            ? ({ uri: star.imageUrl } as ImageSource)
-            : (require("../../assets/images/star-character-cutout.png") as ImageSource),
-          active: equippedStar?.id === star.id,
-          onPress: () => void onEquipStar(star.id),
-        })),
-      ];
+        {
+          icon: "star" as const,
+          label: "스타성",
+          value: equippedStar?.stats.stagePresence ?? 0,
+          color: "#FFE23D",
+        },
+        {
+          icon: "message-circle" as const,
+          label: "유대감",
+          value: equippedStar?.stats.bond ?? 0,
+          color: "#39D9FF",
+        },
+        {
+          icon: "award" as const,
+          label: "영향력",
+          value: equippedStar?.stats.lore ?? 0,
+          color: "#F6C733",
+        },
+      ]
+    : CANONICAL_FAN_STAT_META.map((stat) => ({
+        ...stat,
+        value: readFanStat(stats, stat.key),
+      }));
+  const characterSource =
+    isStarMode && equippedStar?.imageUrl
+      ? { uri: equippedStar.imageUrl }
+      : require("../../assets/images/home-v2/fan-character-scene.png");
+  const membershipLabel =
+    activeCharacterProfile?.type === "official_ai"
+      ? "Official AI"
+      : isStarMode
+        ? "STAR"
+        : "팬클럽 회원";
+  const walletConnectionLabel = walletLoading
+    ? "확인 중"
+    : walletStatus?.walletVerified
+      ? "연결됨"
+      : "미연결";
+  const ownedCharacterLabel = walletLoading
+    ? "—"
+    : String(walletStatus?.walletVerified ? walletOwnedCount : 0);
 
   return (
     <View style={styles.dashboardContent}>
-      <LinearGradient colors={["#11102B", "#08091B", "#050511"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.dashboardProfileCard}>
+      <LinearGradient
+        colors={["#0B0920", "#070717", "#05050E"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.dashboardProfileCard}
+      >
         <View pointerEvents="none" style={styles.dashboardProfileGlow} />
-        <View pointerEvents="none" style={styles.dashboardConstellation}><View style={styles.constellationDot} /><View style={styles.constellationLine} /></View>
-        <LinearGradient colors={["#E052FF", "#6534FF", "#38D9FF"]} style={styles.dashboardAvatarRing}>
-          <View style={styles.dashboardAvatarInset}><Avatar uri={activeCharacterProfile?.profileImageUrl ?? avatarUri} name={profileDisplayName} size={112} /></View>
-        </LinearGradient>
+        <Image
+          source={characterSource}
+          style={styles.dashboardCharacterScene}
+          contentFit={isStarMode ? "contain" : "cover"}
+          contentPosition="center"
+        />
         <View style={styles.dashboardProfileCopy}>
-          <Text style={styles.dashboardNickname}>{profileDisplayName}</Text>
-          <Text style={styles.dashboardHandle}>@{profileHandle}</Text>
-          <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>직업</Text><Text style={styles.dashboardTagValue}>가희</Text></View>
-          <View style={styles.dashboardTag}><Text style={styles.dashboardTagLabel}>이름</Text><Text style={styles.dashboardTagValue}>{equippedStar?.displayName ?? "비비사랑"}</Text></View>
-          <Text style={styles.identityStatus}>{equippedStar ? `장착 STAR · ${equippedStar.displayName}` : "FAN · 응원 중인 STAR 없음"}</Text>
-          <Text style={styles.dashboardIntro} numberOfLines={2}>{profileIntro}</Text>
-          <View style={styles.dashboardSocialRow}>
-            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>게시물</Text><Text style={styles.dashboardSocialValue}>{activityCount}</Text></View>
-            <View style={styles.dashboardSocial}><Text style={styles.dashboardSocialLabel}>팔로워</Text><Text style={styles.dashboardSocialValue}>{social.followerCount}</Text></View>
-            <View style={[styles.dashboardSocial, styles.dashboardSocialLast]}><Text style={styles.dashboardSocialLabel}>팔로잉</Text><Text style={styles.dashboardSocialValue}>{social.followingCount}</Text></View>
+          <Text style={styles.dashboardNickname} numberOfLines={1}>
+            {profileDisplayName}
+          </Text>
+          <Text style={styles.dashboardHandle} numberOfLines={1}>
+            @{profileHandle}
+          </Text>
+          <View style={styles.dashboardTags}>
+            <View style={styles.dashboardTag}>
+              <Text style={styles.dashboardTagText}>{membershipLabel}</Text>
+            </View>
+            <View style={styles.dashboardTag}>
+              <Text style={styles.dashboardTagText} numberOfLines={1}>
+                {profileDisplayName}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.dashboardHeroXpTrack}>
+            <LinearGradient
+              colors={["#7B2CFF", "#ECA0FF"]}
+              style={[styles.dashboardHeroXpFill, { width: `${xpProgress}%` }]}
+            />
+          </View>
+          <Text style={styles.dashboardHeroXpText}>
+            {xpInLevel} / {xpForLevel} {isStarMode ? "STAR" : "FAN"} XP
+          </Text>
+          <Pressable
+            onPress={onEditProfile}
+            style={({ pressed }) => [
+              styles.dashboardStatusEditor,
+              pressed && { opacity: 0.72 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.dashboardStatusText,
+                !profileIntro && styles.dashboardStatusPlaceholder,
+              ]}
+              numberOfLines={2}
+            >
+              {profileIntro || "상태메시지를 입력하세요"}
+            </Text>
+            <Feather name="edit-2" size={18} color="#A8A1B2" />
+          </Pressable>
+        </View>
+        <View style={styles.dashboardSocialRow}>
+          <View style={styles.dashboardSocial}>
+            <View style={styles.dashboardSocialHead}>
+              <Feather name="clipboard" size={17} color="#CAC4D0" />
+              <Text style={styles.dashboardSocialLabel}>게시물</Text>
+            </View>
+            <Text style={styles.dashboardSocialValue}>{activityCount}</Text>
+          </View>
+          <View style={styles.dashboardSocial}>
+            <View style={styles.dashboardSocialHead}>
+              <Feather name="user" size={18} color="#CAC4D0" />
+              <Text style={styles.dashboardSocialLabel}>팔로워</Text>
+            </View>
+            <Text style={styles.dashboardSocialValue}>
+              {social.followerCount}
+            </Text>
+          </View>
+          <View style={[styles.dashboardSocial, styles.dashboardSocialLast]}>
+            <View style={styles.dashboardSocialHead}>
+              <Feather name="users" size={18} color="#CAC4D0" />
+              <Text style={styles.dashboardSocialLabel}>팔로잉</Text>
+            </View>
+            <Text style={styles.dashboardSocialValue}>
+              {social.followingCount}
+            </Text>
           </View>
         </View>
       </LinearGradient>
 
-      <LinearGradient colors={["#0F0E26", "#08091B"]} style={styles.dashboardStatsCard}>
+      <LinearGradient
+        colors={["#0F0E26", "#08091B"]}
+        style={styles.dashboardStatsCard}
+      >
         <View style={styles.dashboardLevelBlock}>
-          <Text style={styles.dashboardSectionTitle}>{isStarLocked ? "STAR 스탯 잠금" : isStarMode ? `${equippedStar?.displayName ?? "STAR"} 스탯` : "내 FAN 스탯"}</Text>
-          <Text style={styles.dashboardLevel}>{isStarLocked ? "—" : `Lv. ${displayLevel}`}</Text>
-          <Text style={styles.dashboardXpText}>{isStarLocked ? "NFT 등록 후 이용 가능" : `${xpInLevel} / ${xpForLevel} ${isStarMode ? "STAR" : "FAN"} XP`}</Text>
-          <View style={styles.dashboardXpTrack}><LinearGradient colors={["#7138FF", "#D893FF"]} style={[styles.dashboardXpFill, { width: `${xpProgress}%` }]} /></View>
+          <Text style={styles.dashboardLevel}>
+            {isStarLocked ? "—" : `Lv.${displayLevel}`}
+          </Text>
+          <Text style={styles.dashboardXpText}>
+            {isStarLocked
+              ? "NFT 등록 후 이용 가능"
+              : `${xpInLevel} / ${xpForLevel} ${isStarMode ? "STAR" : "FAN"} XP`}
+          </Text>
+          <View style={styles.dashboardXpTrack}>
+            <LinearGradient
+              colors={["#7138FF", "#D893FF"]}
+              style={[styles.dashboardXpFill, { width: `${xpProgress}%` }]}
+            />
+          </View>
         </View>
         {isStarLocked ? (
           <View style={styles.dashboardStatsLocked}>
             <Feather name="lock" size={22} color="#D28CFF" />
             <Text style={styles.dashboardStatsLockedTitle}>STAR 성장 잠금</Text>
-            <Text style={styles.dashboardStatsLockedSub}>NFT를 등록하고 STAR를 장착하면 스탯이 열려요.</Text>
-            <Pressable onPress={onStarRegistration} style={({ pressed }) => [styles.dashboardStatsLockedButton, pressed && { opacity: 0.75 }]}>
+            <Text style={styles.dashboardStatsLockedSub}>
+              NFT를 등록하고 STAR를 장착하면 스탯이 열려요.
+            </Text>
+            <Pressable
+              onPress={onStarRegistration}
+              style={({ pressed }) => [
+                styles.dashboardStatsLockedButton,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
               <Feather name="star" size={14} color="#fff" />
-              <Text style={styles.dashboardStatsLockedButtonText}>{starUnlocked ? "STAR 장착하기" : "NFT 등록하기"}</Text>
+              <Text style={styles.dashboardStatsLockedButtonText}>
+                {starUnlocked ? "STAR 장착하기" : "NFT 등록하기"}
+              </Text>
             </Pressable>
           </View>
         ) : (
-          <View style={styles.dashboardStatsList}>{statItems.map((item) => <DashboardStat key={item.label} {...item} />)}</View>
+          <View style={styles.dashboardStatsList}>
+            {statItems.map((item) => (
+              <DashboardStat key={item.label} {...item} />
+            ))}
+          </View>
         )}
       </LinearGradient>
 
       <View style={styles.dashboardInfoGrid}>
-        <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
+        <LinearGradient
+          colors={["#0E0D23", "#070817"]}
+          style={styles.dashboardInfoCard}
+        >
           <Text style={styles.dashboardCardTitle}>기본 정보 ✦</Text>
-          <DashboardInfoRow icon="user" label="프로필 이름" value={profileDisplayName} onPress={onEditProfile} />
-          <DashboardInfoRow icon="message-circle" label="프로필 소개" value={profileIntro} onPress={onEditProfile} />
+          <DashboardInfoRow
+            icon="user"
+            label="닉네임"
+            value={nickname}
+            onPress={onEditProfile}
+          />
+          <DashboardInfoRow
+            icon="mail"
+            label="이메일"
+            value={email || "등록 정보 없음"}
+            onPress={onAccount}
+          />
+          <DashboardInfoRow
+            icon="lock"
+            label="기본정보 수정"
+            value=""
+            onPress={onAccount}
+          />
         </LinearGradient>
-        <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardInfoCard}>
+        <LinearGradient
+          colors={["#0E0D23", "#070817"]}
+          style={styles.dashboardInfoCard}
+        >
           <Text style={styles.dashboardCardTitle}>지갑 정보 ✦</Text>
-          <DashboardInfoRow icon="link" label="지갑 연결 상태" value={walletStatus?.walletVerified ? "연결됨" : "미연결"} accent={walletStatus?.walletVerified} />
-          <DashboardInfoRow icon="credit-card" label="지갑 주소" value={formatWalletAddress(walletStatus?.walletAddress)} />
-          <DashboardInfoRow icon="user" label="보유 캐릭터" value={String(characterProfiles.length || 1 + starProfiles.length)} />
-          <Pressable onPress={onWallet} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}><Text style={styles.dashboardOutlineText}>지갑 관리</Text></Pressable>
+          <DashboardInfoRow
+            icon="link"
+            label="지갑 연결 상태"
+            value={walletConnectionLabel}
+            accent={walletStatus?.walletVerified}
+            onPress={onWallet}
+          />
+          <DashboardInfoRow
+            icon="credit-card"
+            label="지갑 주소"
+            value={
+              walletLoading
+                ? "확인 중"
+                : formatWalletAddress(walletStatus?.walletAddress)
+            }
+            onPress={onWallet}
+          />
+          <DashboardInfoRow
+            icon="user"
+            label="보유 캐릭터"
+            value={ownedCharacterLabel}
+            onPress={onWallet}
+          />
         </LinearGradient>
       </View>
-
-      <Pressable onPress={() => setInventoryOpen((open) => !open)} style={({ pressed }) => [styles.dashboardInventoryCard, pressed && { opacity: 0.72 }]}>
-        <View style={styles.dashboardInventoryCopy}><Text style={styles.dashboardCardTitle}>내 캐릭터 / 인벤토리 ✦</Text><Text style={styles.dashboardInventorySub}>저장된 내 캐릭터 보기 〉</Text></View>
-        <View style={styles.dashboardInventoryImages}>
-          {inventoryItems.slice(0, 3).map((item) => (
-            <View key={item.key} style={[styles.dashboardInventoryThumb, item.active && styles.dashboardInventoryThumbActive]}>
-              <DashboardCharacterImage source={item.source} thumbnail />
-            </View>
-          ))}
-        </View>
-        <Feather name={inventoryOpen ? "chevron-up" : "chevron-right"} size={18} color="#D6D0DF" />
-      </Pressable>
-      {inventoryOpen ? (
-        <View style={styles.dashboardInventoryDetail}>
-          <Text style={styles.dashboardInventoryDetailTitle}>보유 캐릭터</Text>
-          <Text style={styles.dashboardInventoryDetailSub}>캐릭터를 선택하면 현재 활동 캐릭터로 장착됩니다.</Text>
-          <View style={styles.dashboardInventoryGrid}>
-            {inventoryItems.map((item) => (
-              <Pressable
-                key={item.key}
-                disabled={isEquippingStar || isActivatingCharacter || item.active}
-                onPress={item.onPress}
-                style={({ pressed }) => [
-                  styles.dashboardInventoryItem,
-                  item.active && styles.dashboardInventoryItemActive,
-                  pressed && { opacity: 0.72 },
-                ]}
-              >
-                <DashboardCharacterImage source={item.source} />
-                <Text style={styles.dashboardInventoryItemTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.dashboardInventoryItemSubtitle}>{item.active ? "사용 중" : item.subtitle}</Text>
-                {item.active ? <Feather name="check-circle" size={14} color="#D28CFF" /> : null}
-              </Pressable>
-            ))}
+      <Pressable
+        onPress={onProfileManagement}
+        style={({ pressed }) => [
+          styles.dashboardProfileManager,
+          pressed && { opacity: 0.72 },
+        ]}
+      >
+        <View style={styles.dashboardProfileManagerCopy}>
+          <Feather name="layers" size={18} color="#C89CFF" />
+          <View>
+            <Text style={styles.dashboardProfileManagerTitle}>캐릭터 프로필 관리</Text>
+            <Text style={styles.dashboardProfileManagerSub}>
+              FAN 추가 · NFT STAR 소환 · 활동 프로필 전환
+            </Text>
           </View>
-          <StarLockCard />
-          <Pressable onPress={onCreateFan} style={({ pressed }) => [styles.dashboardOutlineButton, pressed && { opacity: 0.65 }]}>
-            <Text style={styles.dashboardOutlineText}>+ 새 FAN 만들기</Text>
-          </Pressable>
         </View>
-      ) : null}
-
-      <LinearGradient colors={["#0E0D23", "#070817"]} style={styles.dashboardSettingsCard}>
-        <Text style={styles.dashboardCardTitle}>설정 ✦</Text>
-        <DashboardInfoRow icon="bell" label="알림 설정" value="" onPress={onNotifications} />
-        <DashboardInfoRow icon="user" label="계정 관리" value="" onPress={onAccount} />
-        <Pressable onPress={onAnalyze} disabled={isAnalyzing} style={({ pressed }) => [styles.dashboardSettingRow, pressed && { opacity: 0.62 }]}>
-          <Feather name="cpu" size={16} color="#D6D0DF" />
-          <Text style={styles.dashboardSettingLabel}>{isAnalyzing ? "AI 분석 업데이트 중…" : "AI 분석 업데이트"}</Text>
-          {isAnalyzing ? <ActivityIndicator size="small" color="#B15CFF" /> : <Feather name="chevron-right" size={16} color="#AFA8B9" />}
-        </Pressable>
-        <DashboardInfoRow icon="log-out" label="로그아웃" value="" onPress={onAccount} />
-      </LinearGradient>
+        <Feather name="chevron-right" size={20} color="#8E849E" />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="STAR Point 상세 내역 보기"
+        onPress={onStarPoint}
+        style={({ pressed }) => [
+          styles.dashboardProfileManager,
+          pressed && { opacity: 0.72 },
+        ]}
+      >
+        <View style={styles.dashboardProfileManagerCopy}>
+          <Feather name="database" size={18} color="#C89CFF" />
+          <View>
+            <Text style={styles.dashboardProfileManagerTitle}>STAR Point</Text>
+            <Text style={styles.dashboardProfileManagerSub}>
+              {starPointLoading
+                ? "잔액 확인 중 · 적립 및 사용 내역 보기"
+                : `보유 ${starPointBalance.toLocaleString()} Point · 적립 및 사용 내역 보기`}
+            </Text>
+          </View>
+        </View>
+        <Feather name="chevron-right" size={20} color="#8E849E" />
+      </Pressable>
     </View>
-  );
-}
-
-function DashboardCharacterImage({ source, thumbnail = false }: { source: ImageSource; thumbnail?: boolean }) {
-  const rawUri = typeof source === "object" && source && "uri" in source
-    ? String(source.uri ?? "")
-    : undefined;
-  const resolvedUri = useMediaUri(rawUri);
-  return (
-    <Image
-      source={resolvedUri ? { uri: resolvedUri } : source}
-      style={thumbnail ? styles.dashboardInventoryImage : styles.dashboardInventoryItemImage}
-      contentFit={thumbnail ? "cover" : "contain"}
-    />
   );
 }
 
@@ -1042,38 +1647,74 @@ function OntologyProfileCard({
   const sections = profile
     ? [
         { title: "대표 성향", icon: "user" as const, items: profile.traitTags },
-        { title: "말투·표현", icon: "message-square" as const, items: profile.communicationStyles },
-        { title: "표현 역량", icon: "zap" as const, items: profile.capabilities },
-        { title: "갈등/반박 스타일", icon: "shield" as const, items: profile.conflictStyles },
+        {
+          title: "말투·표현",
+          icon: "message-square" as const,
+          items: profile.communicationStyles,
+        },
+        {
+          title: "표현 역량",
+          icon: "zap" as const,
+          items: profile.capabilities,
+        },
+        {
+          title: "갈등/반박 스타일",
+          icon: "shield" as const,
+          items: profile.conflictStyles,
+        },
         { title: "선호", icon: "sliders" as const, items: profile.preferences },
       ].filter((section) => section.items.length > 0)
     : [];
   const sourceBadges = profile
-    ? ONTOLOGY_SOURCE_META.map((item) => ({ ...item, count: profile.sourceCounts?.[item.key] ?? 0 })).filter((item) => item.count > 0)
+    ? ONTOLOGY_SOURCE_META.map((item) => ({
+        ...item,
+        count: profile.sourceCounts?.[item.key] ?? 0,
+      })).filter((item) => item.count > 0)
     : [];
   const signalChips = profile
-    ? Array.from(new Set([
-        ...profile.communicationStyles,
-        ...profile.traitTags,
-        ...profile.capabilities,
-        ...profile.conflictStyles,
-      ])).slice(0, 3)
+    ? Array.from(
+        new Set([
+          ...profile.communicationStyles,
+          ...profile.traitTags,
+          ...profile.capabilities,
+          ...profile.conflictStyles,
+        ]),
+      ).slice(0, 3)
     : [];
 
   if (!profile) {
     return (
-      <View style={[styles.ontologyCard, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.ontologyCard, { backgroundColor: colors.background }]}
+      >
         <View style={styles.ontologyEmpty}>
           <Feather name="git-branch" size={22} color={colors.mutedForeground} />
-          <Text style={[styles.ontologyEmptyTitle, { color: colors.foreground }]}>자아 프로필 형성 중</Text>
-          <Text style={[styles.ontologyEmptyText, { color: colors.mutedForeground }]}>톡 리워드 보상 수령, 토크배틀 발언, 직접 저장한 AI 기억이 쌓이면 Another Me가 참고할 말투와 표현 방식이 정리됩니다.</Text>
+          <Text
+            style={[styles.ontologyEmptyTitle, { color: colors.foreground }]}
+          >
+            자아 프로필 형성 중
+          </Text>
+          <Text
+            style={[
+              styles.ontologyEmptyText,
+              { color: colors.mutedForeground },
+            ]}
+          >
+            톡 리워드 보상 수령, 토크배틀 발언, 직접 저장한 AI 기억이 쌓이면
+            Another Me가 참고할 말투와 표현 방식이 정리됩니다.
+          </Text>
         </View>
       </View>
     );
   }
 
   return (
-    <LinearGradient colors={["#20124D", "#35206E", "#5B36D6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ontologyCard}>
+    <LinearGradient
+      colors={["#20124D", "#35206E", "#5B36D6"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.ontologyCard}
+    >
       <View style={styles.ontologyGlowPrimary} />
       <View style={styles.ontologyGlowSecondary} />
       <View style={styles.ontologyHeader}>
@@ -1089,14 +1730,24 @@ function OntologyProfileCard({
         </View>
       </View>
 
-      {profile.summary ? <Text style={styles.ontologySummary}>{profile.summary}</Text> : null}
+      {profile.summary ? (
+        <Text style={styles.ontologySummary}>{profile.summary}</Text>
+      ) : null}
 
       {sourceBadges.length > 0 ? (
         <View style={styles.ontologySourceRow}>
           {sourceBadges.map((item) => (
-            <View key={item.key} style={[styles.ontologySourceBadge, { borderColor: `${item.color}66` }]}>
+            <View
+              key={item.key}
+              style={[
+                styles.ontologySourceBadge,
+                { borderColor: `${item.color}66` },
+              ]}
+            >
               <Feather name={item.icon} size={12} color={item.color} />
-              <Text style={[styles.ontologySourceText, { color: item.color }]}>{item.label} {item.count}</Text>
+              <Text style={[styles.ontologySourceText, { color: item.color }]}>
+                {item.label} {item.count}
+              </Text>
             </View>
           ))}
         </View>
@@ -1127,7 +1778,6 @@ function OntologyProfileCard({
           </View>
         </View>
       ))}
-
     </LinearGradient>
   );
 }
@@ -1153,7 +1803,12 @@ function AccountStateCard({
     icon: keyof typeof Feather.glyphMap;
     tone: "primary" | "muted" | "success";
   }[] = [
-    { label: "현재 모드", value: modeLabel(mode), icon: "toggle-right", tone: "primary" },
+    {
+      label: "현재 모드",
+      value: modeLabel(mode),
+      icon: "toggle-right",
+      tone: "primary",
+    },
     {
       label: "STAR 모드",
       value: starUnlocked ? "사용 가능" : "잠금",
@@ -1180,11 +1835,12 @@ function AccountStateCard({
     },
     {
       label: "NFT 확인",
-      value: walletStatus?.nftConfigured === false
-        ? "컨트랙트 설정 전"
-        : walletStatus?.nftVerified
-          ? "확인됨"
-          : "미확인",
+      value:
+        walletStatus?.nftConfigured === false
+          ? "컨트랙트 설정 전"
+          : walletStatus?.nftVerified
+            ? "확인됨"
+            : "미확인",
       icon: "shield",
       tone: walletStatus?.nftVerified ? "success" : "muted",
     },
@@ -1194,7 +1850,11 @@ function AccountStateCard({
     <View style={[styles.accountCard, { backgroundColor: colors.background }]}>
       {rows.map((row, index) => {
         const iconColor =
-          row.tone === "success" ? colors.online : row.tone === "primary" ? colors.primary : colors.mutedForeground;
+          row.tone === "success"
+            ? colors.online
+            : row.tone === "primary"
+              ? colors.primary
+              : colors.mutedForeground;
         return (
           <View
             key={row.label}
@@ -1206,11 +1866,23 @@ function AccountStateCard({
               },
             ]}
           >
-            <View style={[styles.accountIcon, { backgroundColor: `${iconColor}18` }]}>
+            <View
+              style={[
+                styles.accountIcon,
+                { backgroundColor: `${iconColor}18` },
+              ]}
+            >
               <Feather name={row.icon} size={15} color={iconColor} />
             </View>
-            <Text style={[styles.accountLabel, { color: colors.mutedForeground }]}>{row.label}</Text>
-            <Text style={[styles.accountValue, { color: colors.foreground }]} numberOfLines={1}>
+            <Text
+              style={[styles.accountLabel, { color: colors.mutedForeground }]}
+            >
+              {row.label}
+            </Text>
+            <Text
+              style={[styles.accountValue, { color: colors.foreground }]}
+              numberOfLines={1}
+            >
               {row.value}
             </Text>
           </View>
@@ -1239,38 +1911,100 @@ function GrowthSummaryCard({
   xp: number;
   xpLabel: string;
   stats?: Record<string, number> | null;
-  statMeta: { key: string; label: string; icon: keyof typeof Feather.glyphMap; color: string }[];
+  statMeta: {
+    key: string;
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+    color: string;
+  }[];
   disabled?: boolean;
   footer?: React.ReactNode;
 }) {
   const max = Math.max(1, ...statMeta.map((item) => stats?.[item.key] ?? 0));
   return (
-    <View style={[styles.growthSummaryCard, { backgroundColor: colors.background, opacity: disabled ? 0.72 : 1 }]}>
+    <View
+      style={[
+        styles.growthSummaryCard,
+        { backgroundColor: colors.background, opacity: disabled ? 0.72 : 1 },
+      ]}
+    >
       <View style={styles.growthSummaryHead}>
         <View style={styles.growthSummaryTitleBlock}>
-          <Text style={[styles.growthSummaryTitle, { color: colors.foreground }]}>{title}</Text>
-          <Text style={[styles.growthSummarySub, { color: colors.mutedForeground }]}>{subtitle}</Text>
+          <Text
+            style={[styles.growthSummaryTitle, { color: colors.foreground }]}
+          >
+            {title}
+          </Text>
+          <Text
+            style={[styles.growthSummarySub, { color: colors.mutedForeground }]}
+          >
+            {subtitle}
+          </Text>
         </View>
-        <View style={[styles.growthLevelBadge, { backgroundColor: colors.foreground }]}>
-          <Text style={[styles.growthLevelText, { color: colors.background }]}>Lv.{level}</Text>
+        <View
+          style={[
+            styles.growthLevelBadge,
+            { backgroundColor: colors.foreground },
+          ]}
+        >
+          <Text style={[styles.growthLevelText, { color: colors.background }]}>
+            Lv.{level}
+          </Text>
         </View>
       </View>
-      <Text style={[styles.growthXpText, { color: colors.primary }]}>{xp} {xpLabel}</Text>
+      <Text style={[styles.growthXpText, { color: colors.primary }]}>
+        {xp} {xpLabel}
+      </Text>
       <View style={styles.compactStatGrid}>
         {statMeta.map((item) => {
           const value = stats?.[item.key] ?? 0;
           const width = Math.round((value / max) * 100);
           return (
-            <View key={item.key} style={[styles.compactStatItem, { backgroundColor: colors.muted }]}>
+            <View
+              key={item.key}
+              style={[
+                styles.compactStatItem,
+                { backgroundColor: colors.muted },
+              ]}
+            >
               <View style={styles.compactStatTop}>
-                <View style={[styles.compactStatIcon, { backgroundColor: `${item.color}22` }]}>
+                <View
+                  style={[
+                    styles.compactStatIcon,
+                    { backgroundColor: `${item.color}22` },
+                  ]}
+                >
                   <Feather name={item.icon} size={13} color={item.color} />
                 </View>
-                <Text style={[styles.compactStatValue, { color: colors.foreground }]}>{value}</Text>
+                <Text
+                  style={[
+                    styles.compactStatValue,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  {value}
+                </Text>
               </View>
-              <Text style={[styles.compactStatLabel, { color: colors.mutedForeground }]}>{item.label}</Text>
-              <View style={[styles.compactTrack, { backgroundColor: colors.border }]}>
-                <View style={[styles.compactFill, { width: `${width}%`, backgroundColor: item.color }]} />
+              <Text
+                style={[
+                  styles.compactStatLabel,
+                  { color: colors.mutedForeground },
+                ]}
+              >
+                {item.label}
+              </Text>
+              <View
+                style={[
+                  styles.compactTrack,
+                  { backgroundColor: colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.compactFill,
+                    { width: `${width}%`, backgroundColor: item.color },
+                  ]}
+                />
               </View>
             </View>
           );
@@ -1297,16 +2031,32 @@ function TorimiaStatusCard({
   onFanclub: () => void;
 }) {
   return (
-    <View style={[styles.torimiaStatusCard, { backgroundColor: colors.background }]}>
+    <View
+      style={[styles.torimiaStatusCard, { backgroundColor: colors.background }]}
+    >
       <View style={styles.torimiaStatusHead}>
-        <View style={[styles.torimiaStatusIcon, { backgroundColor: "#8B5CF622" }]}>
-          <Feather name={promoted ? "star" : "sunrise"} size={18} color="#8B5CF6" />
+        <View
+          style={[styles.torimiaStatusIcon, { backgroundColor: "#8B5CF622" }]}
+        >
+          <Feather
+            name={promoted ? "star" : "sunrise"}
+            size={18}
+            color="#8B5CF6"
+          />
         </View>
         <View style={styles.torimiaStatusTextBlock}>
-          <Text style={[styles.torimiaStatusTitle, { color: colors.foreground }]}>
-            {promoted ? "토르미아 개방 완료" : canOpen ? "토르미아 개방 가능" : "토르미아 준비 중"}
+          <Text
+            style={[styles.torimiaStatusTitle, { color: colors.foreground }]}
+          >
+            {promoted
+              ? "토르미아 개방 완료"
+              : canOpen
+                ? "토르미아 개방 가능"
+                : "토르미아 준비 중"}
           </Text>
-          <Text style={[styles.torimiaStatusSub, { color: colors.mutedForeground }]}>
+          <Text
+            style={[styles.torimiaStatusSub, { color: colors.mutedForeground }]}
+          >
             {promoted
               ? "공식 STAR로 승급했어요. 팬클럽 생성과 공식 STAR 미션이 열립니다."
               : "연습생 STAR 미션으로 조건을 채우면 공식 STAR로 승급할 수 있어요."}
@@ -1316,20 +2066,38 @@ function TorimiaStatusCard({
       {!promoted && requirements.length > 0 ? (
         <View style={styles.torimiaMiniList}>
           {requirements.slice(0, 3).map((req) => (
-            <Text key={req.key} style={[styles.torimiaMiniReq, { color: req.met ? colors.online : colors.mutedForeground }]}>
-              {req.met ? "완료" : "진행"} · {req.label} {Math.min(req.current, req.target)}/{req.target}
+            <Text
+              key={req.key}
+              style={[
+                styles.torimiaMiniReq,
+                { color: req.met ? colors.online : colors.mutedForeground },
+              ]}
+            >
+              {req.met ? "완료" : "진행"} · {req.label}{" "}
+              {Math.min(req.current, req.target)}/{req.target}
             </Text>
           ))}
         </View>
       ) : null}
       <View style={styles.torimiaStatusActions}>
-        <Pressable onPress={onMission} style={[styles.smallActionBtn, { backgroundColor: colors.primary }]}>
-          <Text style={[styles.smallActionText, { color: colors.primaryForeground }]}>
+        <Pressable
+          onPress={onMission}
+          style={[styles.smallActionBtn, { backgroundColor: colors.primary }]}
+        >
+          <Text
+            style={[
+              styles.smallActionText,
+              { color: colors.primaryForeground },
+            ]}
+          >
             {promoted ? "공식 STAR 미션" : "연습생 STAR 미션"}
           </Text>
         </Pressable>
         {promoted ? (
-          <Pressable onPress={onFanclub} style={[styles.smallActionBtn, { backgroundColor: "#8B5CF6" }]}>
+          <Pressable
+            onPress={onFanclub}
+            style={[styles.smallActionBtn, { backgroundColor: "#8B5CF6" }]}
+          >
             <Text style={styles.smallActionText}>팬클럽</Text>
           </Pressable>
         ) : null}
@@ -1343,16 +2111,21 @@ const styles = StyleSheet.create({
   screenHeader: {
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 12,
+    paddingBottom: 15,
   },
   screenBackButton: {
-    bottom: 6,
-    left: 14,
+    bottom: 9,
+    left: 16,
     padding: 6,
     position: "absolute",
     zIndex: 2,
   },
-  screenTitle: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
+  screenTitle: {
+    fontSize: 20,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+  },
+  dashboardScreenTitle: { fontSize: 27, letterSpacing: -0.8 },
   headerBtn: { padding: 6 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
   headerDot: {
@@ -1397,7 +2170,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   rankingBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  heroBtnRow: { flexDirection: "row", gap: 10, marginTop: 16, alignSelf: "stretch" },
+  heroBtnRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+    alignSelf: "stretch",
+  },
 
   sectionTitle: {
     fontSize: 13,
@@ -1422,21 +2200,65 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  accountIcon: { alignItems: "center", borderRadius: 10, height: 32, justifyContent: "center", width: 32 },
+  accountIcon: {
+    alignItems: "center",
+    borderRadius: 10,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
   accountLabel: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13 },
-  accountValue: { flex: 1.2, fontFamily: "Inter_700Bold", fontSize: 13, textAlign: "right" },
-  growthSummaryCard: { gap: 12, marginHorizontal: 16, borderRadius: 16, padding: 16 },
-  growthSummaryHead: { alignItems: "flex-start", flexDirection: "row", gap: 12 },
+  accountValue: {
+    flex: 1.2,
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    textAlign: "right",
+  },
+  growthSummaryCard: {
+    gap: 12,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 16,
+  },
+  growthSummaryHead: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+  },
   growthSummaryTitleBlock: { flex: 1, gap: 4 },
   growthSummaryTitle: { fontFamily: "Inter_700Bold", fontSize: 16 },
-  growthSummarySub: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 17 },
-  growthLevelBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  growthSummarySub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  growthLevelBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
   growthLevelText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   growthXpText: { fontFamily: "Inter_700Bold", fontSize: 13 },
   compactStatGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  compactStatItem: { borderRadius: 14, flexBasis: "48%", flexGrow: 1, gap: 6, padding: 12 },
-  compactStatTop: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  compactStatIcon: { alignItems: "center", borderRadius: 9, height: 28, justifyContent: "center", width: 28 },
+  compactStatItem: {
+    borderRadius: 14,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: 6,
+    padding: 12,
+  },
+  compactStatTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  compactStatIcon: {
+    alignItems: "center",
+    borderRadius: 9,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
   compactStatValue: { fontFamily: "Inter_700Bold", fontSize: 16 },
   compactStatLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   compactTrack: { borderRadius: 999, height: 4, overflow: "hidden" },
@@ -1452,43 +2274,178 @@ const styles = StyleSheet.create({
   },
   cardActionText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   starLockAnchor: { marginHorizontal: 16, marginTop: 12 },
-  torimiaStatusCard: { gap: 12, marginHorizontal: 16, marginTop: 12, borderRadius: 16, padding: 16 },
+  torimiaStatusCard: {
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 16,
+  },
   torimiaStatusHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  torimiaStatusIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  torimiaStatusIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   torimiaStatusTextBlock: { flex: 1, gap: 3 },
   torimiaStatusTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
-  torimiaStatusSub: { fontFamily: "Inter_400Regular", fontSize: 12, lineHeight: 17 },
+  torimiaStatusSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+  },
   torimiaMiniList: { gap: 5 },
   torimiaMiniReq: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   torimiaStatusActions: { flexDirection: "row", gap: 8 },
-  smallActionBtn: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  smallActionBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   smallActionText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 12 },
-  ontologyCard: { gap: 14, marginHorizontal: 16, borderRadius: 20, overflow: "hidden", padding: 18 },
-  ontologyGlowPrimary: { backgroundColor: "rgba(253,230,138,0.18)", borderRadius: 80, height: 130, position: "absolute", right: -36, top: -42, width: 130 },
-  ontologyGlowSecondary: { backgroundColor: "rgba(94,234,212,0.12)", borderRadius: 70, bottom: -42, height: 120, left: -34, position: "absolute", width: 120 },
+  ontologyCard: {
+    gap: 14,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    overflow: "hidden",
+    padding: 18,
+  },
+  ontologyGlowPrimary: {
+    backgroundColor: "rgba(253,230,138,0.18)",
+    borderRadius: 80,
+    height: 130,
+    position: "absolute",
+    right: -36,
+    top: -42,
+    width: 130,
+  },
+  ontologyGlowSecondary: {
+    backgroundColor: "rgba(94,234,212,0.12)",
+    borderRadius: 70,
+    bottom: -42,
+    height: 120,
+    left: -34,
+    position: "absolute",
+    width: 120,
+  },
   ontologyHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
-  ontologyIconWrap: { alignItems: "center", height: 48, justifyContent: "center", width: 48 },
-  ontologyOrbit: { borderColor: "rgba(255,255,255,0.24)", borderRadius: 23, borderWidth: 1, height: 46, position: "absolute", transform: [{ rotate: "18deg" }], width: 46 },
-  ontologyIcon: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 14, height: 38, justifyContent: "center", width: 38 },
+  ontologyIconWrap: {
+    alignItems: "center",
+    height: 48,
+    justifyContent: "center",
+    width: 48,
+  },
+  ontologyOrbit: {
+    borderColor: "rgba(255,255,255,0.24)",
+    borderRadius: 23,
+    borderWidth: 1,
+    height: 46,
+    position: "absolute",
+    transform: [{ rotate: "18deg" }],
+    width: 46,
+  },
+  ontologyIcon: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 14,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
   ontologyHeaderText: { flex: 1, gap: 3, minWidth: 0 },
-  ontologyTitle: { color: "#FFFFFF", flexShrink: 1, fontFamily: "Inter_800ExtraBold", fontSize: 18, letterSpacing: -0.2 },
-  ontologyMeta: { color: "#C4B5FD", flexShrink: 1, fontFamily: "Inter_600SemiBold", fontSize: 12, lineHeight: 16 },
-  ontologySummary: { color: "#EDE9FE", fontFamily: "Inter_500Medium", fontSize: 13, lineHeight: 19 },
+  ontologyTitle: {
+    color: "#FFFFFF",
+    flexShrink: 1,
+    fontFamily: "Inter_800ExtraBold",
+    fontSize: 18,
+    letterSpacing: -0.2,
+  },
+  ontologyMeta: {
+    color: "#C4B5FD",
+    flexShrink: 1,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  ontologySummary: {
+    color: "#EDE9FE",
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    lineHeight: 19,
+  },
   ontologySourceRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  ontologySourceBadge: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, flexDirection: "row", flexShrink: 1, gap: 5, maxWidth: "100%", paddingHorizontal: 9, paddingVertical: 6 },
-  ontologySourceText: { flexShrink: 1, fontFamily: "Inter_700Bold", fontSize: 11, lineHeight: 15 },
+  ontologySourceBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: 5,
+    maxWidth: "100%",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  ontologySourceText: {
+    flexShrink: 1,
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+    lineHeight: 15,
+  },
   ontologySignalRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  ontologySignalChip: { backgroundColor: "rgba(253,230,138,0.16)", borderRadius: 999, flexShrink: 1, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 6 },
-  ontologySignalText: { color: "#FDE68A", flexShrink: 1, fontFamily: "Inter_700Bold", fontSize: 12, lineHeight: 17 },
+  ontologySignalChip: {
+    backgroundColor: "rgba(253,230,138,0.16)",
+    borderRadius: 999,
+    flexShrink: 1,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  ontologySignalText: {
+    color: "#FDE68A",
+    flexShrink: 1,
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+    lineHeight: 17,
+  },
   ontologySection: { gap: 8 },
   ontologySectionHead: { alignItems: "center", flexDirection: "row", gap: 6 },
-  ontologySectionTitle: { color: "#FFFFFF", flexShrink: 1, fontFamily: "Inter_700Bold", fontSize: 13 },
+  ontologySectionTitle: {
+    color: "#FFFFFF",
+    flexShrink: 1,
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+  },
   ontologyTagRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  ontologyTag: { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 999, flexShrink: 1, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 6 },
-  ontologyTagText: { color: "rgba(255,255,255,0.92)", flexShrink: 1, fontFamily: "Inter_700Bold", fontSize: 12, lineHeight: 17 },
+  ontologyTag: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 999,
+    flexShrink: 1,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  ontologyTagText: {
+    color: "rgba(255,255,255,0.92)",
+    flexShrink: 1,
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+    lineHeight: 17,
+  },
   ontologyEmpty: { alignItems: "center", gap: 8, paddingVertical: 18 },
-  ontologyEmptyTitle: { fontFamily: "Inter_700Bold", fontSize: 15, textAlign: "center" },
-  ontologyEmptyText: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 19, textAlign: "center" },
+  ontologyEmptyTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    textAlign: "center",
+  },
+  ontologyEmptyText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+  },
 
   eventsCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden" },
   eventRow: {
@@ -1519,7 +2476,12 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   eventsToggleText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  eventsEmpty: { alignItems: "center", gap: 10, paddingVertical: 20, paddingHorizontal: 16 },
+  eventsEmpty: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
   emptyCta: {
     flexDirection: "row",
     alignItems: "center",
@@ -1537,7 +2499,12 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  identityCard: { marginHorizontal: 16, marginTop: 12, borderRadius: 16, padding: 16 },
+  identityCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 16,
+  },
   identityRow: { flexDirection: "row", gap: 12 },
   identityIcon: {
     width: 30,
@@ -1548,12 +2515,31 @@ const styles = StyleSheet.create({
   },
   identityBody: { flex: 1, gap: 6, minWidth: 0 },
   identityLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  identityText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  identityText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 4 },
-  growthTag: { borderRadius: 9, flexShrink: 1, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 5 },
-  growthTagText: { flexShrink: 1, fontSize: 12, fontFamily: "Inter_600SemiBold", lineHeight: 17 },
+  growthTag: {
+    borderRadius: 9,
+    flexShrink: 1,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  growthTagText: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    lineHeight: 17,
+  },
 
-  timelineTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 12 },
+  timelineTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 12,
+  },
   timelineRow: { flexDirection: "row", gap: 12 },
   timelineMarkerCol: { alignItems: "center", width: 12 },
   timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
@@ -1601,11 +2587,20 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingBottom: 12,
   },
-  analysisErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  analysisErrorText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 19,
+  },
   analysisField: { marginTop: 14, gap: 5 },
   analysisFieldHead: { flexDirection: "row", alignItems: "center", gap: 7 },
   analysisFieldLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  analysisFieldText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  analysisFieldText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
   analysisDisclaimer: {
     fontSize: 11,
     fontFamily: "Inter_400Regular",
@@ -1613,77 +2608,452 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 
-  tipsCard: { marginHorizontal: 16, borderRadius: 16, overflow: "hidden", paddingHorizontal: 16 },
-  tipRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
+  tipsCard: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+    paddingHorizontal: 16,
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+  },
   tipText: { fontSize: 14, fontFamily: "Inter_400Regular", flex: 1 },
 
-  dashboardContent: { paddingHorizontal: 7, gap: 10 },
-  dashboardProfileCard: { minHeight: 232, borderRadius: 15, borderWidth: 1, borderColor: "rgba(177,76,255,0.48)", padding: 20, flexDirection: "row", alignItems: "center", overflow: "hidden" },
-  dashboardProfileGlow: { position: "absolute", left: -40, top: -50, width: 260, height: 260, borderRadius: 130, backgroundColor: "rgba(120,47,255,0.10)" },
-  dashboardConstellation: { position: "absolute", right: 22, top: 30, width: 100, height: 70, opacity: 0.48 },
-  constellationDot: { position: "absolute", right: 7, top: 4, width: 5, height: 5, borderRadius: 3, backgroundColor: "#9E5CFF" },
-  constellationLine: { position: "absolute", right: 8, top: 15, width: 75, height: 1, backgroundColor: "rgba(158,92,255,0.38)", transform: [{ rotate: "-22deg" }] },
-  dashboardAvatarRing: { width: 126, height: 126, borderRadius: 63, padding: 3, alignItems: "center", justifyContent: "center", shadowColor: "#A64DFF", shadowOpacity: 0.72, shadowRadius: 18 },
-  dashboardAvatarInset: { width: 120, height: 120, borderRadius: 60, padding: 4, backgroundColor: "#080716", alignItems: "center", justifyContent: "center" },
-  dashboardProfileCopy: { flex: 1, minWidth: 0, marginLeft: 20 },
-  dashboardNickname: { color: "#F7F4FA", fontFamily: "Inter_700Bold", fontSize: 24 },
-  dashboardHandle: { color: "#9D96A7", fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2, marginBottom: 9 },
-  dashboardTag: { width: 126, height: 25, borderRadius: 12, borderWidth: 1, borderColor: "rgba(196,89,255,0.62)", flexDirection: "row", alignItems: "center", marginBottom: 5, overflow: "hidden" },
-  dashboardTagLabel: { color: "#D7D1DE", width: 51, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(196,89,255,0.45)" },
-  dashboardTagValue: { color: "#EAE6EE", flex: 1, textAlign: "center", fontFamily: "Inter_500Medium", fontSize: 10 },
-  identityStatus: { color: "#C98CFF", fontFamily: "Inter_600SemiBold", fontSize: 11, marginTop: 5 },
-  dashboardIntro: { color: "#C9C3D0", fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 16, marginTop: 7, paddingBottom: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(121,80,160,0.25)" },
-  dashboardSocialRow: { flexDirection: "row", marginTop: 8 },
-  dashboardSocial: { flex: 1, alignItems: "center", borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(121,80,160,0.32)" },
+  dashboardContent: { paddingHorizontal: 17, paddingTop: 2, gap: 14 },
+  dashboardProfileCard: {
+    height: 330,
+    borderRadius: 27,
+    borderWidth: 1,
+    borderColor: "rgba(190,75,255,0.68)",
+    overflow: "hidden",
+  },
+  dashboardProfileGlow: {
+    position: "absolute",
+    right: -45,
+    top: -40,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "rgba(70,36,200,0.12)",
+  },
+  dashboardCharacterScene: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 73,
+    width: "47%",
+    backgroundColor: "#070615",
+  },
+  dashboardProfileCopy: {
+    position: "absolute",
+    left: "47%",
+    right: 23,
+    top: 26,
+    bottom: 81,
+    paddingLeft: 15,
+  },
+  dashboardNickname: {
+    color: "#F8F5FA",
+    fontFamily: "Inter_700Bold",
+    fontSize: 31,
+    lineHeight: 38,
+    letterSpacing: -1.1,
+  },
+  dashboardHandle: {
+    color: "#B2ABB9",
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    marginTop: 2,
+    marginBottom: 13,
+  },
+  dashboardTags: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 17,
+  },
+  dashboardTag: {
+    maxWidth: 112,
+    height: 28,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "rgba(190,75,255,0.72)",
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dashboardTagText: {
+    color: "#ECE7EF",
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+  },
+  dashboardHeroXpTrack: {
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(139,79,211,0.52)",
+    backgroundColor: "#111024",
+    overflow: "hidden",
+  },
+  dashboardHeroXpFill: { height: "100%", minWidth: 7, borderRadius: 6 },
+  dashboardHeroXpText: {
+    color: "#C8C1CE",
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    marginTop: 8,
+  },
+  dashboardStatusEditor: {
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(126,101,159,0.55)",
+    marginTop: 14,
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(16,15,35,0.72)",
+  },
+  dashboardStatusText: {
+    flex: 1,
+    color: "#D1CBD5",
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  dashboardStatusPlaceholder: { color: "#817A89" },
+  dashboardSocialRow: {
+    position: "absolute",
+    left: 28,
+    right: 28,
+    bottom: 0,
+    height: 74,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(120,92,149,0.38)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  dashboardSocial: {
+    flex: 1,
+    height: 51,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: "rgba(121,80,160,0.42)",
+  },
   dashboardSocialLast: { borderRightWidth: 0 },
-  dashboardSocialLabel: { color: "#948D9F", fontFamily: "Inter_400Regular", fontSize: 9 },
-  dashboardSocialValue: { color: "#F1EDF5", fontFamily: "Inter_700Bold", fontSize: 15, marginTop: 3 },
-  dashboardStatsCard: { minHeight: 180, borderRadius: 15, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 17, flexDirection: "row", overflow: "hidden" },
-  dashboardLevelBlock: { width: "36%", paddingRight: 18, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: "rgba(122,77,169,0.42)", justifyContent: "space-between" },
-  dashboardSectionTitle: { color: "#F0EBF4", fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  dashboardLevel: { color: "#C36FFF", fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 13, textShadowColor: "rgba(169,65,255,0.5)", textShadowRadius: 10 },
-  dashboardXpText: { color: "#D4CEDB", fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 8 },
-  dashboardXpTrack: { height: 8, borderRadius: 4, borderWidth: 1, borderColor: "rgba(133,64,198,0.44)", overflow: "hidden", marginTop: 9 },
+  dashboardSocialHead: { flexDirection: "row", alignItems: "center", gap: 7 },
+  dashboardSocialLabel: {
+    color: "#C5BEC9",
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+  },
+  dashboardSocialValue: {
+    color: "#F5F1F7",
+    fontFamily: "Inter_700Bold",
+    fontSize: 18,
+    marginTop: 4,
+  },
+  dashboardStatsCard: {
+    height: 184,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.55)",
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    overflow: "hidden",
+  },
+  dashboardLevelBlock: {
+    width: "37%",
+    paddingRight: 24,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: "rgba(122,77,169,0.52)",
+    justifyContent: "center",
+  },
+  dashboardLevel: {
+    color: "#F7F1FF",
+    fontFamily: "Inter_700Bold",
+    fontSize: 47,
+    lineHeight: 57,
+    textShadowColor: "rgba(169,65,255,0.78)",
+    textShadowRadius: 12,
+  },
+  dashboardXpText: {
+    color: "#D4CEDB",
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    marginTop: 12,
+  },
+  dashboardXpTrack: {
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: "rgba(133,64,198,0.55)",
+    overflow: "hidden",
+    marginTop: 12,
+  },
   dashboardXpFill: { height: "100%", borderRadius: 4 },
-  dashboardStatsList: { flex: 1, paddingLeft: 20, justifyContent: "space-between" },
-  dashboardStatsLocked: { flex: 1, paddingLeft: 20, alignItems: "center", justifyContent: "center" },
-  dashboardStatsLockedTitle: { color: "#E9D5FF", fontFamily: "Inter_700Bold", fontSize: 13, marginTop: 7 },
-  dashboardStatsLockedSub: { color: "#AFA8B9", fontFamily: "Inter_400Regular", fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 5 },
-  dashboardStatsLockedButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 132, height: 32, borderRadius: 16, backgroundColor: "#6D35F6", paddingHorizontal: 12, marginTop: 10 },
-  dashboardStatsLockedButtonText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 11 },
-  dashboardStatRow: { height: 25, flexDirection: "row", alignItems: "center", gap: 8 },
-  dashboardStatLabel: { color: "#D0CAD7", width: 45, fontFamily: "Inter_400Regular", fontSize: 10 },
-  dashboardStatTrack: { flex: 1, height: 7, borderRadius: 4, backgroundColor: "#1A1930", overflow: "hidden" },
+  dashboardStatsList: {
+    flex: 1,
+    paddingLeft: 26,
+    justifyContent: "space-between",
+  },
+  dashboardStatsLocked: {
+    flex: 1,
+    paddingLeft: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dashboardStatsLockedTitle: {
+    color: "#E9D5FF",
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    marginTop: 7,
+  },
+  dashboardStatsLockedSub: {
+    color: "#AFA8B9",
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+    lineHeight: 15,
+    textAlign: "center",
+    marginTop: 5,
+  },
+  dashboardStatsLockedButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minWidth: 132,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#6D35F6",
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  dashboardStatsLockedButtonText: {
+    color: "#fff",
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+  },
+  dashboardStatRow: {
+    height: 31,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  dashboardStatLabel: {
+    color: "#E2DCE6",
+    width: 50,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+  },
+  dashboardStatTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#1A1930",
+    overflow: "hidden",
+  },
   dashboardStatFill: { height: "100%", borderRadius: 4 },
-  dashboardStatValue: { color: "#D9D4DF", width: 22, textAlign: "right", fontFamily: "Inter_400Regular", fontSize: 10 },
+  dashboardStatValue: {
+    color: "#E2DDE5",
+    width: 22,
+    textAlign: "right",
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+  },
   dashboardInfoGrid: { flexDirection: "row", gap: 10 },
-  dashboardInfoCard: { flex: 1, minHeight: 164, borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 14, overflow: "hidden" },
-  dashboardCardTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 14, marginBottom: 8 },
-  dashboardInfoRow: { minHeight: 35, flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(82,61,108,0.25)" },
-  dashboardInfoLabel: { color: "#D3CDD9", fontFamily: "Inter_400Regular", fontSize: 10, flexShrink: 0 },
-  dashboardInfoValue: { color: "#948D9E", fontFamily: "Inter_400Regular", fontSize: 9, flex: 1, textAlign: "right" },
+  dashboardProfileManager: {
+    minHeight: 68,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#3D285A",
+    borderRadius: 17,
+    backgroundColor: "#0D0B1A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dashboardProfileManagerCopy: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  dashboardProfileManagerTitle: {
+    color: "#F4EFFF",
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+  },
+  dashboardProfileManagerSub: {
+    color: "#8F869B",
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+    marginTop: 4,
+  },
+  dashboardInfoCard: {
+    flex: 1,
+    minHeight: 154,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.52)",
+    paddingHorizontal: 17,
+    paddingVertical: 14,
+    overflow: "hidden",
+  },
+  dashboardCardTitle: {
+    color: "#F0ECF4",
+    fontFamily: "Inter_700Bold",
+    fontSize: 16,
+    marginBottom: 5,
+  },
+  dashboardInfoRow: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(82,61,108,0.34)",
+  },
+  dashboardInfoLabel: {
+    color: "#CFC8D4",
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+    flexShrink: 0,
+  },
+  dashboardInfoValue: {
+    color: "#A69EAB",
+    fontFamily: "Inter_400Regular",
+    fontSize: 9,
+    flex: 1,
+    textAlign: "right",
+  },
   dashboardInfoAccent: { color: "#C769FF" },
-  dashboardOutlineButton: { height: 29, borderRadius: 9, borderWidth: 1, borderColor: "#A84DFF", alignItems: "center", justifyContent: "center", marginTop: 7 },
-  dashboardOutlineText: { color: "#C76CFF", fontFamily: "Inter_500Medium", fontSize: 10 },
-  dashboardInventoryCard: { minHeight: 89, borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", backgroundColor: "rgba(10,9,25,0.96)", paddingHorizontal: 15, flexDirection: "row", alignItems: "center", gap: 12, overflow: "hidden" },
+  dashboardOutlineButton: {
+    height: 29,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#A84DFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 7,
+  },
+  dashboardOutlineText: {
+    color: "#C76CFF",
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
+  },
+  dashboardInventoryCard: {
+    minHeight: 89,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.42)",
+    backgroundColor: "rgba(10,9,25,0.96)",
+    paddingHorizontal: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    overflow: "hidden",
+  },
   dashboardInventoryCopy: { flex: 1 },
-  dashboardInventorySub: { color: "#8F8999", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 12 },
+  dashboardInventorySub: {
+    color: "#8F8999",
+    fontFamily: "Inter_400Regular",
+    fontSize: 9,
+    marginTop: 12,
+  },
   dashboardInventoryImages: { flexDirection: "row", gap: 7 },
-  dashboardInventoryThumb: { width: 58, height: 66, borderRadius: 9, overflow: "hidden", borderWidth: 1, borderColor: "rgba(186,79,255,0.42)", backgroundColor: "#121025" },
+  dashboardInventoryThumb: {
+    width: 58,
+    height: 66,
+    borderRadius: 9,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(186,79,255,0.42)",
+    backgroundColor: "#121025",
+  },
   dashboardInventoryThumbActive: { borderColor: "#D28CFF", borderWidth: 2 },
-  dashboardInventoryImage: { width: "100%", height: "100%", backgroundColor: "#121025" },
-  dashboardInventoryDetail: { borderRadius: 14, overflow: "hidden", padding: 14, backgroundColor: "rgba(10,9,25,0.96)", borderWidth: 1, borderColor: "rgba(126,74,192,0.42)" },
-  dashboardInventoryDetailTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 14 },
-  dashboardInventoryDetailSub: { color: "#8F8999", fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 5 },
-  dashboardInventoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 14 },
-  dashboardInventoryItem: { width: 94, minHeight: 132, borderRadius: 12, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", backgroundColor: "#121025", alignItems: "center", padding: 7 },
-  dashboardInventoryItemActive: { borderColor: "#D28CFF", backgroundColor: "rgba(109,53,246,0.2)" },
+  dashboardInventoryImage: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#121025",
+  },
+  dashboardInventoryDetail: {
+    borderRadius: 14,
+    overflow: "hidden",
+    padding: 14,
+    backgroundColor: "rgba(10,9,25,0.96)",
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.42)",
+  },
+  dashboardInventoryDetailTitle: {
+    color: "#F0ECF4",
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+  },
+  dashboardInventoryDetailSub: {
+    color: "#8F8999",
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+    marginTop: 5,
+  },
+  dashboardInventoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14,
+  },
+  dashboardInventoryItem: {
+    width: 94,
+    minHeight: 132,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.42)",
+    backgroundColor: "#121025",
+    alignItems: "center",
+    padding: 7,
+  },
+  dashboardInventoryItemActive: {
+    borderColor: "#D28CFF",
+    backgroundColor: "rgba(109,53,246,0.2)",
+  },
   dashboardInventoryItemImage: { width: 78, height: 78 },
-  dashboardInventoryItemTitle: { color: "#F0ECF4", fontFamily: "Inter_700Bold", fontSize: 11, marginTop: 3 },
-  dashboardInventoryItemSubtitle: { color: "#9D96A7", fontFamily: "Inter_400Regular", fontSize: 9, marginTop: 3 },
-  dashboardSettingsCard: { borderRadius: 14, borderWidth: 1, borderColor: "rgba(126,74,192,0.42)", padding: 14, overflow: "hidden" },
-  dashboardSettingRow: { minHeight: 35, flexDirection: "row", alignItems: "center", gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(82,61,108,0.25)" },
-  dashboardSettingLabel: { color: "#D3CDD9", fontFamily: "Inter_400Regular", fontSize: 10, flex: 1 },
+  dashboardInventoryItemTitle: {
+    color: "#F0ECF4",
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+    marginTop: 3,
+  },
+  dashboardInventoryItemSubtitle: {
+    color: "#9D96A7",
+    fontFamily: "Inter_400Regular",
+    fontSize: 9,
+    marginTop: 3,
+  },
+  dashboardSettingsCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(126,74,192,0.42)",
+    padding: 14,
+    overflow: "hidden",
+  },
+  dashboardSettingRow: {
+    minHeight: 35,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(82,61,108,0.25)",
+  },
+  dashboardSettingLabel: {
+    color: "#D3CDD9",
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+    flex: 1,
+  },
 
   ctaBtn: {
     flexDirection: "row",

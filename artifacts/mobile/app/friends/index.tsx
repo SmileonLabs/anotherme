@@ -29,6 +29,7 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import { gradients, gradientsDark } from "@/constants/colors";
 import { crossAlert } from "@/lib/crossAlert";
 import { updateFriendAlias, userDisplayName } from "@/lib/friendNames";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 
 export default function FriendsScreen() {
@@ -38,6 +39,7 @@ export default function FriendsScreen() {
   const { scheme } = useThemeMode();
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
+  const { activeProfile } = useCharacterProfiles();
   const { data: friends = [], isLoading, refetch, isRefetching } = useListFriends();
   const createRoom = useCreateRoom();
   const [query, setQuery] = React.useState("");
@@ -194,7 +196,13 @@ export default function FriendsScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.profileCard}
               >
-                <Avatar uri={me?.profileImageUrl} name={me?.nickname ?? "?"} size={52} />
+                <Avatar
+                  uri={activeProfile?.profileImageUrl}
+                  name={activeProfile?.displayName ?? me?.nickname ?? "?"}
+                  size={52}
+                  crop="face"
+                  characterType={activeProfile?.type}
+                />
                 <View style={styles.profileInfo}>
                   <Text style={[styles.profileLabel, { color: colors.mutedForeground }]}>
                     나의 프로필
@@ -256,7 +264,7 @@ export default function FriendsScreen() {
                 style={({ pressed }) => [styles.friendMain, { opacity: pressed ? 0.6 : 1 }]}
                 onPress={() => handleOpenChat(item.id)}
               >
-                <Avatar uri={item.profileImageUrl} name={displayName} size={50} />
+                <Avatar uri={item.profileImageUrl} name={displayName} size={50} crop="face" characterType={item.profile?.type} />
                 <View style={styles.friendInfo}>
                   <Text style={[styles.friendName, { color: colors.foreground }]} numberOfLines={1}>
                     {displayName}

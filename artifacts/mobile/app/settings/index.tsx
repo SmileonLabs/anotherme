@@ -12,6 +12,7 @@ import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
 import { gradientsDark } from "@/constants/colors";
 import { useKnowledgeAdminMe } from "@/hooks/useKnowledge";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 function ThemeSelector() {
   const colors = useColors();
@@ -100,6 +101,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { data: me } = useGetMe();
   const { data: knowledgeAdmin } = useKnowledgeAdminMe();
+  const { activeProfile } = useCharacterProfiles();
 
   const handleLogout = () => {
     crossAlert("로그아웃", "정말 로그아웃하시겠습니까?", [
@@ -146,9 +148,11 @@ export default function SettingsScreen() {
             style={styles.profile}
           >
             <Avatar
-              uri={me?.profileImageUrl}
-              name={me?.nickname ?? "?"}
+              uri={activeProfile?.profileImageUrl}
+              name={activeProfile?.displayName ?? me?.nickname ?? "?"}
               size={60}
+              crop="face"
+              characterType={activeProfile?.type}
             />
             <View style={styles.profileInfo}>
               <Text

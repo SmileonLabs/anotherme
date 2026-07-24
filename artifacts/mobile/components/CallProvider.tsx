@@ -780,6 +780,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
               name={incoming?.caller.nickname ?? ""}
               uri={incoming?.caller.profileImageUrl ?? undefined}
               size={88}
+              crop="face"
+              characterType={incoming?.caller.profile?.type}
             />
             <Text style={[styles.name, { color: colors.foreground }]}>{peerName}</Text>
             <Text style={[styles.sub, { color: colors.mutedForeground }]}>
@@ -824,7 +826,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
             </View>
           ) : (
             <View style={styles.callBody}>
-              <Avatar name={peerName} size={104} />
+              <Avatar name={peerName} size={104} crop="face" characterType="fan" />
               <Text style={[styles.name, styles.nameLight]}>{peerName}</Text>
               <Text style={styles.statusLight}>
                 {mode === "outgoing"

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import React from "react";
 import { customFetch, setCharacterProfileIdGetter } from "@workspace/api-client-react";
 import { playModeQueryKey } from "./usePlayMode";
 
@@ -46,8 +47,12 @@ export function useCharacterProfiles() {
         body: JSON.stringify({ profileId }),
       }),
     onSuccess: async (state) => {
+      setCharacterProfileIdGetter(() => state.activeProfile.id);
       queryClient.setQueryData(characterProfilesQueryKey, state);
-      await queryClient.invalidateQueries({ queryKey: playModeQueryKey });
+      await queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] !== characterProfilesQueryKey[0],
+        refetchType: "active",
+      });
     },
   });
   const update = useMutation({
@@ -60,7 +65,7 @@ export function useCharacterProfiles() {
     onSuccess: (state) => queryClient.setQueryData(characterProfilesQueryKey, state),
   });
   const createFan = useMutation({
-    mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customization: { ageStyle: string; hairStyle: string; skinTone: string; genderExpression: string } & Record<string, unknown> }) =>
+    mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customizeDefault?: boolean; customization: { ageStyle: string; hairStyle: string; skinTone: string; genderExpression: string } & Record<string, unknown> }) =>
       customFetch<CharacterProfileState>("/api/users/me/fan-profiles", {
         method: "POST",
         responseType: "json",
@@ -81,10 +86,11 @@ export function useCharacterProfiles() {
     },
   });
 
-  if (query.data?.activeProfile.id) {
-    const profileId = query.data.activeProfile.id;
+  React.useEffect(() => {
+    const profileId = query.data?.activeProfile.id;
+    if (!profileId) return;
     setCharacterProfileIdGetter(() => profileId);
-  }
+  }, [query.data?.activeProfile.id]);
 
   return {
     state: query.data,
@@ -93,6 +99,7 @@ export function useCharacterProfiles() {
     fanProfiles: query.data?.profiles.filter((profile) => profile.type === "fan") ?? [],
     starProfiles: query.data?.profiles.filter((profile) => profile.type === "star") ?? [],
     isLoading: query.isLoading,
+    isError: query.isError,
     isActivating: activation.isPending,
     isUpdating: update.isPending,
     isCreatingFan: createFan.isPending,

@@ -12,6 +12,7 @@ import {
   chatRoomsTable,
   chatRoomMembersTable,
   blockedUsersTable,
+  characterProfilesTable,
 } from "@workspace/db";
 import type { Call } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
@@ -534,8 +535,27 @@ router.get("/calls/incoming", requireAuth, async (req, res): Promise<void> => {
       // fresh incoming ring (the 60s query window is wider than the timeout).
       const fresh = await maybeExpire(c);
       if (fresh.status !== "ringing") return null;
-      const [caller] = await db.select().from(usersTable).where(eq(usersTable.id, fresh.callerId));
-      return caller ? { ...(await serializeCallWithMedia(fresh)), caller: toPublicUser(caller) } : null;
+      const [[caller], [callerProfile]] = await Promise.all([
+        db.select().from(usersTable).where(eq(usersTable.id, fresh.callerId)),
+        fresh.callerProfileId
+          ? db.select().from(characterProfilesTable).where(eq(characterProfilesTable.id, fresh.callerProfileId))
+          : Promise.resolve([]),
+      ]);
+      return caller ? {
+        ...(await serializeCallWithMedia(fresh)),
+        caller: {
+          ...toPublicUser(caller),
+          nickname: callerProfile?.displayName ?? caller.nickname,
+          profileImageUrl: callerProfile?.profileImageUrl ?? null,
+          profile: callerProfile ? {
+            id: callerProfile.id,
+            type: callerProfile.type,
+            handle: callerProfile.handle,
+            displayName: callerProfile.displayName,
+            profileImageUrl: callerProfile.profileImageUrl,
+          } : null,
+        },
+      } : null;
     }),
   );
   res.json(result.filter((r) => r !== null));

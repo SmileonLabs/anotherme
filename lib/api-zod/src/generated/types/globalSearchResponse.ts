@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { GlobalSearchResponseMissionsItem } from './globalSearchResponseMissionsItem';
 import type { GlobalSearchResponsePostsItem } from './globalSearchResponsePostsItem';
 import type { GlobalSearchResponseStarProfilesItem } from './globalSearchResponseStarProfilesItem';
 import type { GlobalSearchResponseType } from './globalSearchResponseType';
@@ -16,6 +17,7 @@ export interface GlobalSearchResponse {
   users: GlobalSearchResponseUsersItem[];
   starProfiles: GlobalSearchResponseStarProfilesItem[];
   posts: GlobalSearchResponsePostsItem[];
+  missions: GlobalSearchResponseMissionsItem[];
   /** @nullable */
   nextCursor: string | null;
 }

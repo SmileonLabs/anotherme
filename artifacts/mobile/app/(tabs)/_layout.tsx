@@ -45,20 +45,20 @@ function ClassicTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#B96CFF",
-        tabBarInactiveTintColor: "#8D8999",
+        tabBarActiveTintColor: "#E8FF39",
+        tabBarInactiveTintColor: "#9B979E",
         headerShown: false,
         sceneStyle: { backgroundColor: neon.background },
         tabBarLabelStyle: {
           fontFamily: "Inter_600SemiBold",
-          fontSize: 10,
-          lineHeight: 14,
+          fontSize: 11,
+          lineHeight: 15,
           marginTop: 1,
         },
-        tabBarItemStyle: { paddingTop: 5 },
+        tabBarItemStyle: { paddingTop: 6 },
         tabBarStyle: {
           position: "absolute",
-          height: 68 + bottomInset,
+          height: 72 + bottomInset,
           paddingTop: 5,
           paddingBottom: Math.max(6, bottomInset),
           backgroundColor: isIOS ? "transparent" : "#05040D",
@@ -129,8 +129,9 @@ function ClassicTabLayout() {
       />
       <Tabs.Screen
         name="persona"
-        options={{ title: "마이", tabBarIcon: tabIcon("person", "user") }}
+        options={{ title: "마이페이지", tabBarIcon: tabIcon("person", "user") }}
       />
+      <Tabs.Screen name="character/[profileId]" options={{ href: null }} />
     </Tabs>
   );
 }

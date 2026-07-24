@@ -13,5 +13,7 @@ export const GlobalSearchResponseType = {
   all: 'all',
   users: 'users',
   stars: 'stars',
+  fans: 'fans',
   posts: 'posts',
+  missions: 'missions',
 } as const;

@@ -480,7 +480,7 @@ function ContributorRow({
       <Text style={[styles.rankNum, { color: rank <= 3 ? colors.primary : colors.mutedForeground }]}>
         {rank}
       </Text>
-      <Avatar uri={member.avatarUrl} name={member.displayName} size={36} />
+      <Avatar uri={member.avatarUrl} name={member.displayName} size={36} crop="face" characterType="fan" />
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {member.displayName}
@@ -689,7 +689,7 @@ function MemberRow({
         },
       ]}
     >
-      <Avatar uri={member.avatarUrl} name={member.displayName} size={40} />
+      <Avatar uri={member.avatarUrl} name={member.displayName} size={40} crop="face" characterType="fan" />
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {member.displayName}

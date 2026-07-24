@@ -10,6 +10,7 @@ export function ChatRoomHeader({
   title,
   subtitle,
   avatarUri,
+  avatarCharacterType,
   isDirect,
   isGroupRoom,
   isDungeon,
@@ -27,6 +28,7 @@ export function ChatRoomHeader({
   title: string;
   subtitle: string;
   avatarUri?: string | null;
+  avatarCharacterType?: "fan" | "star" | "official_ai" | string | null;
   isDirect: boolean;
   isGroupRoom: boolean;
   isDungeon: boolean;
@@ -61,7 +63,13 @@ export function ChatRoomHeader({
               <Feather name={isDungeon ? "compass" : "users"} size={19} color={colors.primary} />
             </View>
           ) : (
-            <Avatar uri={avatarUri} name={title} size={40} />
+            <Avatar
+              uri={avatarUri}
+              name={title}
+              size={40}
+              crop="face"
+              characterType={avatarCharacterType ?? "fan"}
+            />
           )}
           {isDirect && isOtherOnline ? (
             <View style={[styles.onlineDot, { backgroundColor: colors.online, borderColor: colors.background }]} />

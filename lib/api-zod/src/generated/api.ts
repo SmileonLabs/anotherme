@@ -33,14 +33,22 @@ export const ListUsersResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListUsersResponse = zod.array(ListUsersResponseItem)
 
 
 /**
- * @summary Search public users, STAR profiles, and public feed posts
+ * @summary Search public profiles, STAR/FAN identities, public feed posts, and missions
  */
 export const globalSearchQueryQMin = 2;
 export const globalSearchQueryQMax = 80;
@@ -53,19 +61,22 @@ export const globalSearchQueryLimitMax = 30;
 
 export const GlobalSearchQueryParams = zod.object({
   "q": zod.coerce.string().min(globalSearchQueryQMin).max(globalSearchQueryQMax),
-  "type": zod.enum(['all', 'users', 'stars', 'posts']).default(globalSearchQueryTypeDefault),
+  "type": zod.enum(['all', 'users', 'stars', 'fans', 'posts', 'missions']).default(globalSearchQueryTypeDefault),
   "limit": zod.coerce.number().min(1).max(globalSearchQueryLimitMax).default(globalSearchQueryLimitDefault)
 })
 
 export const GlobalSearchResponse = zod.object({
   "query": zod.string(),
-  "type": zod.enum(['all', 'users', 'stars', 'posts']),
+  "type": zod.enum(['all', 'users', 'stars', 'fans', 'posts', 'missions']),
   "users": zod.array(zod.object({
   "id": zod.string().uuid(),
   "nickname": zod.string(),
+  "handle": zod.string(),
   "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullable(),
-  "isMe": zod.boolean()
+  "profileType": zod.enum(['fan', 'star', 'official_ai']),
+  "isMe": zod.boolean(),
+  "followedByMe": zod.boolean()
 })),
   "starProfiles": zod.array(zod.object({
   "id": zod.string().uuid(),
@@ -83,7 +94,44 @@ export const GlobalSearchResponse = zod.object({
   "kind": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "missions": zod.array(zod.object({
+  "key": zod.string(),
+  "type": zod.enum(['daily', 'weekly']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "target": zod.number(),
+  "rewardExp": zod.number(),
+  "metric": zod.string()
+})),
   "nextCursor": zod.string().nullable()
+})
+
+
+/**
+ * @summary Get recommended public STAR and FAN character profiles
+ */
+export const getSearchRecommendationsQueryLimitDefault = 12;
+export const getSearchRecommendationsQueryLimitMin = 4;
+export const getSearchRecommendationsQueryLimitMax = 30;
+
+
+
+export const GetSearchRecommendationsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(getSearchRecommendationsQueryLimitMin).max(getSearchRecommendationsQueryLimitMax).default(getSearchRecommendationsQueryLimitDefault)
+})
+
+export const GetSearchRecommendationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
+  "statusMessage": zod.string().nullable(),
+  "level": zod.number(),
+  "followedByMe": zod.boolean(),
+  "recommendationReason": zod.string()
+}))
 })
 
 
@@ -154,7 +202,7 @@ export const GetMeResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
@@ -169,14 +217,11 @@ export const updateMeBodyNicknameMax = 30;
 
 export const updateMeBodyStatusMessageMax = 200;
 
-export const updateMeBodyProfileImageUrlMax = 2048;
-
 
 
 export const UpdateMeBody = zod.object({
   "nickname": zod.string().min(1).max(updateMeBodyNicknameMax).optional(),
   "statusMessage": zod.string().max(updateMeBodyStatusMessageMax).nullish(),
-  "profileImageUrl": zod.string().max(updateMeBodyProfileImageUrlMax).nullish(),
   "notificationEnabled": zod.boolean().optional(),
   "talkAnalysisEnabled": zod.boolean().optional()
 })
@@ -186,7 +231,7 @@ export const UpdateMeResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
@@ -228,7 +273,7 @@ export const RegisterPushTokenResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
@@ -753,8 +798,16 @@ export const SearchUsersResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const SearchUsersResponse = zod.array(SearchUsersResponseItem)
 
@@ -768,8 +821,16 @@ export const ListFriendsResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListFriendsResponse = zod.array(ListFriendsResponseItem)
 
@@ -795,8 +856,16 @@ export const UpdateFriendAliasResponse = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 
 
@@ -831,8 +900,16 @@ export const ListIncomingFriendRequestsResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListIncomingFriendRequestsResponse = zod.array(ListIncomingFriendRequestsResponseItem)
@@ -853,8 +930,16 @@ export const ListOutgoingFriendRequestsResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListOutgoingFriendRequestsResponse = zod.array(ListOutgoingFriendRequestsResponseItem)
@@ -898,6 +983,8 @@ export const RejectFriendRequestResponse = zod.object({
 export const ListRoomsResponseItem = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -923,8 +1010,16 @@ export const ListRoomsResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 export const ListRoomsResponse = zod.array(ListRoomsResponseItem)
@@ -933,7 +1028,7 @@ export const ListRoomsResponse = zod.array(ListRoomsResponseItem)
 /**
  * @summary Create a chat room
  */
-export const createRoomBodyNameMax = 120;
+export const createRoomBodyNameMax = 30;
 
 export const createRoomBodyMemberIdsMax = 100;
 
@@ -942,6 +1037,8 @@ export const createRoomBodyMemberIdsMax = 100;
 export const CreateRoomBody = zod.object({
   "type": zod.enum(['direct', 'group']),
   "name": zod.string().max(createRoomBodyNameMax).nullish(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']).optional(),
+  "visibility": zod.enum(['private', 'invite_only']).optional(),
   "memberIds": zod.array(zod.string().uuid()).max(createRoomBodyMemberIdsMax)
 })
 
@@ -956,6 +1053,8 @@ export const GetRoomParams = zod.object({
 export const GetRoomResponse = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -981,8 +1080,16 @@ export const GetRoomResponse = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 
@@ -1028,8 +1135,16 @@ export const ListRoomMembersResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListRoomMembersResponse = zod.array(ListRoomMembersResponseItem)
 
@@ -1052,6 +1167,8 @@ export const InviteRoomMembersBody = zod.object({
 export const InviteRoomMembersResponse = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -1077,8 +1194,16 @@ export const InviteRoomMembersResponse = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 
@@ -1129,8 +1254,16 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 }).optional(),
   "replyTo": zod.union([zod.object({
   "id": zod.string(),
@@ -1151,8 +1284,16 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 }),zod.null()]).optional()
 })).optional(),
   "linkPreview": zod.union([zod.object({
@@ -1278,8 +1419,16 @@ export const GetTypingUsersResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const GetTypingUsersResponse = zod.array(GetTypingUsersResponseItem)
 
@@ -1317,8 +1466,16 @@ export const ListBlockedResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListBlockedResponse = zod.array(ListBlockedResponseItem)
 
@@ -1368,8 +1525,16 @@ export const ListIncomingCallsResponseItem = zod.object({
   "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListIncomingCallsResponse = zod.array(ListIncomingCallsResponseItem)
@@ -3197,21 +3362,36 @@ export const ListPvtTransactionsResponse = zod.array(ListPvtTransactionsResponse
 /**
  * @summary List STAR feed posts visible to me
  */
-export const listStarFeedPostsQueryLimitDefault = 30;
+export const listStarFeedPostsQueryLimitDefault = 20;
 export const listStarFeedPostsQueryLimitMax = 100;
 
-
+export const listStarFeedPostsQueryScopeDefault = `recommended`;
 
 export const ListStarFeedPostsQueryParams = zod.object({
-  "limit": zod.coerce.number().min(1).max(listStarFeedPostsQueryLimitMax).default(listStarFeedPostsQueryLimitDefault)
+  "limit": zod.coerce.number().min(1).max(listStarFeedPostsQueryLimitMax).default(listStarFeedPostsQueryLimitDefault),
+  "scope": zod.enum(['recommended', 'following']).default(listStarFeedPostsQueryScopeDefault),
+  "cursor": zod.date().optional()
 })
 
-export const ListStarFeedPostsResponseItem = zod.object({
+export const listStarFeedPostsResponseItemsItemMediaItemAltTextMax = 160;
+
+export const listStarFeedPostsResponseItemsItemMediaMax = 4;
+
+
+
+export const ListStarFeedPostsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(listStarFeedPostsResponseItemsItemMediaItemAltTextMax).optional()
+})).max(listStarFeedPostsResponseItemsItemMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3237,8 +3417,9 @@ export const ListStarFeedPostsResponseItem = zod.object({
   "profileImageUrl": zod.string().nullish()
 })
 }))
+})),
+  "nextCursor": zod.coerce.date().nullable()
 })
-export const ListStarFeedPostsResponse = zod.array(ListStarFeedPostsResponseItem)
 
 
 /**
@@ -3249,13 +3430,75 @@ export const createStarFeedPostBodyTitleMax = 80;
 
 export const createStarFeedPostBodyBodyMax = 500;
 
+export const createStarFeedPostBodyMediaItemAltTextMax = 160;
+
+export const createStarFeedPostBodyMediaMax = 4;
+
 
 
 export const CreateStarFeedPostBody = zod.object({
   "kind": zod.enum(['fan', 'star']).default(createStarFeedPostBodyKindDefault),
   "title": zod.string().max(createStarFeedPostBodyTitleMax).optional(),
   "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax),
-  "targetStarProfileId": zod.string().uuid().nullish().describe('Optional STAR being supported by a FAN post; null means the neutral FAN profile.')
+  "targetStarProfileId": zod.string().uuid().nullish().describe('Optional STAR being supported by a FAN post; null means the neutral FAN profile.'),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(createStarFeedPostBodyMediaItemAltTextMax).optional()
+})).max(createStarFeedPostBodyMediaMax).optional()
+})
+
+
+/**
+ * @summary Get one STAR feed post visible to me
+ */
+export const GetStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const getStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const getStarFeedPostResponseMediaMax = 4;
+
+
+
+export const GetStarFeedPostResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(getStarFeedPostResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
 })
 
 
@@ -3290,12 +3533,77 @@ export const CheerStarFeedPostParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const cheerStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const cheerStarFeedPostResponseMediaMax = 4;
+
+
+
 export const CheerStarFeedPostResponse = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(cheerStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(cheerStarFeedPostResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+
+
+/**
+ * @summary Remove my active profile reaction from a STAR feed post
+ */
+export const UncheerStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const uncheerStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const uncheerStarFeedPostResponseMediaMax = 4;
+
+
+
+export const UncheerStarFeedPostResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(uncheerStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(uncheerStarFeedPostResponseMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3368,12 +3676,24 @@ export const DiscoverStarFeedByHashtagQueryParams = zod.object({
   "limit": zod.coerce.number().min(1).max(discoverStarFeedByHashtagQueryLimitMax).optional()
 })
 
+export const discoverStarFeedByHashtagResponseMediaItemAltTextMax = 160;
+
+export const discoverStarFeedByHashtagResponseMediaMax = 4;
+
+
+
 export const DiscoverStarFeedByHashtagResponseItem = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(discoverStarFeedByHashtagResponseMediaItemAltTextMax).optional()
+})).max(discoverStarFeedByHashtagResponseMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3417,12 +3737,24 @@ export const ApproveStarResultDraftParams = zod.object({
   "id": zod.coerce.string().uuid()
 })
 
+export const approveStarResultDraftResponseMediaItemAltTextMax = 160;
+
+export const approveStarResultDraftResponseMediaMax = 4;
+
+
+
 export const ApproveStarResultDraftResponse = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(approveStarResultDraftResponseMediaItemAltTextMax).optional()
+})).max(approveStarResultDraftResponseMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3784,12 +4116,13 @@ export const createMyFanCharacterProfileBodyHandleMax = 24;
 
 export const createMyFanCharacterProfileBodyProfileImageUrlMax = 1024;
 
-
+export const createMyFanCharacterProfileBodyCustomizeDefaultDefault = false;
 
 export const CreateMyFanCharacterProfileBody = zod.object({
   "displayName": zod.string().min(1).max(createMyFanCharacterProfileBodyDisplayNameMax),
   "handle": zod.string().min(createMyFanCharacterProfileBodyHandleMin).max(createMyFanCharacterProfileBodyHandleMax).optional(),
   "profileImageUrl": zod.string().max(createMyFanCharacterProfileBodyProfileImageUrlMax).nullish(),
+  "customizeDefault": zod.boolean().default(createMyFanCharacterProfileBodyCustomizeDefaultDefault).describe('Onboarding-only flag. When true, an uncustomized default FAN is completed in place. Ordinary FAN-add flows must omit it so an existing profile is never overwritten.\n'),
   "customization": zod.object({
   "ageStyle": zod.string(),
   "hairStyle": zod.string(),
@@ -4657,6 +4990,12 @@ export const CreateBattleFeedPostBody = zod.object({
   "kind": zod.enum(['fan', 'star']).default(createBattleFeedPostBodyKindDefault)
 })
 
+export const createBattleFeedPostResponsePostMediaItemAltTextMax = 160;
+
+export const createBattleFeedPostResponsePostMediaMax = 4;
+
+
+
 export const CreateBattleFeedPostResponse = zod.object({
   "post": zod.object({
   "id": zod.string(),
@@ -4664,6 +5003,12 @@ export const CreateBattleFeedPostResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(createBattleFeedPostResponsePostMediaItemAltTextMax).optional()
+})).max(createBattleFeedPostResponsePostMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -4758,6 +5103,12 @@ export const GetUsersUserIdPostsQueryParams = zod.object({
   "cursor": zod.date().optional()
 })
 
+export const getUsersUserIdPostsResponseItemsItemMediaItemAltTextMax = 160;
+
+export const getUsersUserIdPostsResponseItemsItemMediaMax = 4;
+
+
+
 export const GetUsersUserIdPostsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -4765,6 +5116,12 @@ export const GetUsersUserIdPostsResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getUsersUserIdPostsResponseItemsItemMediaItemAltTextMax).optional()
+})).max(getUsersUserIdPostsResponseItemsItemMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -4864,12 +5221,30 @@ export const GetPublicCharacterProfileParams = zod.object({
   "profileId": zod.coerce.string().uuid()
 })
 
+export const getPublicCharacterProfileQueryLimitDefault = 30;
+export const getPublicCharacterProfileQueryLimitMax = 60;
+
+
+
+export const GetPublicCharacterProfileQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getPublicCharacterProfileQueryLimitMax).default(getPublicCharacterProfileQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
 
 export const getPublicCharacterProfileResponseProfileTwoXpMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoJobStageMin = 0;
 
 export const getPublicCharacterProfileResponseProfileTwoFollowerCountMin = 0;
 
 export const getPublicCharacterProfileResponseProfileTwoFollowingCountMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoPostCountMin = 0;
+
+export const getPublicCharacterProfileResponsePostsItemsItemMediaItemAltTextMax = 160;
+
+export const getPublicCharacterProfileResponsePostsItemsItemMediaMax = 4;
 
 
 
@@ -4885,12 +5260,17 @@ export const GetPublicCharacterProfileResponse = zod.object({
   "statusMessage": zod.string().nullish(),
   "level": zod.number().min(1),
   "xp": zod.number().min(getPublicCharacterProfileResponseProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getPublicCharacterProfileResponseProfileTwoJobStageMin),
+  "jobLabel": zod.string(),
+  "characterImageUrl": zod.string().nullish(),
   "stats": zod.record(zod.string(), zod.number()),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "isMine": zod.boolean(),
   "followedByMe": zod.boolean(),
   "followerCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoFollowerCountMin),
-  "followingCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoFollowingCountMin)
+  "followingCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoFollowingCountMin),
+  "postCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoPostCountMin)
 })),
   "posts": zod.object({
   "items": zod.array(zod.object({
@@ -4899,6 +5279,12 @@ export const GetPublicCharacterProfileResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getPublicCharacterProfileResponsePostsItemsItemMediaItemAltTextMax).optional()
+})).max(getPublicCharacterProfileResponsePostsItemsItemMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({

@@ -5,13 +5,17 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { GlobalSearchResponseUsersItemProfileType } from './globalSearchResponseUsersItemProfileType';
 
 export type GlobalSearchResponseUsersItem = {
   id: string;
   nickname: string;
+  handle: string;
   /** @nullable */
   profileImageUrl: string | null;
   /** @nullable */
   statusMessage: string | null;
+  profileType: GlobalSearchResponseUsersItemProfileType;
   isMe: boolean;
+  followedByMe: boolean;
 };

@@ -20,6 +20,7 @@ type ToastData = {
   url: string;
   avatarName: string;
   avatarUri: string | null;
+  avatarCharacterType: "fan" | "star" | "official_ai" | string | null;
 };
 
 type NotifyInput = Omit<ToastData, "key"> & { dedupeKey: string };
@@ -111,12 +112,15 @@ function roomDisplayName(room: any, myId?: string): string {
   );
 }
 
-function roomAvatar(room: any, myId?: string): string | null {
+function roomAvatar(room: any, myId?: string) {
   if (room.type === "direct") {
     const other = room.members?.find((m: any) => m.id !== myId);
-    return other?.profileImageUrl ?? null;
+    return {
+      uri: other?.profile?.profileImageUrl ?? null,
+      type: other?.profile?.type ?? "fan",
+    };
   }
-  return null;
+  return { uri: null, type: null };
 }
 
 /**
@@ -344,12 +348,14 @@ export function ForegroundNotifier() {
 
     if (latest) {
       const r = latest.room;
+      const avatar = roomAvatar(r, me?.id);
       notify({
         title: roomDisplayName(r, me?.id),
         body: r.lastMessage ?? "새 메시지가 도착했습니다",
         url: `/chat/${r.id}`,
         avatarName: roomDisplayName(r, me?.id),
-        avatarUri: roomAvatar(r, me?.id),
+        avatarUri: avatar.uri,
+        avatarCharacterType: avatar.type,
         dedupeKey: `msg_${r.id}_${latest.at}`,
       });
     }
@@ -378,7 +384,8 @@ export function ForegroundNotifier() {
         body: `${name}님이 친구 요청을 보냈습니다`,
         url: "/friends/requests",
         avatarName: name,
-        avatarUri: r.user?.profileImageUrl ?? null,
+        avatarUri: r.user?.profile?.profileImageUrl ?? null,
+        avatarCharacterType: r.user?.profile?.type ?? "fan",
         dedupeKey: `req_${r.id}`,
       });
     }
@@ -418,7 +425,13 @@ export function ForegroundNotifier() {
           },
         ]}
       >
-        <Avatar uri={toast.avatarUri} name={toast.avatarName} size={42} />
+        <Avatar
+          uri={toast.avatarUri}
+          name={toast.avatarName}
+          size={42}
+          crop="face"
+          characterType={toast.avatarCharacterType}
+        />
         <View style={styles.text}>
           <Text
             style={[styles.title, { color: colors.foreground }]}

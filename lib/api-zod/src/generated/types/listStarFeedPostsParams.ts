@@ -5,6 +5,7 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListStarFeedPostsScope } from './listStarFeedPostsScope';
 
 export type ListStarFeedPostsParams = {
 /**
@@ -12,4 +13,6 @@ export type ListStarFeedPostsParams = {
  * @maximum 100
  */
 limit?: number;
+scope?: ListStarFeedPostsScope;
+cursor?: Date;
 };

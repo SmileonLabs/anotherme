@@ -15,6 +15,7 @@ import { neon } from "@/constants/colors";
 import { useStarFeed, type StarFeedPost, type StarFeedPostKind } from "@/hooks/useStarFeed";
 import { mediaUri } from "@/lib/apiBase";
 import { customFetch } from "@workspace/api-client-react";
+import SearchScreenV2 from "@/components/SearchScreenV2";
 
 type SearchUser = { id: string; nickname: string; profileImageUrl: string | null; statusMessage: string | null; isMe: boolean; profileType?: string; handle?: string };
 type SearchResponse = { users: SearchUser[]; starProfiles: Array<{ id: string; profileId: string; ownerId: string | null; displayName: string; imageUrl: string | null; stage: string; isMine: boolean; followedByMe: boolean }>; posts: Array<{ id: string; title: string; body: string; kind: string; createdAt: string }>; nextCursor: string | null };
@@ -106,7 +107,13 @@ function FeedPreview({ post, onPress }: { post: StarFeedPost; onPress: () => voi
         style={styles.postCard}
       >
         <View pointerEvents="none" style={styles.postGlow} />
-        <Avatar uri={post.author.profileImageUrl} name={post.author.nickname} size={58} />
+        <Avatar
+          uri={post.author.profileImageUrl}
+          name={post.author.nickname}
+          size={58}
+          crop="face"
+          characterType={post.author.activityProfile?.type}
+        />
         <View style={styles.postCopy}>
           <View style={styles.postMetaRow}>
             <Text style={styles.postAuthor} numberOfLines={1}>{post.author.nickname}</Text>
@@ -162,7 +169,7 @@ function SearchPostCard({ post, onPress }: { post: SearchResponse["posts"][numbe
   );
 }
 
-export default function SearchScreen() {
+function LegacySearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [query, setQuery] = React.useState("");
@@ -288,9 +295,21 @@ export default function SearchScreen() {
               keyboardShouldPersistTaps="handled"
             >
               {matchedUsers.map((user) => (
-                <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ("profileType" in user && user.profileType ? { pathname: "/character/[profileId]", params: { profileId: user.id } } : { pathname: "/profile/[userId]", params: { userId: user.id } }) as never)} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
+                <Pressable key={user.id} onPress={() => router.push(user.isMe ? "/(tabs)/persona" : ("profileType" in user && user.profileType ? { pathname: "/(tabs)/character/[profileId]", params: { profileId: user.id } } : { pathname: "/profile/[userId]", params: { userId: user.id } }) as never)} style={({ pressed }) => [styles.personCard, pressed && styles.pressed]}>
                   <View style={styles.personAvatarWrap}>
-                    <Avatar uri={user.profileImageUrl} name={user.nickname} size={44} />
+                    <Avatar
+                      uri={user.profileImageUrl}
+                      name={user.nickname}
+                      size={44}
+                      crop="face"
+                      characterType={
+                        "profileType" in user
+                          ? user.profileType
+                          : "profile" in user
+                            ? user.profile?.type
+                            : undefined
+                      }
+                    />
                     <View style={styles.verified}><Feather name="check" size={8} color="#FFFFFF" /></View>
                   </View>
                   <Text style={styles.personName} numberOfLines={1}>{user.nickname}</Text>
@@ -306,7 +325,7 @@ export default function SearchScreen() {
                 <View key={star.id} style={styles.starResultCard}>
                 <Pressable
                   key={star.id}
-                  onPress={() => router.push({ pathname: "/character/[profileId]", params: { profileId: star.profileId } } as never)}
+                  onPress={() => router.push({ pathname: "/(tabs)/character/[profileId]", params: { profileId: star.profileId } } as never)}
                   style={({ pressed }) => [styles.starResultMain, pressed && styles.pressed]}
                 >
                   <Image source={star.imageUrl ? { uri: mediaUri(star.imageUrl) } : require("../../assets/images/star-character-cutout.png")} style={styles.starResultImage} contentFit="cover" />
@@ -323,7 +342,7 @@ export default function SearchScreen() {
         </SearchSection>
 
         {normalized.length >= 2 ? searchQuery.isLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : searchQuery.data?.posts.length ? (
-          <View style={styles.feedList}>{searchQuery.data.posts.slice(0, 6).map((post) => <SearchPostCard key={post.id} post={post} onPress={() => router.push({ pathname: "/(tabs)/feed", params: { postId: post.id } } as never)} />)}</View>
+          <View style={styles.feedList}>{searchQuery.data.posts.slice(0, 6).map((post) => <SearchPostCard key={post.id} post={post} onPress={() => router.push({ pathname: "/post/[postId]", params: { postId: post.id } } as never)} />)}</View>
         ) : <Text style={styles.empty}>{selectedFilterLabel} 검색 결과가 없어요.</Text> : feedLoading ? <ActivityIndicator color={neon.purple} style={styles.loader} /> : matchedPosts.length ? (
           <View style={styles.feedList}>
             {matchedPosts.map((post) => <FeedPreview key={post.id} post={post} onPress={() => router.push("/(tabs)/feed" as never)} />)}
@@ -476,3 +495,5 @@ const styles = StyleSheet.create({
   applyFilterButton: { minHeight: 48, marginTop: 18, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: neon.purple },
   applyFilterText: { color: "#FFFFFF", fontFamily: "Inter_700Bold", fontSize: 14 },
 });
+
+export default SearchScreenV2;

@@ -112,7 +112,7 @@ export default function RequestsScreen() {
         if (!user) return null;
         return (
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Avatar uri={user.profileImageUrl} name={user.nickname} size={48} />
+            <Avatar uri={user.profileImageUrl} name={user.nickname} size={48} crop="face" characterType={user.profile?.type} />
             <View style={styles.info}>
               <Text style={[styles.name, { color: colors.foreground }]}>{user.nickname}</Text>
               <Text style={[styles.email, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>

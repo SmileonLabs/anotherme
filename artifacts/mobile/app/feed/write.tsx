@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +11,10 @@ import { pickAndUploadImages, type UploadedImage } from "@/lib/uploadImage";
 import { crossAlert } from "@/lib/crossAlert";
 
 export default function FeedWriteScreen() {
+  return <Redirect href={"/(tabs)/feed?compose=1" as never} />;
+}
+
+function LegacyFeedWriteScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ kind?: string }>();

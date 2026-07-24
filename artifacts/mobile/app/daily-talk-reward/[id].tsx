@@ -85,7 +85,7 @@ export default function DailyTalkRewardPreviewScreen() {
       const saved = await saveReward.mutateAsync(rewardId);
       setResult(saved);
     } catch (err) {
-      setFeedback(errorMessage(err, "저장 또는 PVT 지급에 실패했어요."));
+      setFeedback(errorMessage(err, "저장 또는 STAR Point 지급에 실패했어요."));
     }
   }
 
@@ -97,7 +97,7 @@ export default function DailyTalkRewardPreviewScreen() {
       const posted = await postReward.mutateAsync(rewardId);
       setResult(posted);
     } catch (err) {
-      setFeedback(errorMessage(err, "피드 업로드 또는 PVT 지급에 실패했어요."));
+      setFeedback(errorMessage(err, "피드 업로드 또는 STAR Point 지급에 실패했어요."));
     }
   }
 
@@ -127,7 +127,7 @@ export default function DailyTalkRewardPreviewScreen() {
         <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.kicker, { color: colors.primary }]}>오늘의 대화 일기</Text>
           <Text style={[styles.heroTitle, { color: colors.foreground }]}>대화 품질 점수는 {reward.qualityScore}점이에요.</Text>
-          <Text style={[styles.heroBody, { color: colors.mutedForeground }]}>예상 리워드는 {reward.pvtAmount} PVT이며, 수령 시 Another Me 동기화에 반영돼요.</Text>
+          <Text style={[styles.heroBody, { color: colors.mutedForeground }]}>예상 리워드는 {reward.pvtAmount} STAR Point이며, 수령 시 Another Me 동기화에 반영돼요.</Text>
           <View style={styles.heroPills}>
             <View style={[styles.pill, { backgroundColor: colors.muted }]}>
               <Feather name="smile" size={14} color={colors.primary} />
@@ -219,11 +219,11 @@ export default function DailyTalkRewardPreviewScreen() {
 
         <View style={styles.bottomActions}>
           <Pressable disabled={isDone || isSubmitting} onPress={savePrivate} style={[styles.secondaryButton, { borderColor: colors.border, opacity: isDone || isSubmitting ? 0.55 : 1 }]}>
-            <Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>나만 보기로 PVT 받고 동기화</Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>나만 보기로 STAR Point 받고 동기화</Text>
           </Pressable>
           <Pressable disabled={isDone || isSubmitting} onPress={postToFeed} style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: isDone || isSubmitting ? 0.55 : 1 }]}>
             {isSubmitting ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : null}
-            <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>{isDone ? "리워드 완료" : "피드에 올리고 PVT+동기화"}</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>{isDone ? "리워드 완료" : "피드에 올리고 STAR Point+동기화"}</Text>
           </Pressable>
         </View>
       </CustomScrollView>
@@ -233,14 +233,14 @@ export default function DailyTalkRewardPreviewScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>오늘의 톡 리워드 완료!</Text>
             <Text style={[styles.modalBody, { color: colors.mutedForeground }]}>대화 품질 점수: {result?.qualityScore ?? 0}점</Text>
-            <Text style={[styles.modalReward, { color: colors.primary }]}>{result?.pvtAmount ?? 0} PVT Point를 획득했습니다.</Text>
+            <Text style={[styles.modalReward, { color: colors.primary }]}>{result?.pvtAmount ?? 0} STAR Point를 획득했습니다.</Text>
             <Text style={[styles.modalBody, { color: colors.mutedForeground }]}>동기화 요청이 접수됐어요. 곧 Another Me에 반영돼요.</Text>
             <View style={styles.modalActions}>
               <Pressable onPress={() => setResult(null)} style={[styles.modalButton, { backgroundColor: colors.muted }]}>
                 <Text style={[styles.modalButtonText, { color: colors.foreground }]}>확인</Text>
               </Pressable>
                 <Pressable onPress={() => { setResult(null); router.push("/pvt/wallet" as never); }} style={[styles.modalButton, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.modalButtonText, { color: colors.primaryForeground }]}>내 PVT 보기</Text>
+                <Text style={[styles.modalButtonText, { color: colors.primaryForeground }]}>내 STAR Point 보기</Text>
               </Pressable>
               {result?.feedPostId ? (
                 <Pressable onPress={() => { setResult(null); router.push("/(tabs)/feed" as never); }} style={[styles.modalButton, { backgroundColor: colors.primary }]}>

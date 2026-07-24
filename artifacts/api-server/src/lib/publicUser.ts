@@ -13,7 +13,9 @@ export function toPublicUser(user: User) {
     id: user.id,
     nickname: user.nickname,
     accountKind: publicAccountKind(user),
-    profileImageUrl: user.profileImageUrl ?? null,
+    // Account photos are private member data. Public surfaces must resolve
+    // the active character profile instead of exposing this legacy field.
+    profileImageUrl: null,
     statusMessage: user.statusMessage ?? null,
   };
 }

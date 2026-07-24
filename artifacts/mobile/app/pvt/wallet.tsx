@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
@@ -31,17 +32,44 @@ function sourceLabel(source: string) {
 }
 
 export default function PvtWalletScreen() {
+  const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const wallet = usePvtWallet();
   const transactions = usePvtTransactions();
+  const isRefreshing = wallet.isFetching || transactions.isFetching;
 
   const refresh = async () => {
-    await Promise.all([wallet.refetch(), transactions.refetch()]);
+    await Promise.allSettled([wallet.refetch(), transactions.refetch()]);
   };
+  const goBack = React.useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)" as never);
+  }, [router]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="뒤로가기"
+          hitSlop={12}
+          onPress={goBack}
+          style={({ pressed }) => [
+            styles.headerButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Feather name="arrow-left" size={27} color={colors.foreground} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+          Star Point
+        </Text>
+        <View style={styles.headerButton} />
+      </View>
       <CustomScrollView
         contentContainerStyle={{
           padding: 16,
@@ -58,13 +86,13 @@ export default function PvtWalletScreen() {
             <Feather name="database" size={24} color={colors.primary} />
           </View>
           <Text style={[styles.kicker, { color: colors.primary }]}>
-            PVT Point
+            STAR Point
           </Text>
           <Text style={[styles.balance, { color: colors.foreground }]}>
-            {(wallet.data?.balance ?? 0).toLocaleString()} PVT
+            {(wallet.data?.balance ?? 0).toLocaleString()} STAR Point
           </Text>
           <Text style={[styles.description, { color: colors.mutedForeground }]}>
-            PVT Point는 현재 앱 내부 포인트입니다. 온체인 전환이나 현금화 기능은
+            STAR Point는 현재 앱 내부 포인트입니다. 온체인 전환이나 현금화 기능은
             제공하지 않습니다.
           </Text>
         </View>
@@ -73,12 +101,27 @@ export default function PvtWalletScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             거래 내역
           </Text>
-          <Pressable onPress={() => void refresh()} hitSlop={8}>
-            <Feather
-              name="refresh-cw"
-              size={18}
-              color={colors.mutedForeground}
-            />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Star Point 내역 새로고침"
+            disabled={isRefreshing}
+            onPress={() => void refresh()}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.refreshButton,
+              pressed && styles.pressed,
+              isRefreshing && styles.refreshDisabled,
+            ]}
+          >
+            {isRefreshing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather
+                name="refresh-cw"
+                size={18}
+                color={colors.mutedForeground}
+              />
+            )}
           </Pressable>
         </View>
 
@@ -112,10 +155,10 @@ export default function PvtWalletScreen() {
             ]}
           >
             <Text style={[styles.stateTitle, { color: colors.foreground }]}>
-              아직 PVT 내역이 없어요
+              아직 STAR Point 내역이 없어요
             </Text>
             <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
-              오늘의 톡 리워드를 받아 첫 PVT를 쌓아보세요.
+              오늘의 톡 리워드를 받아 첫 STAR Point를 쌓아보세요.
             </Text>
           </View>
         ) : (
@@ -148,7 +191,7 @@ export default function PvtWalletScreen() {
                   ]}
                 >
                   {item.amount >= 0 ? "+" : ""}
-                  {item.amount} PVT
+                  {item.amount} STAR Point
                 </Text>
                 <Text
                   style={[styles.txBalance, { color: colors.mutedForeground }]}
@@ -166,6 +209,25 @@ export default function PvtWalletScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 56,
+    paddingBottom: 8,
+    paddingHorizontal: 10,
+  },
+  headerButton: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  headerTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 18,
+  },
+  pressed: { opacity: 0.65 },
   balanceCard: {
     alignItems: "center",
     borderRadius: 24,
@@ -196,6 +258,13 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   sectionTitle: { fontFamily: "Inter_700Bold", fontSize: 18 },
+  refreshButton: {
+    alignItems: "center",
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  refreshDisabled: { opacity: 0.7 },
   stateBox: {
     alignItems: "center",
     borderRadius: 18,

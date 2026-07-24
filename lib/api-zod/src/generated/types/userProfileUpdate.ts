@@ -17,11 +17,6 @@ export interface UserProfileUpdate {
      * @nullable
      */
   statusMessage?: string | null;
-  /**
-     * @maxLength 2048
-     * @nullable
-     */
-  profileImageUrl?: string | null;
   notificationEnabled?: boolean;
   talkAnalysisEnabled?: boolean;
 }
