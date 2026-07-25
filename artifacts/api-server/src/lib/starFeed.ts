@@ -243,6 +243,41 @@ async function canViewPostRow(meUserId: string, row: PostRow | undefined): Promi
   return !!friendship;
 }
 
+export async function canReadStarFeedMedia(
+  meUserId: string,
+  objectPath: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({
+      authorUserId: starFeedPostsTable.authorUserId,
+      status: starFeedPostsTable.status,
+      visibility: starFeedPostsTable.visibility,
+    })
+    .from(starFeedPostsTable)
+    .where(
+      and(
+        eq(starFeedPostsTable.status, "PUBLISHED"),
+        sql`${starFeedPostsTable.media} @> ${JSON.stringify([{ objectPath }])}::jsonb`,
+      ),
+    )
+    .limit(20);
+
+  for (const row of rows) {
+    if (row.visibility === "PUBLIC" || row.authorUserId === meUserId) return true;
+    if (row.visibility !== "FRIENDS" || !row.authorUserId) continue;
+    const [friendship] = await db
+      .select({ id: friendshipsTable.id })
+      .from(friendshipsTable)
+      .where(sql`
+        (${friendshipsTable.userAId} = ${meUserId} AND ${friendshipsTable.userBId} = ${row.authorUserId})
+        OR (${friendshipsTable.userBId} = ${meUserId} AND ${friendshipsTable.userAId} = ${row.authorUserId})
+      `)
+      .limit(1);
+    if (friendship) return true;
+  }
+  return false;
+}
+
 async function selectPostRows(where?: ReturnType<typeof eq>): Promise<PostRow[]> {
   const query = db
     .select({

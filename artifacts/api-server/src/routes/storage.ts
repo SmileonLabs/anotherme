@@ -11,6 +11,7 @@ import { chatRoomMembersTable, db, messagesTable, nftEvolutionStagesTable, starP
 import { rateLimit } from "../lib/rateLimit";
 import { hasReadableObjectReference } from "../lib/objectAccessPolicy";
 import { issueMediaTicket, validateMediaTicket } from "../lib/mediaTicket";
+import { canReadStarFeedMedia } from "../lib/starFeed";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -34,6 +35,7 @@ export async function canReadPrivateObject(userId: string, objectPath: string): 
     .where(eq(starProfilesTable.imageUrl, objectPath))
     .limit(1);
   if (nftStageReference || starProfileReference) return true;
+  if (await canReadStarFeedMedia(userId, objectPath)) return true;
   const candidates = await db
     .select({ roomId: messagesTable.roomId, type: messagesTable.type, content: messagesTable.content })
     .from(messagesTable)

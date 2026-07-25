@@ -19,8 +19,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Avatar } from "@/components/Avatar";
 import { CustomScrollView } from "@/components/CustomScroll";
+import { useMediaUri } from "@/hooks/useMediaUri";
 import type { StarFeedPost } from "@/hooks/useStarFeed";
-import { mediaUri } from "@/lib/apiBase";
 import { crossAlert } from "@/lib/crossAlert";
 
 type StarFeedListWireResponse =
@@ -77,6 +77,27 @@ function formattedDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function PostMediaImage({
+  objectPath,
+  accessibilityLabel,
+}: {
+  objectPath: string;
+  accessibilityLabel: string;
+}) {
+  const uri = useMediaUri(objectPath);
+  return uri ? (
+    <Image
+      source={{ uri }}
+      contentFit="cover"
+      transition={180}
+      style={styles.media}
+      accessibilityLabel={accessibilityLabel}
+    />
+  ) : (
+    <View style={styles.media} />
+  );
 }
 
 export default function PostDetailScreen() {
@@ -184,12 +205,9 @@ export default function PostDetailScreen() {
           {post.hashtags?.length ? <Text style={styles.hashtags}>{post.hashtags.map((tag) => `#${tag}`).join("  ")}</Text> : null}
 
           {(post.media ?? []).filter((item) => item.mediaType === "image").map((item, index) => (
-            <Image
+            <PostMediaImage
               key={`${item.objectPath}-${index}`}
-              source={{ uri: mediaUri(item.objectPath) }}
-              contentFit="cover"
-              transition={180}
-              style={styles.media}
+              objectPath={item.objectPath}
               accessibilityLabel={item.altText || `게시물 이미지 ${index + 1}`}
             />
           ))}

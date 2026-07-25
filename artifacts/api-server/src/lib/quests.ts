@@ -21,6 +21,7 @@ import {
   type QuestType,
 } from "@workspace/db";
 import { ensurePersona, recordReward } from "./growth";
+import { grantPvtInTransaction } from "./pvt";
 import {
   DAILY_QUESTS,
   WEEKLY_QUESTS,
@@ -703,9 +704,23 @@ export async function claimCharacterProfileQuest(userId: string, profileId: stri
   if (!row) return { ok: false, code: "not_found" };
   if (!row.completedAt) return { ok: false, code: "not_completed" };
   if (row.rewardClaimedAt) return { ok: false, code: "already_claimed" };
-  const granted = await recordReward({ userId, profileId, sourceType: "quest", eventType: "quest_reward", sourceKey: `profile-quest:${profileId}:${periodKey}:${questKey}`, expDelta: def.rewardExp, reason: `퀘스트 보상 · ${def.title}`, metadata: { profileId, questKey, periodKey } });
-  if (!granted) return { ok: false, code: "already_claimed" };
-  await db.update(characterProfileQuestProgressTable).set({ rewardClaimedAt: now }).where(eq(characterProfileQuestProgressTable.id, row.id));
+  await recordReward({ userId, profileId, sourceType: "quest", eventType: "quest_reward", sourceKey: `profile-quest:${profileId}:${periodKey}:${questKey}`, expDelta: def.rewardExp, reason: `퀘스트 보상 · ${def.title}`, metadata: { profileId, questKey, periodKey } });
+  await db.transaction(async (tx) => {
+    await grantPvtInTransaction(tx, {
+      userId,
+      amount: def.rewardExp,
+      source: "MISSION",
+      sourceId: `profile-quest:${profileId}:${periodKey}:${questKey}`,
+      description: `미션 보상 · ${def.title}`,
+    });
+    await tx
+      .update(characterProfileQuestProgressTable)
+      .set({ rewardClaimedAt: now })
+      .where(and(
+        eq(characterProfileQuestProgressTable.id, row.id),
+        isNull(characterProfileQuestProgressTable.rewardClaimedAt),
+      ));
+  });
   return { ok: true, rewardExp: def.rewardExp };
 }
 

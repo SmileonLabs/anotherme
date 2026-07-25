@@ -31,7 +31,11 @@ import { useColors } from "@/hooks/useColors";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { playModeQueryKey } from "@/hooks/usePlayMode";
 import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
-import { usePvtWallet } from "@/hooks/usePvtWallet";
+import {
+  pvtTransactionsQueryKey,
+  pvtWalletQueryKey,
+  usePvtWallet,
+} from "@/hooks/usePvtWallet";
 
 type TabKey = "daily" | "weekly" | "achievements";
 const TORIMIA_GATE_COST = 5_000;
@@ -223,6 +227,8 @@ export default function QuestsScreen() {
     queryClient.invalidateQueries({ queryKey: getGetMyAchievementsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetMyRewardsSummaryQueryKey() });
     queryClient.invalidateQueries({ queryKey: playModeQueryKey });
+    queryClient.invalidateQueries({ queryKey: pvtWalletQueryKey });
+    queryClient.invalidateQueries({ queryKey: pvtTransactionsQueryKey });
   }, [queryClient]);
 
   const { mutate: claimQuest } = useClaimQuestReward({
@@ -238,7 +244,7 @@ export default function QuestsScreen() {
         invalidateAll();
         setGateNotice({
           title: "보상 수령 완료",
-          message: `+${result.rewardExp} XP를 받았어요.`,
+          message: `+${result.rewardExp} STAR Point를 받았어요.`,
         });
       },
       onError: () => {

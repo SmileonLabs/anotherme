@@ -19,7 +19,6 @@ import { CustomScrollView } from "@/components/CustomScroll";
 import { FAN_STAT_META, readFanStat } from "@/constants/fanStats";
 import { useMediaUri } from "@/hooks/useMediaUri";
 import type { StarFeedPost } from "@/hooks/useStarFeed";
-import { mediaUri } from "@/lib/apiBase";
 
 const FAN_CHARACTER_FALLBACK = require("../assets/images/home-v2/fan-character-scene.png");
 const STAR_CHARACTER_FALLBACK = require("../assets/images/star-character-cutout.png");
@@ -81,6 +80,7 @@ function firstImage(post: StarFeedPost): string | null {
 
 function GridTile({ post, size, onPress }: { post: StarFeedPost; size: number; onPress: () => void }) {
   const objectPath = firstImage(post);
+  const imageUri = useMediaUri(objectPath);
   return (
     <Pressable
       accessibilityRole="button"
@@ -88,8 +88,8 @@ function GridTile({ post, size, onPress }: { post: StarFeedPost; size: number; o
       onPress={onPress}
       style={({ pressed }) => [styles.gridTile, { width: size, height: size }, pressed && styles.pressed]}
     >
-      {objectPath ? (
-        <Image source={{ uri: mediaUri(objectPath) }} contentFit="cover" transition={180} style={StyleSheet.absoluteFill} />
+      {objectPath && imageUri ? (
+        <Image source={{ uri: imageUri }} contentFit="cover" transition={180} style={StyleSheet.absoluteFill} />
       ) : (
         <LinearGradient colors={["#231242", "#0D0A1B", "#05040C"]} style={styles.textTile}>
           <Feather name="message-circle" size={20} color="#BD79FF" />

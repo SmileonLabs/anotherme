@@ -1,5 +1,7 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import {
+  characterProfileQuestProgressTable,
+  characterProfilesTable,
   db,
   pvtTransactionsTable,
   pvtWalletsTable,
@@ -7,6 +9,7 @@ import {
   type PvtTransactionType,
 } from "@workspace/db";
 import { normalizePvtGrantAmount } from "./pvtPolicy";
+import { DAILY_QUESTS, WEEKLY_QUESTS } from "./questDefinitions";
 
 export interface PvtWalletView {
   balance: number;
@@ -24,7 +27,57 @@ export interface PvtTransactionView {
   createdAt: string;
 }
 
+const QUEST_TITLE_BY_KEY = new Map(
+  [...DAILY_QUESTS, ...WEEKLY_QUESTS].map((quest) => [quest.key, quest.title]),
+);
+
+async function backfillClaimedMissionRewards(userId: string): Promise<void> {
+  const [claimed, existing] = await Promise.all([
+    db
+      .select({
+        profileId: characterProfileQuestProgressTable.profileId,
+        questKey: characterProfileQuestProgressTable.questKey,
+        periodKey: characterProfileQuestProgressTable.periodKey,
+        rewardXp: characterProfileQuestProgressTable.rewardXp,
+      })
+      .from(characterProfileQuestProgressTable)
+      .innerJoin(
+        characterProfilesTable,
+        eq(characterProfilesTable.id, characterProfileQuestProgressTable.profileId),
+      )
+      .where(and(
+        eq(characterProfilesTable.ownerUserId, userId),
+        isNotNull(characterProfileQuestProgressTable.rewardClaimedAt),
+      )),
+    db
+      .select({ sourceId: pvtTransactionsTable.sourceId })
+      .from(pvtTransactionsTable)
+      .where(and(
+        eq(pvtTransactionsTable.userId, userId),
+        eq(pvtTransactionsTable.source, "MISSION"),
+        eq(pvtTransactionsTable.type, "EARN"),
+      )),
+  ]);
+  const recorded = new Set(existing.map((row) => row.sourceId));
+  for (const row of claimed) {
+    if (row.rewardXp <= 0) continue;
+    const sourceId = `profile-quest:${row.profileId}:${row.periodKey}:${row.questKey}`;
+    if (recorded.has(sourceId)) continue;
+    await db.transaction((tx) =>
+      grantPvtInTransaction(tx, {
+        userId,
+        amount: row.rewardXp,
+        source: "MISSION",
+        sourceId,
+        description: `미션 보상 · ${QUEST_TITLE_BY_KEY.get(row.questKey) ?? row.questKey}`,
+      }),
+    );
+    recorded.add(sourceId);
+  }
+}
+
 export async function getPvtWallet(userId: string): Promise<PvtWalletView> {
+  await backfillClaimedMissionRewards(userId);
   await db
     .insert(pvtWalletsTable)
     .values({ userId, balance: 0 })
@@ -42,6 +95,7 @@ export async function getPvtWallet(userId: string): Promise<PvtWalletView> {
 }
 
 export async function listPvtTransactions(userId: string, limit = 50): Promise<PvtTransactionView[]> {
+  await backfillClaimedMissionRewards(userId);
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit)));
   const rows = await db
     .select()

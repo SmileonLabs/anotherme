@@ -20,8 +20,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/Avatar";
 import { NeonBackdrop } from "@/components/NeonUI";
 import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
+import { useMediaUri } from "@/hooks/useMediaUri";
 import { useStarFeed, type StarFeedAuthor, type StarFeedPost } from "@/hooks/useStarFeed";
-import { mediaUri } from "@/lib/apiBase";
 import { crossAlert } from "@/lib/crossAlert";
 import { pickAndUploadImages, type UploadedImage } from "@/lib/uploadImage";
 
@@ -43,16 +43,32 @@ function compactNumber(value: number) {
   return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}K`;
 }
 
+function FeedMediaImage({
+  objectPath,
+  accessibilityLabel,
+  style,
+}: {
+  objectPath: string;
+  accessibilityLabel: string;
+  style: object;
+}) {
+  const uri = useMediaUri(objectPath);
+  return uri ? (
+    <Image source={{ uri }} contentFit="cover" accessibilityLabel={accessibilityLabel} style={style} />
+  ) : (
+    <View style={style} />
+  );
+}
+
 function MediaGrid({ post }: { post: StarFeedPost }) {
   const images = (post.media ?? []).filter((item) => item.mediaType === "image").slice(0, 4);
   if (!images.length) return null;
   return (
     <View style={[styles.mediaGrid, images.length === 1 && styles.mediaGridSingle]}>
       {images.map((item, index) => (
-        <Image
+        <FeedMediaImage
           key={`${item.objectPath}-${index}`}
-          source={{ uri: mediaUri(item.objectPath) }}
-          contentFit="cover"
+          objectPath={item.objectPath}
           accessibilityLabel={item.altText || `${displayNameOf(post.author)} 게시물 이미지 ${index + 1}`}
           style={[
             styles.mediaImage,
