@@ -13,7 +13,18 @@ import { useColors } from "@/hooks/useColors";
 import { useGenerateDailyTalkReward } from "@/hooks/useDailyTalkReward";
 
 function errorMessage(err: unknown): string {
-  const data = (err as { data?: { message?: string } } | null)?.data;
+  const apiError = err as {
+    status?: number;
+    data?: { message?: string; error?: string; retryAfter?: number };
+  } | null;
+  const data = apiError?.data;
+  if (apiError?.status === 429) {
+    const seconds = Math.max(1, Number(data?.retryAfter) || 60);
+    const minutes = Math.ceil(seconds / 60);
+    return minutes > 1
+      ? `요청이 많아 잠시 쉬고 있어요. 약 ${minutes}분 후 다시 시도해 주세요.`
+      : "요청이 많아 잠시 쉬고 있어요. 1분 후 다시 시도해 주세요.";
+  }
   return (
     data?.message ??
     "오늘의 톡 리워드를 생성하지 못했어요. 잠시 후 다시 시도해 주세요."
@@ -82,13 +93,19 @@ export default function DailyTalkRewardGenerateScreen() {
       {generate.isError ? (
         <View style={styles.actions}>
           <Pressable
+            accessibilityRole="button"
+            disabled={generate.isPending}
             onPress={() =>
               generate.mutate(undefined, {
                 onSuccess: (reward) =>
                   router.replace(`/daily-talk-reward/${reward.id}` as never),
               })
             }
-            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+            style={[
+              styles.primaryButton,
+              { backgroundColor: colors.primary },
+              generate.isPending && styles.disabled,
+            ]}
           >
             <Text
               style={[styles.primaryText, { color: colors.primaryForeground }]}
@@ -148,4 +165,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   secondaryText: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  disabled: { opacity: 0.55 },
 });
