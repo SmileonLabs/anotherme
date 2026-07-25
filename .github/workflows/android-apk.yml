@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - run: corepack enable
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -36,7 +38,6 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - run: corepack enable
       - run: pnpm install --frozen-lockfile
 
       - name: Resolve the public Clerk key
