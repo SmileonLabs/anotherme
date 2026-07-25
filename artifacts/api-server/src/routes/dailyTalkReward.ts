@@ -127,7 +127,7 @@ router.post(
   }),
   rateLimit({
     name: "daily-talk-ai-generate-daily",
-    limit: 10,
+    limit: 5,
     windowSeconds: 86400,
     requireRedis: true,
   }),
