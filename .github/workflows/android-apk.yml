@@ -53,11 +53,11 @@ jobs:
                 if (!response.ok) throw new Error(`PWA request failed: ${response.status}`);
                 return response.text();
               });
-              const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js)["']/g)]
+              const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js(?:\?[^"']*)?)["']/g)]
                 .map((match) => new URL(match[1], "https://anothermeai.app/app/").href);
               for (const script of scripts) {
                 const source = await fetch(script).then((response) => response.text());
-                key = source.match(/pk_(?:live|test)_[A-Za-z0-9_-]+/)?.[0];
+                key = source.match(/pk_(?:live|test)_[A-Za-z0-9_$-]+/)?.[0];
                 if (key) break;
               }
             }
