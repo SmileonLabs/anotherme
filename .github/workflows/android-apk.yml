@@ -36,7 +36,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - run: pnpm install --frozen-lockfile
 
