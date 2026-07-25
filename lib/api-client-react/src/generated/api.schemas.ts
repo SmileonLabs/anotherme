@@ -919,6 +919,26 @@ export interface CharacterProfileNotification {
   createdAt: string;
 }
 
+export type CharacterProfileSocialEntry = CharacterProfileSummary & ({
+  /** @nullable */
+  statusMessage: string | null;
+  followedAt: string;
+});
+
+export type CharacterProfileSocialResponseScope = typeof CharacterProfileSocialResponseScope[keyof typeof CharacterProfileSocialResponseScope];
+
+
+export const CharacterProfileSocialResponseScope = {
+  followers: 'followers',
+  following: 'following',
+} as const;
+
+export interface CharacterProfileSocialResponse {
+  profileId: string;
+  scope: CharacterProfileSocialResponseScope;
+  profiles: CharacterProfileSocialEntry[];
+}
+
 export interface CharacterProfileState {
   activeProfile: CharacterProfile;
   profiles: CharacterProfile[];
@@ -3092,6 +3112,18 @@ export type GetMyCharacterProfileNotifications200 = {
   profileId: string;
   items: CharacterProfileNotification[];
 };
+
+export type GetMyCharacterProfileSocialParams = {
+scope?: GetMyCharacterProfileSocialScope;
+};
+
+export type GetMyCharacterProfileSocialScope = typeof GetMyCharacterProfileSocialScope[keyof typeof GetMyCharacterProfileSocialScope];
+
+
+export const GetMyCharacterProfileSocialScope = {
+  followers: 'followers',
+  following: 'following',
+} as const;
 
 export type GetServiceRankingsParams = {
 scope?: GetServiceRankingsScope;

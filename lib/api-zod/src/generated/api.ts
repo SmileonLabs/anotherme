@@ -4386,6 +4386,36 @@ export const MarkMyCharacterProfileNotificationReadResponse = zod.object({
 
 
 /**
+ * @summary List followers or following profiles for the selected character profile
+ */
+export const getMyCharacterProfileSocialQueryScopeDefault = `followers`;
+
+export const GetMyCharacterProfileSocialQueryParams = zod.object({
+  "scope": zod.enum(['followers', 'following']).default(getMyCharacterProfileSocialQueryScopeDefault)
+})
+
+export const GetMyCharacterProfileSocialHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+export const GetMyCharacterProfileSocialResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "scope": zod.enum(['followers', 'following']),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullable(),
+  "followedAt": zod.coerce.date()
+})))
+})
+
+
+/**
  * @summary List published NFT collections available for STAR summon
  */
 

@@ -53,6 +53,7 @@ import type {
   CharacterProfile,
   CharacterProfileFollowState,
   CharacterProfileNotification,
+  CharacterProfileSocialResponse,
   CharacterProfileState,
   ChatRoom,
   ChatRoomMember,
@@ -97,6 +98,7 @@ import type {
   GetFanCommunitiesIdMissions200Item,
   GetMyCharacterProfileInventory200,
   GetMyCharacterProfileNotifications200,
+  GetMyCharacterProfileSocialParams,
   GetPersonaRankingsParams,
   GetPublicCharacterProfileParams,
   GetSearchRecommendations200,
@@ -12169,6 +12171,90 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getMarkMyCharacterProfileNotificationReadMutationOptions(options));
     }
+
+export const getGetMyCharacterProfileSocialUrl = (params?: GetMyCharacterProfileSocialParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/users/me/profile-social?${stringifiedParams}` : `/api/users/me/profile-social`
+}
+
+/**
+ * @summary List followers or following profiles for the selected character profile
+ */
+export const getMyCharacterProfileSocial = async (params?: GetMyCharacterProfileSocialParams, options?: RequestInit): Promise<CharacterProfileSocialResponse> => {
+
+  return customFetch<CharacterProfileSocialResponse>(getGetMyCharacterProfileSocialUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyCharacterProfileSocialQueryKey = (params?: GetMyCharacterProfileSocialParams,) => {
+    return [
+    `/api/users/me/profile-social`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMyCharacterProfileSocialQueryOptions = <TData = Awaited<ReturnType<typeof getMyCharacterProfileSocial>>, TError = ErrorType<void>>(params?: GetMyCharacterProfileSocialParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterProfileSocial>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyCharacterProfileSocialQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyCharacterProfileSocial>>> = ({ signal }) => getMyCharacterProfileSocial(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterProfileSocial>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyCharacterProfileSocialQueryResult = NonNullable<Awaited<ReturnType<typeof getMyCharacterProfileSocial>>>
+export type GetMyCharacterProfileSocialQueryError = ErrorType<void>
+
+
+/**
+ * @summary List followers or following profiles for the selected character profile
+ */
+
+export function useGetMyCharacterProfileSocial<TData = Awaited<ReturnType<typeof getMyCharacterProfileSocial>>, TError = ErrorType<void>>(
+ params?: GetMyCharacterProfileSocialParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterProfileSocial>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyCharacterProfileSocialQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getListPublishedNftCollectionsUrl = () => {
 

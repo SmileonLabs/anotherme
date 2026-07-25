@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { and, desc, eq } from "drizzle-orm";
-import { characterProfileInventoryTable, characterProfileNotificationsTable, db } from "@workspace/db";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import {
+  characterProfileFollowsTable,
+  characterProfileInventoryTable,
+  characterProfileNotificationsTable,
+  characterProfilesTable,
+  db,
+} from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import {
   activateCharacterProfile,
@@ -20,6 +26,9 @@ const activateSchema = z.object({ profileId: z.uuid() });
 const publicProfileQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(60).optional().default(30),
   cursor: z.iso.datetime().optional(),
+});
+const socialScopeQuerySchema = z.object({
+  scope: z.enum(["followers", "following"]).optional().default("followers"),
 });
 const updateSchema = z.object({
   displayName: z.string().trim().min(1).max(30).optional(),
@@ -153,6 +162,53 @@ router.patch("/users/me/profile-notifications/:notificationId/read", requireAuth
     .returning();
   if (!updated) { res.status(404).json({ error: "NOTIFICATION_NOT_FOUND" }); return; }
   res.json(updated);
+});
+
+router.get("/users/me/profile-social", requireAuth, async (req, res): Promise<void> => {
+  const parsedQuery = socialScopeQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: "INVALID_SOCIAL_SCOPE" });
+    return;
+  }
+
+  const actor = await resolveCharacterProfileActor(req.dbUser!.id, req.header("x-character-profile-id"));
+  const isFollowers = parsedQuery.data.scope === "followers";
+  const profiles = await db
+    .select({
+      id: characterProfilesTable.id,
+      type: characterProfilesTable.type,
+      handle: characterProfilesTable.handle,
+      displayName: characterProfilesTable.displayName,
+      profileImageUrl: characterProfilesTable.profileImageUrl,
+      statusMessage: characterProfilesTable.statusMessage,
+      followedAt: characterProfileFollowsTable.createdAt,
+    })
+    .from(characterProfileFollowsTable)
+    .innerJoin(
+      characterProfilesTable,
+      eq(
+        characterProfilesTable.id,
+        isFollowers
+          ? characterProfileFollowsTable.followerProfileId
+          : characterProfileFollowsTable.followedProfileId,
+      ),
+    )
+    .where(
+      and(
+        eq(
+          isFollowers
+            ? characterProfileFollowsTable.followedProfileId
+            : characterProfileFollowsTable.followerProfileId,
+          actor.id,
+        ),
+        eq(characterProfilesTable.status, "active"),
+        isNull(characterProfilesTable.archivedAt),
+      ),
+    )
+    .orderBy(desc(characterProfileFollowsTable.createdAt))
+    .limit(100);
+
+  res.json({ profileId: actor.id, scope: parsedQuery.data.scope, profiles });
 });
 
 router.get("/profiles/:profileId", requireAuth, async (req, res): Promise<void> => {

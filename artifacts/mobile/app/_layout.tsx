@@ -219,6 +219,7 @@ function RootStackNav() {
       <Stack.Screen name="profile/create-fan" options={{ headerShown: false }} />
       <Stack.Screen name="profiles/index" options={{ headerShown: false }} />
       <Stack.Screen name="profiles/summon-star" options={{ headerShown: false }} />
+      <Stack.Screen name="profiles/social" options={{ headerShown: false }} />
       <Stack.Screen name="profile/[userId]" options={{ headerShown: false }} />
       <Stack.Screen
         name="profile/history"

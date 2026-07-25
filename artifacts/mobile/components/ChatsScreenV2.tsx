@@ -236,6 +236,14 @@ export default function ChatsScreenV2() {
     }
   }, [rewardNotice, rewardStatusQuery, router]);
 
+  const openLatestNotification = React.useCallback(() => {
+    if (latestNotification?.type === "profile.followed") {
+      router.push("/profiles/social?tab=followers" as never);
+      return;
+    }
+    router.push("/settings/notifications" as never);
+  }, [latestNotification?.type, router]);
+
   return (
     <NeonBackdrop style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
@@ -335,7 +343,7 @@ export default function ChatsScreenV2() {
 
               {latestNotification ? (
                 <Pressable
-                  onPress={() => router.push("/settings/notifications")}
+                  onPress={openLatestNotification}
                   style={({ pressed }) => [styles.notificationCard, pressed && styles.pressed]}
                 >
                   <View style={styles.notificationIcon}>
