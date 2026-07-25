@@ -1,5 +1,6 @@
 import { Avatar } from "@/components/Avatar";
 import { NeonBackdrop } from "@/components/NeonUI";
+import { useDailyTalkRewardStatus } from "@/hooks/useDailyTalkReward";
 import { userDisplayName } from "@/lib/friendNames";
 import {
   useGetMe,
@@ -14,6 +15,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -39,6 +41,12 @@ type CategorizedRoom = ChatRoom & {
   category?: string;
   visibility?: string;
 };
+
+type RewardNoticeReason =
+  | "analysis_disabled"
+  | "insufficient_messages"
+  | "insufficient_counterparts"
+  | "status_error";
 
 const FILTERS: Array<{ key: RoomCategory; label: string }> = [
   { key: "all", label: "전체" },
@@ -118,16 +126,22 @@ export default function ChatsScreenV2() {
   const { data: me } = useGetMe();
   const roomsQuery = useListRooms();
   const notificationQuery = useGetMyCharacterProfileNotifications();
+  const rewardStatusQuery = useDailyTalkRewardStatus();
   const rooms = (roomsQuery.data ?? []) as CategorizedRoom[];
   const notifications = notificationQuery.data?.items ?? [];
   const latestNotification = notifications[0];
   const unreadNotifications = notifications.filter((item) => !item.readAt).length;
   const [filter, setFilter] = React.useState<RoomCategory>("all");
+  const [rewardNotice, setRewardNotice] = React.useState<RewardNoticeReason | null>(null);
 
   useFocusEffect(
     React.useCallback(() => {
-      void Promise.all([roomsQuery.refetch(), notificationQuery.refetch()]);
-    }, [notificationQuery.refetch, roomsQuery.refetch]),
+      void Promise.all([
+        roomsQuery.refetch(),
+        notificationQuery.refetch(),
+        rewardStatusQuery.refetch(),
+      ]);
+    }, [notificationQuery.refetch, rewardStatusQuery.refetch, roomsQuery.refetch]),
   );
 
   React.useEffect(() => {
@@ -145,6 +159,82 @@ export default function ChatsScreenV2() {
       }),
     [filter, rooms],
   );
+
+  const openDailyTalkReward = React.useCallback(() => {
+    const status = rewardStatusQuery.data;
+    if (rewardStatusQuery.isError || !status) {
+      setRewardNotice("status_error");
+      return;
+    }
+    if (status.claimedToday) {
+      router.push("/pvt/wallet" as never);
+      return;
+    }
+    if (status.rewardId && status.status === "GENERATED") {
+      router.push(`/daily-talk-reward/${status.rewardId}` as never);
+      return;
+    }
+    if (status.canClaim) {
+      router.push("/daily-talk-reward/generate" as never);
+      return;
+    }
+    if (
+      status.reason === "analysis_disabled" ||
+      status.reason === "insufficient_counterparts"
+    ) {
+      setRewardNotice(status.reason);
+      return;
+    }
+    setRewardNotice("insufficient_messages");
+  }, [
+    rewardStatusQuery.data,
+    rewardStatusQuery.isError,
+    router,
+  ]);
+
+  const rewardNoticeCopy = React.useMemo(() => {
+    const status = rewardStatusQuery.data;
+    switch (rewardNotice) {
+      case "analysis_disabled":
+        return {
+          title: "대화 분석이 꺼져 있어요",
+          body: "알림·분석 설정에서 Talk to Earn 대화 분석을 켜 주세요.",
+          action: "설정으로 이동",
+        };
+      case "insufficient_counterparts":
+        return {
+          title: "실제 대화 상대가 필요해요",
+          body: "오늘 친구 또는 그룹 채팅에서 다른 사용자와 대화한 뒤 다시 확인해 주세요.",
+          action: "확인",
+        };
+      case "insufficient_messages":
+        return {
+          title: "오늘의 대화가 아직 부족해요",
+          body: `현재 ${status?.messageCount ?? 0}/${status?.minMessageCount ?? 10}개가 집계됐어요. 매일 00시에 초기화되며, 조건을 채우면 Talk to Earn을 시작할 수 있어요.`,
+          action: "확인",
+        };
+      case "status_error":
+        return {
+          title: "Talk to Earn 상태를 확인하지 못했어요",
+          body: "네트워크 연결을 확인한 뒤 다시 불러와 주세요.",
+          action: "다시 불러오기",
+        };
+      default:
+        return null;
+    }
+  }, [rewardNotice, rewardStatusQuery.data]);
+
+  const handleRewardNoticeAction = React.useCallback(() => {
+    const reason = rewardNotice;
+    setRewardNotice(null);
+    if (reason === "analysis_disabled") {
+      router.push("/settings/notifications" as never);
+      return;
+    }
+    if (reason === "status_error") {
+      void rewardStatusQuery.refetch();
+    }
+  }, [rewardNotice, rewardStatusQuery, router]);
 
   return (
     <NeonBackdrop style={styles.screen}>
@@ -210,7 +300,13 @@ export default function ChatsScreenV2() {
         refreshControl={
           <RefreshControl
             refreshing={roomsQuery.isRefetching}
-            onRefresh={() => void Promise.all([roomsQuery.refetch(), notificationQuery.refetch()])}
+            onRefresh={() =>
+              void Promise.all([
+                roomsQuery.refetch(),
+                notificationQuery.refetch(),
+                rewardStatusQuery.refetch(),
+              ])
+            }
             tintColor="#9D5CFF"
           />
         }
@@ -219,7 +315,9 @@ export default function ChatsScreenV2() {
           filter === "all" ? (
             <View style={styles.listHeader}>
               <Pressable
-                onPress={() => router.push("/daily-talk-reward/generate" as never)}
+                accessibilityRole="button"
+                disabled={rewardStatusQuery.isLoading}
+                onPress={openDailyTalkReward}
                 style={({ pressed }) => [styles.rewardBannerButton, pressed && styles.pressed]}
               >
                 <Image
@@ -228,6 +326,11 @@ export default function ChatsScreenV2() {
                   source={require("@/assets/images/chat/talk-to-earn-star-point-banner.png")}
                   style={styles.rewardBannerImage}
                 />
+                {rewardStatusQuery.isLoading ? (
+                  <View style={styles.rewardStatusLoading}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  </View>
+                ) : null}
               </Pressable>
 
               {latestNotification ? (
@@ -322,6 +425,32 @@ export default function ChatsScreenV2() {
           );
         }}
       />
+      <Modal
+        transparent
+        animationType="fade"
+        visible={rewardNotice !== null}
+        onRequestClose={() => setRewardNotice(null)}
+      >
+        <View style={styles.rewardNoticeBackdrop}>
+          <View style={styles.rewardNoticeCard}>
+            <View style={styles.rewardNoticeIcon}>
+              <Feather name="message-circle" size={25} color="#C873FF" />
+            </View>
+            <Text style={styles.rewardNoticeTitle}>{rewardNoticeCopy?.title}</Text>
+            <Text style={styles.rewardNoticeBody}>{rewardNoticeCopy?.body}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleRewardNoticeAction}
+              style={({ pressed }) => [
+                styles.rewardNoticeButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.rewardNoticeButtonText}>{rewardNoticeCopy?.action}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </NeonBackdrop>
   );
 }
@@ -382,6 +511,65 @@ const styles = StyleSheet.create({
   rewardBannerImage: {
     width: "100%",
     height: "100%",
+  },
+  rewardStatusLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(4,3,12,0.42)",
+  },
+  rewardNoticeBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.74)",
+  },
+  rewardNoticeCard: {
+    width: "100%",
+    maxWidth: 420,
+    alignItems: "center",
+    gap: 13,
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(174,90,255,0.5)",
+    backgroundColor: "#0D0B18",
+  },
+  rewardNoticeIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(126,45,224,0.22)",
+  },
+  rewardNoticeTitle: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    fontFamily: "Inter_700Bold",
+    textAlign: "center",
+  },
+  rewardNoticeBody: {
+    color: "#B8B1C4",
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+  },
+  rewardNoticeButton: {
+    width: "100%",
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 3,
+    borderRadius: 15,
+    backgroundColor: "#7937F5",
+  },
+  rewardNoticeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
   },
   notificationCard: {
     minHeight: 88,

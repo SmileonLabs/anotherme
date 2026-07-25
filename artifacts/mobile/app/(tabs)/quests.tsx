@@ -78,9 +78,9 @@ const BASE_DAILY_QUESTS: readonly Quest[] = [
     type: "daily",
     title: "출석 미션",
     description: "오늘 Another Me에 접속하세요.",
-    progress: 1,
+    progress: 0,
     target: 1,
-    completed: true,
+    completed: false,
     rewardClaimed: false,
     rewardExp: 10,
   },
@@ -226,17 +226,51 @@ export default function QuestsScreen() {
   }, [queryClient]);
 
   const { mutate: claimQuest } = useClaimQuestReward({
+    request: {
+      headers: profileId
+        ? { "x-character-profile-id": profileId }
+        : undefined,
+    },
     mutation: {
       onMutate: (v) => setClaimingKey(`quest:${v.questKey}`),
       onSettled: () => setClaimingKey(null),
-      onSuccess: invalidateAll,
+      onSuccess: (result) => {
+        invalidateAll();
+        setGateNotice({
+          title: "보상 수령 완료",
+          message: `+${result.rewardExp} XP를 받았어요.`,
+        });
+      },
+      onError: () => {
+        setGateNotice({
+          title: "보상을 받지 못했어요",
+          message: "미션 상태를 새로고침한 뒤 다시 시도해 주세요.",
+        });
+      },
     },
   });
   const { mutate: claimAchievement } = useClaimAchievementReward({
+    request: {
+      headers: profileId
+        ? { "x-character-profile-id": profileId }
+        : undefined,
+    },
     mutation: {
       onMutate: (v) => setClaimingKey(`ach:${v.achievementKey}`),
       onSettled: () => setClaimingKey(null),
-      onSuccess: invalidateAll,
+      onSuccess: (result) => {
+        invalidateAll();
+        setGateNotice({
+          title: "보상 수령 완료",
+          message: `+${result.rewardExp} XP를 받았어요.`,
+        });
+      },
+      onError: () => {
+        setGateNotice({
+          title: "보상을 받지 못했어요",
+          message: "업적 상태를 새로고침한 뒤 다시 시도해 주세요.",
+        });
+      },
     },
   });
 
@@ -443,7 +477,24 @@ export default function QuestsScreen() {
                     onClaim={() => claimQuest({ questKey: q.key })}
                     onOpen={() => {
                       const destination = questDestination(q);
-                      if (destination) router.push(destination as never);
+                      if (destination) {
+                        router.push(destination as never);
+                        return;
+                      }
+                      setGateNotice({
+                        title: q.rewardClaimed
+                          ? "완료한 미션이에요"
+                          : "자동으로 집계되는 미션이에요",
+                        message: q.rewardClaimed
+                          ? "이 미션의 보상을 이미 받았어요."
+                          : "조건을 달성하면 진행 상태가 자동으로 반영돼요.",
+                      });
+                    }}
+                    onUnavailable={() => {
+                      setGateNotice({
+                        title: "미션 상태 동기화가 필요해요",
+                        message: "화면을 아래로 당겨 새로고침한 뒤 다시 시도해 주세요.",
+                      });
                     }}
                   />
                 ))}
@@ -541,6 +592,7 @@ function QuestRow({
   claiming,
   onClaim,
   onOpen,
+  onUnavailable,
 }: {
   quest: Quest;
   claimSupported: boolean;
@@ -548,13 +600,29 @@ function QuestRow({
   claiming: boolean;
   onClaim: () => void;
   onOpen: () => void;
+  onUnavailable: () => void;
 }) {
   const ratio = Math.min(100, Math.round((quest.progress / (quest.target || 1)) * 100));
+  const handlePress = () => {
+    if (quest.completed && !quest.rewardClaimed) {
+      if (claimSupported) {
+        onClaim();
+      } else {
+        onUnavailable();
+      }
+      return;
+    }
+    onOpen();
+  };
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${quest.title} 콘텐츠로 이동`}
-      onPress={onOpen}
+      accessibilityLabel={
+        quest.completed && !quest.rewardClaimed
+          ? `${quest.title} 보상 받기`
+          : `${quest.title} 콘텐츠로 이동`
+      }
+      onPress={handlePress}
       style={({ pressed }) => [styles.cardPressable, pressed && { opacity: 0.78 }]}
     >
       <LinearGradient
