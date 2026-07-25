@@ -1,6 +1,6 @@
 import { useState } from "react";
 import appIcon from "../../../mobile/assets/images/icon.png";
-import appServicePreview from "../../../mobile/assets/images/search-mockup.png";
+import appServicePreview from "../assets/fan-home.png";
 import { APK_URL } from "@/config";
 import { type PwaPlatform, usePwa } from "@/hooks/use-pwa";
 import { Button } from "@/components/ui/button";

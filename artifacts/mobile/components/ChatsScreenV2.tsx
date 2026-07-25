@@ -3,6 +3,7 @@ import { NeonBackdrop } from "@/components/NeonUI";
 import { useDailyTalkRewardStatus } from "@/hooks/useDailyTalkReward";
 import { userDisplayName } from "@/lib/friendNames";
 import {
+  markMyCharacterProfileNotificationRead,
   useGetMe,
   useGetMyCharacterProfileNotifications,
   useListRooms,
@@ -236,13 +237,29 @@ export default function ChatsScreenV2() {
     }
   }, [rewardNotice, rewardStatusQuery, router]);
 
-  const openLatestNotification = React.useCallback(() => {
+  const openLatestNotification = React.useCallback(async () => {
     if (latestNotification?.type === "profile.followed") {
+      const unreadFollowerNotifications = notifications.filter(
+        (item) => item.type === "profile.followed" && !item.readAt,
+      );
+      if (unreadFollowerNotifications.length > 0) {
+        await Promise.allSettled(
+          unreadFollowerNotifications.map((item) =>
+            markMyCharacterProfileNotificationRead(item.id),
+          ),
+        );
+        await notificationQuery.refetch();
+      }
       router.push("/profiles/social?tab=followers" as never);
       return;
     }
     router.push("/settings/notifications" as never);
-  }, [latestNotification?.type, router]);
+  }, [
+    latestNotification?.type,
+    notificationQuery.refetch,
+    notifications,
+    router,
+  ]);
 
   return (
     <NeonBackdrop style={styles.screen}>

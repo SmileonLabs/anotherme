@@ -5,7 +5,12 @@ import { db } from "@workspace/db";
 import { officialAiAccountsTable } from "../../../../lib/db/src/schema/officialAi";
 import { requireAuth } from "../lib/auth";
 import { hasAdminAccess } from "../lib/adminRbac";
-import { ensureBibiFriendshipForUser, getBibiOfficialProfile, getOrCreateBibiDirectRoom } from "../lib/officialAccounts";
+import {
+  BIBI_OFFICIAL_CHARACTER_IMAGE_URL,
+  ensureBibiFriendshipForUser,
+  getBibiOfficialProfile,
+  getOrCreateBibiDirectRoom,
+} from "../lib/officialAccounts";
 import { roomWithMeta } from "./rooms";
 
 const router: IRouter = Router();
@@ -68,7 +73,17 @@ router.patch("/admin/official-ai-accounts/:id", requireAuth, async (req, res): P
     safetyPolicyJson: z.record(z.string(), z.unknown()).optional(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "invalid", issues: parsed.error.issues }); return; }
-  const [updated] = await db.update(officialAiAccountsTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(officialAiAccountsTable.id, String(req.params.id))).returning();
+  const targetId = String(req.params.id);
+  const [target] = await db
+    .select({ slug: officialAiAccountsTable.slug })
+    .from(officialAiAccountsTable)
+    .where(eq(officialAiAccountsTable.id, targetId))
+    .limit(1);
+  if (!target) { res.status(404).json({ error: "not_found" }); return; }
+  const changes = target.slug === "bibi"
+    ? { ...parsed.data, profileImageUrl: BIBI_OFFICIAL_CHARACTER_IMAGE_URL }
+    : parsed.data;
+  const [updated] = await db.update(officialAiAccountsTable).set({ ...changes, updatedAt: new Date() }).where(eq(officialAiAccountsTable.id, targetId)).returning();
   if (!updated) { res.status(404).json({ error: "not_found" }); return; }
   res.json(updated);
 });

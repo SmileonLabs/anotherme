@@ -81,8 +81,8 @@ function patchExportedHtml(indexHtmlPath, basePath) {
 
     const assetBase = basePath || "";
     const headLinks = [
-      `<link rel="manifest" href="${assetBase}/manifest.webmanifest">`,
-      `<link rel="apple-touch-icon" sizes="180x180" href="${assetBase}/apple-touch-icon.png">`,
+      `<link rel="manifest" href="${assetBase}/manifest.webmanifest?v=20260726">`,
+      `<link rel="apple-touch-icon" sizes="180x180" href="${assetBase}/apple-touch-icon.png?v=20260726">`,
     ];
     for (const link of headLinks) {
       const rel = link.match(/rel="([^"]+)"/)?.[1];

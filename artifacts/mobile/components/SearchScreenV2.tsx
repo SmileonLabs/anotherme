@@ -51,7 +51,7 @@ const FILTERS: Array<{ key: SearchType; label: string; icon: React.ComponentProp
 ];
 
 function modeLabel(type: ProfileType) {
-  return type === "fan" ? "FAN" : "STAR";
+  return type === "fan" ? "FAN" : type === "official_ai" ? "OFFICIAL" : "STAR";
 }
 
 function More({ open, onPress }: { open?: boolean; onPress: () => void }) {

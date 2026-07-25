@@ -87,6 +87,7 @@
     { "idx": 22, "version": "7", "when": 1784718000000, "tag": "0022_profile_communication_identity", "breakpoints": true },
     { "idx": 23, "version": "7", "when": 1784721600000, "tag": "0023_nft_profile_ownership", "breakpoints": true },
     { "idx": 24, "version": "7", "when": 1784880000000, "tag": "0024_chat_room_categories", "breakpoints": true },
-    { "idx": 25, "version": "7", "when": 1784966400000, "tag": "0025_remove_legacy_account_avatars", "breakpoints": true }
+    { "idx": 25, "version": "7", "when": 1784966400000, "tag": "0025_remove_legacy_account_avatars", "breakpoints": true },
+    { "idx": 26, "version": "7", "when": 1785052800000, "tag": "0026_bibi_official_character_avatar", "breakpoints": true }
   ]
 }

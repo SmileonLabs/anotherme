@@ -1,23 +1,30 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import {
+  activeCharacterProfilesTable,
   anotherMeSettingsTable,
+  characterProfilesTable,
   chatRoomMembersTable,
   chatRoomsTable,
   db,
   friendshipsTable,
+  officialAiAccountsTable,
+  officialAiCharacterProfilesTable,
   usersTable,
 } from "@workspace/db";
 
 export const BIBI_OFFICIAL_USER_ID = "00000000-0000-4000-8000-00000000b1b1";
 export const BIBI_OFFICIAL_HANDLE = "@bibi_official";
-export const BIBI_OFFICIAL_PROFILE_IMAGE_URL = "https://anothermeai.app/images/bibi-profileimg.png";
+export const BIBI_OFFICIAL_CHARACTER_IMAGE_URL =
+  "https://anothermeai.app/images/bibi-character-profile-v2.png";
 
 const BIBI_OFFICIAL_SEED = {
   id: BIBI_OFFICIAL_USER_ID,
   clerkId: "official:bibi",
   email: "bibi.official@anotherme.local",
   nickname: "BIBI Official",
-  profileImageUrl: BIBI_OFFICIAL_PROFILE_IMAGE_URL,
+  // The service account is not a public character identity. Its image stays
+  // empty so account-photo fallbacks can never replace the official character.
+  profileImageUrl: null,
   statusMessage: "BIBI Official 준비 계정입니다. 응답에는 AI 라벨이 표시돼요.",
 };
 
@@ -30,14 +37,17 @@ export type BibiOfficialProfile = {
   statusMessage: string | null;
 };
 
-function toBibiProfile(user: typeof usersTable.$inferSelect): BibiOfficialProfile {
+function toBibiProfile(
+  user: typeof usersTable.$inferSelect,
+  account: typeof officialAiAccountsTable.$inferSelect,
+): BibiOfficialProfile {
   return {
     id: user.id,
     nickname: user.nickname,
-    displayName: user.nickname,
+    displayName: account.displayName,
     handle: BIBI_OFFICIAL_HANDLE,
-    profileImageUrl: user.profileImageUrl ?? null,
-    statusMessage: user.statusMessage ?? null,
+    profileImageUrl: account.profileImageUrl ?? null,
+    statusMessage: account.description ?? user.statusMessage ?? null,
   };
 }
 
@@ -50,7 +60,7 @@ export async function ensureBibiOfficialUser(): Promise<typeof usersTable.$infer
       target: usersTable.id,
       set: {
         nickname: BIBI_OFFICIAL_SEED.nickname,
-        profileImageUrl: BIBI_OFFICIAL_PROFILE_IMAGE_URL,
+        profileImageUrl: null,
         statusMessage: BIBI_OFFICIAL_SEED.statusMessage,
         updatedAt: now,
       },
@@ -60,8 +70,89 @@ export async function ensureBibiOfficialUser(): Promise<typeof usersTable.$infer
   return user;
 }
 
+async function ensureBibiOfficialCharacter(
+  user: typeof usersTable.$inferSelect,
+): Promise<typeof officialAiAccountsTable.$inferSelect> {
+  const now = new Date();
+  const [account] = await db
+    .insert(officialAiAccountsTable)
+    .values({
+      slug: "bibi",
+      displayName: "비비",
+      accountKind: "ip_character",
+      status: "published",
+      description: "AnotherMe 공식 AI 캐릭터 계정",
+      profileImageUrl: BIBI_OFFICIAL_CHARACTER_IMAGE_URL,
+      officialUserId: user.id,
+      knowledgeTenantId: "bibi",
+      publishedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: officialAiAccountsTable.slug,
+      set: {
+        officialUserId: user.id,
+        // BIBI has one canonical product-character asset. Enforce it on every
+        // sync so legacy account photos cannot become authoritative again.
+        profileImageUrl: BIBI_OFFICIAL_CHARACTER_IMAGE_URL,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  await db
+    .insert(characterProfilesTable)
+    .values({
+      id: account.id,
+      ownerUserId: user.id,
+      type: "official_ai",
+      handle: `official-${account.slug}`,
+      displayName: account.displayName,
+      profileImageUrl: account.profileImageUrl,
+      statusMessage: account.description,
+      status: account.status === "published" ? "active" : account.status === "archived" ? "archived" : "locked",
+      metadata: { accountKind: account.accountKind, ipProfileId: account.ipProfileId },
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: characterProfilesTable.id,
+      set: {
+        ownerUserId: user.id,
+        type: "official_ai",
+        handle: `official-${account.slug}`,
+        displayName: account.displayName,
+        profileImageUrl: account.profileImageUrl,
+        statusMessage: account.description,
+        status: account.status === "published" ? "active" : account.status === "archived" ? "archived" : "locked",
+        metadata: { accountKind: account.accountKind, ipProfileId: account.ipProfileId },
+        updatedAt: now,
+      },
+    });
+  await db
+    .insert(officialAiCharacterProfilesTable)
+    .values({ profileId: account.id, officialAiAccountId: account.id })
+    .onConflictDoNothing();
+  await db
+    .insert(activeCharacterProfilesTable)
+    .values({
+      userId: user.id,
+      activeProfileId: account.id,
+      lastStarProfileId: account.id,
+    })
+    .onConflictDoUpdate({
+      target: activeCharacterProfilesTable.userId,
+      set: {
+        activeProfileId: account.id,
+        lastStarProfileId: account.id,
+        updatedAt: now,
+      },
+    });
+  return account;
+}
+
 export async function ensureBibiOfficialAccount(): Promise<typeof usersTable.$inferSelect> {
   const user = await ensureBibiOfficialUser();
+  await ensureBibiOfficialCharacter(user);
   const now = new Date();
   await db
     .insert(anotherMeSettingsTable)
@@ -135,7 +226,8 @@ export async function ensureBibiFriendshipForUser(userId: string): Promise<void>
 
 export async function getBibiOfficialProfile(): Promise<BibiOfficialProfile> {
   const user = await ensureBibiOfficialAccount();
-  return toBibiProfile(user);
+  const account = await ensureBibiOfficialCharacter(user);
+  return toBibiProfile(user, account);
 }
 
 async function findDirectRoomId(tx: Pick<typeof db, "execute">, userAId: string, userBId: string): Promise<string | null> {
