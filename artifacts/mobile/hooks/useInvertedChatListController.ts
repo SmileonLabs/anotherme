@@ -32,6 +32,8 @@ export function useInvertedChatListController({
   onInitialScrollReady: () => void;
 }) {
   const listRef = useRef<FlatList<Message>>(null);
+  const listMessagesRef = useRef(listMessages);
+  listMessagesRef.current = listMessages;
   const didInitialScrollRef = useRef(false);
   const scrollPhaseRef = useRef<ScrollPhase>("initializing");
   const stickToBottomRef = useRef(true);
@@ -181,12 +183,12 @@ export function useInvertedChatListController({
 
   const scrollToMessage = React.useCallback(
     (messageId: string) => {
-      const index = listMessages.findIndex((message) => message.id === messageId);
+      const index = listMessagesRef.current.findIndex((message) => message.id === messageId);
       if (index < 0) return false;
       listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
       return true;
     },
-    [listMessages],
+    [],
   );
 
   const onScrollToIndexFailed = React.useCallback<NonNullable<ListProps["onScrollToIndexFailed"]>>(

@@ -28,7 +28,7 @@ import {
   useGetTypingUsers,
   useLeaveRoom,
   useListRooms,
-  useSetTyping,
+  setTyping as signalTyping,
   type Message,
   type MessageStickerBadge,
 } from "@workspace/api-client-react";
@@ -121,7 +121,6 @@ export default function ChatScreen() {
   });
   const { data: messages = [], refetch } = useFetchRoomMessages(id);
   const { data: typingUsers = [], refetch: refetchTyping } = useGetTypingUsers(id);
-  const setTyping = useSetTyping();
   const leaveRoom = useLeaveRoom();
   const summonAnotherMe = useSummonAnotherMe();
   const dismissAnotherMe = useDismissAnotherMeSession();
@@ -221,6 +220,16 @@ export default function ChatScreen() {
     setRevealTick((t) => t + 1);
     clearDmThinking();
   }, [id, clearDmThinking]);
+
+  // The API only keeps the latest message window in this screen. Do not retain
+  // optimistic React keys for messages that have already fallen out of that
+  // window during a long-running room session.
+  useEffect(() => {
+    const activeIds = new Set(messages.map((message) => message.id));
+    for (const messageId of clientKeyRef.current.keys()) {
+      if (!activeIds.has(messageId)) clientKeyRef.current.delete(messageId);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!isDungeon) return;
@@ -329,8 +338,14 @@ export default function ChatScreen() {
   // that, new dungeon DM/system lines stagger in one by one while the player's
   // own messages (and every non-dungeon message) appear immediately.
   useEffect(() => {
+    if (!isDungeon) return;
     if (messages.length === 0) return;
     const revealed = revealedIdsRef.current;
+    const activeIds = new Set(messages.map((message) => message.id));
+    for (const messageId of revealed) {
+      if (!activeIds.has(messageId)) revealed.delete(messageId);
+    }
+    revealQueueRef.current = revealQueueRef.current.filter((messageId) => activeIds.has(messageId));
     if (!initializedRef.current) {
       for (const m of messages) revealed.add(m.id);
       initializedRef.current = true;
@@ -343,14 +358,14 @@ export default function ChatScreen() {
       if (revealed.has(m.id) || queued.has(m.id)) continue;
       const isDM = isSystemAccount(m.sender);
       const isTemp = String(m.id).startsWith("temp-");
-      if (isDungeon && isDM && !isTemp) {
+      if (isDM && !isTemp) {
         revealQueueRef.current.push(m.id);
         queuedAny = true;
       } else {
         revealed.add(m.id);
       }
     }
-    setRevealTick((t) => t + 1);
+    if (queuedAny) setRevealTick((t) => t + 1);
     if (queuedAny) pumpReveal();
   }, [messages, isDungeon, pumpReveal]);
 
@@ -399,6 +414,8 @@ export default function ChatScreen() {
   // at offset 0, so long/late-measured bubbles grow upward instead of forcing an
   // entry-time scroll correction.
   const listMessages = React.useMemo(() => [...visibleMessages].reverse(), [visibleMessages]);
+  const listMessagesRef = useRef(listMessages);
+  listMessagesRef.current = listMessages;
 
   // Choices must never appear before the current turn's story. The dungeon-state
   // poll and the messages poll are independent, so a new turn's `choices` can
@@ -649,8 +666,10 @@ export default function ChatScreen() {
 
   // Fired by the composer (already throttled there) while the user types.
   const handleTyping = React.useCallback(() => {
-    setTyping.mutate({ id });
-  }, [id, setTyping]);
+    // Typing is a best-effort heartbeat. Calling the request directly avoids
+    // subscribing the entire chat screen to mutation pending/success state.
+    void signalTyping(id).catch(() => {});
+  }, [id]);
 
   const handleSummonAnotherMe = React.useCallback(async () => {
     if (!otherMember?.id || summonAnotherMe.isPending) return;
@@ -802,6 +821,10 @@ export default function ChatScreen() {
     [replyTo],
   );
   const handleCancelReply = React.useCallback(() => setReplyTo(null), []);
+  const handleMessageLongPress = React.useCallback((messageId: string) => {
+    const message = listMessagesRef.current.find((item) => item.id === messageId);
+    if (message) setActionMessage(message);
+  }, []);
 
   const renderMessageItem = React.useCallback(
     ({ item, index }: { item: Message; index: number }) => {
@@ -849,6 +872,7 @@ export default function ChatScreen() {
             </View>
           ) : null}
           <MessageBubble
+            messageId={item.id}
             content={item.content}
             isMe={isMe}
             isDM={isDM}
@@ -862,7 +886,7 @@ export default function ChatScreen() {
             showSender={showSender}
             readLabel={readLabel}
             onJoinCall={handleJoinCall}
-            onLongPress={canActOnMessage ? () => setActionMessage(item) : undefined}
+            onLongPress={canActOnMessage ? handleMessageLongPress : undefined}
             selected={selectedMessageId === item.id}
             deletedAt={(item as any).deletedAt ?? null}
             replyTo={(item as any).replyTo ?? null}
@@ -886,6 +910,7 @@ export default function ChatScreen() {
       colors.mutedForeground,
       colors.primary,
       handleJoinCall,
+      handleMessageLongPress,
       isDungeon,
       isGroupRoom,
       isMultiParty,
@@ -980,6 +1005,10 @@ export default function ChatScreen() {
           </View>
         }
         renderItem={renderMessageItem}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
         ListHeaderComponent={
           isDungeon ? (
             <View style={styles.footerWrap}>

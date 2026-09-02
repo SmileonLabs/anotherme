@@ -71,6 +71,14 @@ function MessageComposerComponent({
   const inputRef = useRef<TextInput>(null);
   const lastTypingSentRef = useRef(0);
 
+  const handleContentSizeChange = useCallback((event: any) => {
+    const next = Math.min(
+      INPUT_MAX_HEIGHT,
+      Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+    );
+    setInputHeight((current) => (current === next ? current : next));
+  }, []);
+
   const submit = useCallback(async () => {
     const content = text.trim();
     if (!content || sending) return;
@@ -213,16 +221,22 @@ function MessageComposerComponent({
           </Pressable>
           <TextInput
             ref={inputRef}
-            style={[styles.input, { color: colors.foreground, height: inputHeight }]}
+            style={[
+              styles.input,
+              {
+                color: colors.foreground,
+                // react-native-web synchronously reads scrollHeight/scrollWidth
+                // whenever onContentSizeChange is present. On iOS Safari that
+                // forces a full-page layout on every keystroke and becomes very
+                // expensive once the chat contains media-rich rows. Keep the
+                // PWA composer at one line with its own scroll area; native keeps
+                // the expanding composer behavior.
+                height: Platform.OS === "web" ? INPUT_MIN_HEIGHT : inputHeight,
+              },
+            ]}
             value={text}
             onChangeText={handleChangeText}
-            onContentSizeChange={(event) => {
-              const next = Math.min(
-                INPUT_MAX_HEIGHT,
-                Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height),
-              );
-              setInputHeight(next);
-            }}
+            onContentSizeChange={Platform.OS === "web" ? undefined : handleContentSizeChange}
             onKeyPress={handleKeyPress}
             onFocus={() => setShowStickers(false)}
             placeholder={placeholder}
@@ -231,7 +245,7 @@ function MessageComposerComponent({
             numberOfLines={1}
             maxLength={2000}
             blurOnSubmit={false}
-            scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT}
+            scrollEnabled={Platform.OS === "web" || inputHeight >= INPUT_MAX_HEIGHT}
           />
           <Pressable
             style={({ pressed }) => [styles.fieldBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -388,7 +402,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     fontFamily: "Inter_400Regular",
-    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : null),
+    ...(Platform.OS === "web"
+      ? {
+          outlineStyle: "none" as any,
+          overflowY: "auto" as any,
+          resize: "none" as any,
+        }
+      : null),
   },
   sendBtn: {
     width: 44,

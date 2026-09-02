@@ -349,6 +349,7 @@ export default function BattleScreen() {
               return (
                 <MessageBubble
                   key={m.id}
+                  messageId={m.id}
                   content={m.content}
                   type={m.type}
                   isMe={isMe}

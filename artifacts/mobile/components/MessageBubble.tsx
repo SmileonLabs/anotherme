@@ -32,6 +32,7 @@ const WEB_LONG_TEXT_STYLE = Platform.select({
 });
 
 interface MessageBubbleProps {
+  messageId: string;
   content: string;
   isMe: boolean;
   type?: string;
@@ -45,7 +46,7 @@ interface MessageBubbleProps {
   isDM?: boolean;
   isAnotherMe?: boolean;
   onJoinCall?: (callId: string, media: "audio" | "video") => void;
-  onLongPress?: () => void;
+  onLongPress?: (messageId: string) => void;
   selected?: boolean;
   deletedAt?: string | null;
   replyTo?: MessageReplyPreview | null;
@@ -94,6 +95,7 @@ function formatCallDuration(sec: number): string {
 }
 
 function MessageBubbleComponent({
+  messageId,
   content,
   isMe,
   type = "text",
@@ -123,6 +125,10 @@ function MessageBubbleComponent({
   const fileMeta =
     !isDeleted && type === "file" ? parseFileContent(content) : null;
   const [aspect, setAspect] = useState(1);
+  const handleLongPress = React.useCallback(() => {
+    onLongPress?.(messageId);
+  }, [messageId, onLongPress]);
+  const longPressHandler = onLongPress ? handleLongPress : undefined;
 
   // System lines (dungeon state changes) read as small centered notices, not
   // chat bubbles.
@@ -413,7 +419,7 @@ function MessageBubbleComponent({
   ) : isImage ? (
     <Pressable
       onPress={openImage}
-      onLongPress={onLongPress}
+      onLongPress={longPressHandler}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
       <Image
@@ -436,7 +442,7 @@ function MessageBubbleComponent({
   ) : fileMeta ? (
     <Pressable
       onPress={openFile}
-      onLongPress={onLongPress}
+      onLongPress={longPressHandler}
       style={({ pressed }) => [
         styles.fileCard,
         {
@@ -545,9 +551,9 @@ function MessageBubbleComponent({
 
   return (
     <Pressable
-      onLongPress={onLongPress}
+      onLongPress={longPressHandler}
       delayLongPress={280}
-      disabled={!onLongPress}
+      disabled={!longPressHandler}
       style={[
         styles.row,
         isMe ? styles.rowMe : styles.rowOther,
