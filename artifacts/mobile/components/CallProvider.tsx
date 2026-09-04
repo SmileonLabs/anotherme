@@ -9,7 +9,7 @@ import React, {
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
-import { RoomEvent, type Room } from "livekit-client";
+import { RoomEvent, Track, type Room } from "livekit-client";
 import {
   useAcceptCall,
   useCancelCall,
@@ -50,6 +50,123 @@ import { usePlayMode } from "@/hooks/usePlayMode";
 const RING_TIMEOUT_MS = 45_000;
 const KEEPALIVE_MIN_INTERVAL_MS = 8000;
 const DISCONNECT_GRACE_MS = 12_000;
+const REMOTE_MEDIA_READY_TIMEOUT_MS = 25_000;
+
+type MediaReadinessDiagnostic = (phase: string, details?: Record<string, unknown>) => void;
+
+function remoteMediaSnapshot(room: Room, media: CallMedia) {
+  let microphoneSubscribed = false;
+  let cameraSubscribed = media !== "video";
+  let participantCount = 0;
+
+  for (const participant of room.remoteParticipants.values()) {
+    participantCount += 1;
+    const microphone = participant.getTrackPublication(Track.Source.Microphone);
+    const camera = participant.getTrackPublication(Track.Source.Camera);
+    // Auto-subscribe is enabled, but explicitly re-request a missing subscription
+    // after a transient failure/reconnect instead of leaving the call silent.
+    // A subscription request can race with a disconnect/reconnect transition.
+    // Treat that as "not ready yet" and let the room events retry the snapshot
+    // instead of failing the entire join from this synchronous readiness check.
+    try {
+      if (microphone && !microphone.track) microphone.setSubscribed(true);
+      if (media === "video" && camera && !camera.track) camera.setSubscribed(true);
+    } catch {}
+    microphoneSubscribed ||= !!microphone?.track;
+    cameraSubscribed ||= !!camera?.track;
+  }
+
+  return {
+    participantCount,
+    microphoneSubscribed,
+    cameraSubscribed,
+    ready: participantCount > 0 && microphoneSubscribed && cameraSubscribed,
+    connectionState: room.state,
+  };
+}
+
+/**
+ * A call being accepted in the API only means the signaling workflow advanced.
+ * Do not show "통화 중" until this client has actually subscribed to the other
+ * participant's microphone (and camera for video). Both peers run this check, so
+ * an active UI now represents a real two-way media path rather than one local
+ * camera/microphone publication.
+ */
+function waitForRemoteMedia(
+  room: Room,
+  media: CallMedia,
+  diagnostic: MediaReadinessDiagnostic,
+): Promise<void> {
+  const initial = remoteMediaSnapshot(room, media);
+  diagnostic("remote_media_wait_start", initial);
+  if (initial.ready) {
+    diagnostic("remote_media_ready", initial);
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const events = [
+      RoomEvent.ParticipantConnected,
+      RoomEvent.ParticipantActive,
+      RoomEvent.TrackPublished,
+      RoomEvent.TrackSubscribed,
+      RoomEvent.TrackUnmuted,
+      RoomEvent.Reconnected,
+    ] as const;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      events.forEach((event) => room.off(event, check));
+      room.off(RoomEvent.TrackSubscriptionFailed, onSubscriptionFailed);
+      room.off(RoomEvent.Disconnected, onDisconnected);
+    };
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve();
+    };
+    const check = () => {
+      const snapshot = remoteMediaSnapshot(room, media);
+      if (!snapshot.ready) return;
+      diagnostic("remote_media_ready", snapshot);
+      finish();
+    };
+    const onSubscriptionFailed = (
+      trackSid: string,
+      _participant: unknown,
+      reason?: unknown,
+    ) => {
+      diagnostic("remote_media_subscription_failed", {
+        trackSid,
+        reason: reason == null ? undefined : String(reason),
+        ...remoteMediaSnapshot(room, media),
+      });
+    };
+    const onDisconnected = (reason?: unknown) => {
+      diagnostic("remote_media_room_disconnected", {
+        reason: reason == null ? undefined : String(reason),
+        ...remoteMediaSnapshot(room, media),
+      });
+      finish(new Error("media_room_disconnected"));
+    };
+    const timer = setTimeout(() => {
+      const snapshot = remoteMediaSnapshot(room, media);
+      diagnostic("remote_media_timeout", {
+        timeoutMs: REMOTE_MEDIA_READY_TIMEOUT_MS,
+        ...snapshot,
+      });
+      finish(new Error("remote_media_timeout"));
+    }, REMOTE_MEDIA_READY_TIMEOUT_MS);
+
+    events.forEach((event) => room.on(event, check));
+    room.on(RoomEvent.TrackSubscriptionFailed, onSubscriptionFailed);
+    room.on(RoomEvent.Disconnected, onDisconnected);
+    check();
+  });
+}
 
 function callFailureCode(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -59,6 +176,8 @@ function callFailureCode(err: unknown): string {
   if (message === "audio_session_start_failed") return "audio_session_start_failed";
   if (message === "microphone_publish_failed") return "microphone_publish_failed";
   if (message === "camera_publish_failed") return "camera_publish_failed";
+  if (message === "remote_media_timeout") return "remote_media_timeout";
+  if (message === "media_room_disconnected") return "media_room_disconnected";
   if (/network|websocket|signal|connect/i.test(message)) return "transport_connect_failed";
   return "unknown_join_failure";
 }
@@ -320,17 +439,23 @@ function CallManager({ children }: { children: React.ReactNode }) {
         setCallMedia(joinedMedia);
         setCameraOnState(joinedMedia === "video");
         cameraWantedRef.current = joinedMedia === "video";
+        const onDiagnostic = diagnosticFor(call.id, "caller");
         const joined = await joinCall(session.url, session.token, {
           media: joinedMedia,
-          onDiagnostic: diagnosticFor(call.id, "caller"),
+          onDiagnostic,
         });
         if (!isCurrentJoin()) {
           await leaveCall();
           return;
         }
         validateJoinResult(joined, call.id, "caller");
-        joinedCallIdRef.current = call.id;
         setLiveRoom(joined.room);
+        await waitForRemoteMedia(joined.room, joinedMedia, onDiagnostic);
+        if (!isCurrentJoin()) {
+          await leaveCall();
+          return;
+        }
+        joinedCallIdRef.current = call.id;
         setConnecting(false);
         setMode("active");
       } catch (err) {
@@ -593,17 +718,23 @@ function CallManager({ children }: { children: React.ReactNode }) {
         setCallMedia(joinedMedia);
         setCameraOnState(joinedMedia === "video");
         cameraWantedRef.current = joinedMedia === "video";
+        const onDiagnostic = diagnosticFor(callId, "join-card");
         const joined = await joinCall(session.url, session.token, {
           media: joinedMedia,
-          onDiagnostic: diagnosticFor(callId, "join-card"),
+          onDiagnostic,
         });
         if (!isCurrentJoin()) {
           await leaveCall();
           return false;
         }
         validateJoinResult(joined, callId, "join-card");
-        joinedCallIdRef.current = callId;
         setLiveRoom(joined.room);
+        await waitForRemoteMedia(joined.room, joinedMedia, onDiagnostic);
+        if (!isCurrentJoin()) {
+          await leaveCall();
+          return false;
+        }
+        joinedCallIdRef.current = callId;
         setConnecting(false);
         setMode("active");
         return true;
@@ -676,17 +807,23 @@ function CallManager({ children }: { children: React.ReactNode }) {
       setCallMedia(media);
       setCameraOnState(media === "video");
       cameraWantedRef.current = media === "video";
+      const onDiagnostic = diagnosticFor(currentIncoming.id, "callee");
       const joined = await joinCall(session.url, session.token, {
         media,
-        onDiagnostic: diagnosticFor(currentIncoming.id, "callee"),
+        onDiagnostic,
       });
       if (!isCurrentJoin()) {
         await leaveCall();
         return;
       }
       validateJoinResult(joined, currentIncoming.id, "callee");
-      joinedCallIdRef.current = currentIncoming.id;
       setLiveRoom(joined.room);
+      await waitForRemoteMedia(joined.room, media, onDiagnostic);
+      if (!isCurrentJoin()) {
+        await leaveCall();
+        return;
+      }
+      joinedCallIdRef.current = currentIncoming.id;
       setConnecting(false);
       setMode("active");
     } catch (err) {

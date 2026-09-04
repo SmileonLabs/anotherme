@@ -58,7 +58,10 @@ export function CallVideoView({
   return (
     <View style={styles.wrap}>
       {tracks.remote ? (
-        <VideoElement track={tracks.remote} style={videoFillStyle} />
+        // Remote audio is rendered by voiceCall.web.ts on a dedicated audio
+        // element. Keep this video-only surface muted so Safari always permits
+        // inline autoplay in an installed PWA.
+        <VideoElement track={tracks.remote} muted style={videoFillStyle} />
       ) : (
         <VideoPlaceholder label={room ? "상대방 영상을 기다리는 중..." : "영상 연결 중..."} />
       )}
@@ -103,10 +106,33 @@ function VideoElement({
     if (!el) return;
     el.autoplay = true;
     el.playsInline = true;
+    el.setAttribute("playsinline", "true");
     el.muted = muted;
     track.attach(el);
-    void el.play().catch(() => {});
+    const play = () => {
+      if (document.visibilityState === "hidden") return;
+      void el.play().catch(() => {});
+    };
+    play();
+    // WebKit can leave a WebRTC video element paused after the track unmutes,
+    // the PWA returns from the background, or autoplay was initially deferred.
+    // Retry at each safe recovery point; play() is idempotent while already live.
+    const mediaTrack = track.mediaStreamTrack;
+    mediaTrack?.addEventListener("unmute", play);
+    el.addEventListener("loadedmetadata", play);
+    el.addEventListener("canplay", play);
+    window.addEventListener("focus", play);
+    document.addEventListener("visibilitychange", play);
+    document.addEventListener("click", play, true);
+    document.addEventListener("touchend", play, true);
     return () => {
+      mediaTrack?.removeEventListener("unmute", play);
+      el.removeEventListener("loadedmetadata", play);
+      el.removeEventListener("canplay", play);
+      window.removeEventListener("focus", play);
+      document.removeEventListener("visibilitychange", play);
+      document.removeEventListener("click", play, true);
+      document.removeEventListener("touchend", play, true);
       track.detach(el);
     };
   }, [muted, track]);

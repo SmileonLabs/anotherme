@@ -24,6 +24,11 @@ let visibilityHandler: (() => void) | null = null;
 let micTrack: MediaStreamTrack | null = null;
 let micRestarting = false;
 let micLost = false;
+let cameraTrack: MediaStreamTrack | null = null;
+let cameraRestarting = false;
+let cameraLost = false;
+let cameraEnabledIntent = false;
+let cameraRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let cameraFacingMode: "user" | "environment" = "user";
 let videoPreparePromise: Promise<void> | null = null;
 let preparedVideoTrack: MediaStreamTrack | null = null;
@@ -74,14 +79,29 @@ function micDiagnosticDetails(track: MediaStreamTrack | null = micTrack): Record
   };
 }
 
+function cameraDiagnosticDetails(
+  track: MediaStreamTrack | null = cameraTrack,
+): Record<string, unknown> {
+  if (!track) return { hasCameraTrack: false, cameraEnabledIntent };
+  return {
+    hasCameraTrack: true,
+    cameraEnabledIntent,
+    cameraEnabled: track.enabled,
+    cameraMuted: track.muted,
+    cameraReadyState: track.readyState,
+  };
+}
+
 function callStateDetails(): Record<string, unknown> {
   return {
     audioContextState: audioCtx?.state,
     canPlaybackAudio: room?.canPlaybackAudio,
     hidden: document.hidden,
     microphoneEnabled: room?.localParticipant.isMicrophoneEnabled,
+    cameraEnabled: room?.localParticipant.isCameraEnabled,
     visibilityState: document.visibilityState,
     ...micDiagnosticDetails(),
+    ...cameraDiagnosticDetails(),
   };
 }
 
@@ -533,7 +553,15 @@ function installUnlockHandler(r: Room) {
     if (audioCtx && audioCtx.state === "suspended") {
       void audioCtx.resume().catch(() => {});
     }
-    void r.startAudio().then(removeUnlockHandler).catch(() => {});
+    void r
+      .startAudio()
+      .then(() => {
+        callDiagnostic("web_audio_unlocked", callStateDetails());
+        removeUnlockHandler();
+      })
+      .catch((err) => {
+        callDiagnostic("web_audio_unlock_failed", { message: errorMessage(err), ...callStateDetails() });
+      });
   };
   document.addEventListener("click", unlockHandler, true);
   document.addEventListener("touchend", unlockHandler, true);
@@ -656,6 +684,90 @@ async function restartMic() {
   }
 }
 
+function armCameraRecovery() {
+  if (!room) return;
+  const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+  const mst = pub?.track?.mediaStreamTrack ?? null;
+  if (mst === cameraTrack) return;
+  cameraTrack = mst;
+  if (!mst) return;
+  callDiagnostic("web_camera_track_armed", cameraDiagnosticDetails(mst));
+  const onLost = (event: Event) => {
+    if (cameraTrack !== mst) return;
+    cameraLost = true;
+    callDiagnostic("web_camera_track_lost", {
+      eventType: event.type,
+      ...callStateDetails(),
+      ...cameraDiagnosticDetails(mst),
+    });
+    // A brief mute is normal while WebKit changes capture state. Wait before
+    // replacing the track, and never re-acquire while the PWA is hidden.
+    if (cameraRecoveryTimer) clearTimeout(cameraRecoveryTimer);
+    cameraRecoveryTimer = setTimeout(() => {
+      cameraRecoveryTimer = null;
+      if (
+        room &&
+        cameraTrack === mst &&
+        cameraEnabledIntent &&
+        document.visibilityState === "visible" &&
+        (mst.muted || mst.readyState === "ended")
+      ) {
+        void restartCamera();
+      }
+    }, 750);
+  };
+  const onRecovered = () => {
+    if (cameraTrack !== mst) return;
+    cameraLost = false;
+    if (cameraRecoveryTimer) {
+      clearTimeout(cameraRecoveryTimer);
+      cameraRecoveryTimer = null;
+    }
+    callDiagnostic("web_camera_track_recovered", cameraDiagnosticDetails(mst));
+  };
+  mst.addEventListener("mute", onLost);
+  mst.addEventListener("ended", onLost);
+  mst.addEventListener("unmute", onRecovered);
+}
+
+function cameraNeedsRecovery(): boolean {
+  if (!cameraEnabledIntent) return false;
+  if (cameraLost) return true;
+  if (!cameraTrack) return true;
+  return cameraTrack.readyState === "ended" || cameraTrack.muted;
+}
+
+async function restartCamera(): Promise<boolean> {
+  if (!room || cameraRestarting || !cameraEnabledIntent) return false;
+  cameraRestarting = true;
+  let succeeded = false;
+  callDiagnostic("web_camera_restart_start", callStateDetails());
+  try {
+    const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = pub?.track as LocalVideoTrack | undefined;
+    if (track && typeof track.restartTrack === "function") {
+      await track.restartTrack(cameraOptions());
+    } else {
+      await room.localParticipant.setCameraEnabled(false, cameraOptions());
+      succeeded = await enableCameraWithRetry(room);
+      if (!succeeded) throw new Error("camera_republish_failed");
+    }
+    succeeded = true;
+  } catch (err) {
+    callDiagnostic("web_camera_restart_failed", {
+      message: errorMessage(err),
+      ...callStateDetails(),
+    });
+  } finally {
+    cameraRestarting = false;
+    cameraLost = false;
+    cameraTrack = null;
+    armCameraRecovery();
+    if (succeeded) callDiagnostic("web_camera_restart_succeeded", callStateDetails());
+  }
+  return succeeded;
+}
+
 function installVisibilityHandler() {
   if (visibilityHandler) return;
   visibilityHandler = (event?: Event) => {
@@ -678,6 +790,9 @@ function installVisibilityHandler() {
       // dead, so a healthy app-switch return doesn't cause a needless gap.
       if (room && room.localParticipant.isMicrophoneEnabled && micNeedsRecovery()) {
         void restartMic();
+      }
+      if (room && cameraEnabledIntent && cameraNeedsRecovery()) {
+        void restartCamera();
       }
     }
   };
@@ -791,11 +906,18 @@ export async function joinCall(
   token: string,
   options: { media?: CallMedia; onDiagnostic?: CallDiagnostic } = {},
 ): Promise<CallJoinResult> {
-  await cleanupCall({ releaseNoSleep: false });
   const media = options.media ?? "audio";
+  // Keep the camera track prepared by the genuine call/accept gesture. Stopping
+  // it here made the camera indicator turn on while discarding the exact track
+  // that was supposed to be published, followed by a slower second acquisition.
+  await cleanupCall({
+    releaseNoSleep: false,
+    preservePreparedVideo: media === "video",
+  });
   const diagnostic = options.onDiagnostic ?? (() => {});
   callDiagnostic = diagnostic;
   cameraFacingMode = "user";
+  cameraEnabledIntent = media === "video";
   diagnostic("web_join_start", { media });
 
   // Explicit voice-call audio processing. Without echo cancellation the remote
@@ -817,6 +939,11 @@ export async function joinCall(
   });
 
   r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+    diagnostic("web_remote_track_subscribed", {
+      kind: track.kind,
+      source: track.source,
+      readyState: track.mediaStreamTrack?.readyState,
+    });
     if (track.kind === Track.Kind.Audio) {
       // On a network reconnect LiveKit can fire TrackSubscribed again for a
       // track that still has a live <audio> element attached. Detach any prior
@@ -852,8 +979,40 @@ export async function joinCall(
       // autoplay activation has lapsed and play() is blocked, leaving the caller
       // in silence. Try to play; if blocked, the AudioPlaybackStatusChanged
       // handler below arms a one-shot gesture unlock.
-      void el.play().catch(() => {});
+      void el
+        .play()
+        .then(() => diagnostic("web_remote_audio_playing", callStateDetails()))
+        .catch((err) => {
+          diagnostic("web_remote_audio_play_blocked", {
+            message: errorMessage(err),
+            ...callStateDetails(),
+          });
+          installUnlockHandler(r);
+        });
     }
+  });
+
+  r.on(RoomEvent.TrackSubscriptionFailed, (trackSid: string, _participant, reason) => {
+    diagnostic("web_track_subscription_failed", {
+      trackSid,
+      reason: reason == null ? undefined : String(reason),
+    });
+  });
+
+  r.on(RoomEvent.TrackStreamStateChanged, (publication, streamState) => {
+    diagnostic("web_track_stream_state_changed", {
+      kind: publication.kind,
+      source: publication.source,
+      streamState,
+    });
+  });
+
+  r.on(RoomEvent.ParticipantConnected, () => {
+    diagnostic("web_remote_participant_connected", { connectionState: r.state });
+  });
+
+  r.on(RoomEvent.ParticipantActive, () => {
+    diagnostic("web_remote_participant_active", { connectionState: r.state });
   });
 
   r.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
@@ -878,7 +1037,26 @@ export async function joinCall(
 
   // Whenever the local mic (re)publishes, attach interruption listeners to the
   // new underlying track.
-  r.on(RoomEvent.LocalTrackPublished, () => armMicRecovery());
+  r.on(RoomEvent.LocalTrackPublished, () => {
+    armMicRecovery();
+    armCameraRecovery();
+  });
+
+  r.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+    diagnostic("web_local_track_unpublished", {
+      kind: publication.kind,
+      source: publication.source,
+    });
+  });
+
+  r.on(RoomEvent.Reconnected, () => {
+    diagnostic("web_room_reconnected", { connectionState: r.state });
+    resumeAllAudio();
+    armMicRecovery();
+    armCameraRecovery();
+    if (r.localParticipant.isMicrophoneEnabled && micNeedsRecovery()) void restartMic();
+    if (cameraEnabledIntent && cameraNeedsRecovery()) void restartCamera();
+  });
 
   await r.connect(url, token);
   room = r;
@@ -890,6 +1068,7 @@ export async function joinCall(
   if (media === "video") {
     cameraPublished = await enableCameraWithRetry(r);
     diagnostic("web_camera_publish_result", { cameraPublished });
+    armCameraRecovery();
   }
   // Secondary pre-authorization. The button-gesture activation is already spent
   // by the createCall/acceptCall await that precedes this — primeAudioPlayback()
@@ -922,12 +1101,31 @@ export async function setMuted(muted: boolean): Promise<void> {
 }
 
 export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
+  cameraEnabledIntent = enabled;
   if (room) {
     if (enabled) {
+      const current = room.localParticipant
+        .getTrackPublication(Track.Source.Camera)
+        ?.track?.mediaStreamTrack;
+      if (current?.readyState === "live" && !current.muted) {
+        cameraTrack = current;
+        cameraLost = false;
+        return true;
+      }
+      if (current) return restartCamera();
       await prepareVideoCall();
-      return enableCameraWithRetry(room);
+      const published = await enableCameraWithRetry(room);
+      cameraTrack = null;
+      armCameraRecovery();
+      return published;
     } else {
+      if (cameraRecoveryTimer) {
+        clearTimeout(cameraRecoveryTimer);
+        cameraRecoveryTimer = null;
+      }
       await room.localParticipant.setCameraEnabled(false, cameraOptions());
+      cameraTrack = null;
+      cameraLost = false;
       return true;
     }
   }
@@ -949,7 +1147,13 @@ export async function switchCamera(): Promise<"user" | "environment"> {
   return cameraFacingMode;
 }
 
-async function cleanupCall({ releaseNoSleep }: { releaseNoSleep: boolean }): Promise<void> {
+async function cleanupCall({
+  releaseNoSleep,
+  preservePreparedVideo = false,
+}: {
+  releaseNoSleep: boolean;
+  preservePreparedVideo?: boolean;
+}): Promise<void> {
   removeUnlockHandler();
   removeVisibilityHandler();
   releaseWakeLock();
@@ -961,8 +1165,16 @@ async function cleanupCall({ releaseNoSleep }: { releaseNoSleep: boolean }): Pro
   micTrack = null;
   micRestarting = false;
   micLost = false;
+  cameraTrack = null;
+  cameraRestarting = false;
+  cameraLost = false;
+  if (cameraRecoveryTimer) {
+    clearTimeout(cameraRecoveryTimer);
+    cameraRecoveryTimer = null;
+  }
+  if (!preservePreparedVideo) cameraEnabledIntent = false;
   callDiagnostic = () => {};
-  releasePreparedVideoTrack();
+  if (!preservePreparedVideo) releasePreparedVideoTrack();
   if (r) {
     await r.disconnect();
   }

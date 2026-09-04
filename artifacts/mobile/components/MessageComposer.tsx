@@ -18,6 +18,10 @@ import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
 
 const INPUT_MIN_HEIGHT = 44;
 const INPUT_MAX_HEIGHT = 124;
+// Safari can dispatch the Enter key that commits an IME composition immediately
+// after compositionend, with isComposing already reset to false. Treat that key
+// as part of the composition instead of a send action.
+const SAFARI_COMPOSITION_END_GUARD_MS = 80;
 
 interface MessageComposerProps {
   /** Whether a send mutation is currently in flight (disables the composer). */
@@ -70,6 +74,9 @@ function MessageComposerComponent({
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const inputRef = useRef<TextInput>(null);
   const lastTypingSentRef = useRef(0);
+  const composingRef = useRef(false);
+  const lastCompositionEndAtRef = useRef(0);
+  const submittingRef = useRef(false);
 
   const handleContentSizeChange = useCallback((event: any) => {
     const next = Math.min(
@@ -81,12 +88,17 @@ function MessageComposerComponent({
 
   const submit = useCallback(async () => {
     const content = text.trim();
-    if (!content || sending) return;
+    if (!content || sending || submittingRef.current) return;
+    submittingRef.current = true;
     setText("");
     setInputHeight(INPUT_MIN_HEIGHT);
     lastTypingSentRef.current = 0;
-    const ok = await onSend(content);
-    if (!ok) setText(content);
+    try {
+      const ok = await onSend(content);
+      if (!ok) setText(content);
+    } finally {
+      submittingRef.current = false;
+    }
   }, [text, sending, onSend]);
 
   const handleChangeText = useCallback(
@@ -115,13 +127,32 @@ function MessageComposerComponent({
     }
   }, [showStickers]);
 
-  // Web: Enter sends, Shift+Enter inserts a newline.
+  const handleCompositionStart = useCallback(() => {
+    composingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    lastCompositionEndAtRef.current = Date.now();
+  }, []);
+
+  // Web: Enter sends, Shift+Enter inserts a newline. Enter also commits Korean,
+  // Japanese, and Chinese IME composition, so never send while that composition
+  // is active (or during Safari's compositionend -> key event handoff).
   const handleKeyPress = useCallback(
     (e: any) => {
       if (Platform.OS !== "web") return;
       const key = e?.key ?? e?.nativeEvent?.key;
       const isShift = !!(e?.shiftKey ?? e?.nativeEvent?.shiftKey);
       if (key === "Enter" && !isShift) {
+        const nativeEvent = e?.nativeEvent ?? e;
+        const isComposing =
+          composingRef.current ||
+          nativeEvent?.isComposing === true ||
+          nativeEvent?.keyCode === 229 ||
+          nativeEvent?.which === 229 ||
+          Date.now() - lastCompositionEndAtRef.current < SAFARI_COMPOSITION_END_GUARD_MS;
+        if (isComposing) return;
         e.preventDefault?.();
         void submit();
       }
@@ -238,6 +269,12 @@ function MessageComposerComponent({
             onChangeText={handleChangeText}
             onContentSizeChange={Platform.OS === "web" ? undefined : handleContentSizeChange}
             onKeyPress={handleKeyPress}
+            {...(Platform.OS === "web"
+              ? ({
+                  onCompositionStart: handleCompositionStart,
+                  onCompositionEnd: handleCompositionEnd,
+                } as object)
+              : {})}
             onFocus={() => setShowStickers(false)}
             placeholder={placeholder}
             placeholderTextColor={colors.mutedForeground}
