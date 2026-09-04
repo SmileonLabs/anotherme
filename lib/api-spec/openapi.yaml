@@ -3903,12 +3903,15 @@ paths:
                     an existing profile is never overwritten.
                 customization:
                   type: object
-                  required: [ageStyle, hairStyle, skinTone, genderExpression]
                   properties:
                     ageStyle: { type: string }
                     hairStyle: { type: string }
                     skinTone: { type: string }
                     genderExpression: { type: string }
+                    gender: { type: string, enum: [man, woman] }
+                    baseKey: { type: string }
+                    headKey: { type: string }
+                    wearKey: { type: string }
       responses:
         "201":
           description: Created and activated FAN
@@ -4041,6 +4044,76 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/CharacterProfileInventoryItem" }
         "403": { description: Profile is not owned by the account }
+
+  /users/me/profiles/{profileId}/avatar:
+    get:
+      operationId: getMyCharacterAvatar
+      tags: [users]
+      summary: Get the current avatar appearance and compatible item catalog
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Avatar appearance and catalog
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "403": { description: Profile is not owned by the account }
+        "404": { description: Avatar is not available for this profile }
+
+  /users/me/profiles/{profileId}/avatar/purchase:
+    post:
+      operationId: purchaseMyCharacterAvatarItem
+      tags: [users]
+      summary: Purchase an avatar item with STAR Point
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemKey]
+              properties:
+                itemKey: { type: string }
+      responses:
+        "200":
+          description: Updated avatar catalog and appearance
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "409": { description: "Insufficient STAR Point or item is unavailable" }
+
+  /users/me/profiles/{profileId}/avatar/equipment:
+    patch:
+      operationId: equipMyCharacterAvatarItem
+      tags: [users]
+      summary: Equip one owned avatar item in its slot
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemKey]
+              properties:
+                itemKey: { type: string }
+      responses:
+        "200":
+          description: Updated avatar catalog and appearance
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "409": { description: "Item is not owned, compatible or unlocked" }
 
   /users/me/profile-notifications:
     get:
@@ -5295,7 +5368,7 @@ components:
           enum: [EARN, SPEND, ADJUST]
         source:
           type: string
-          enum: [DAILY_TALK_REWARD, EVENT, ADMIN, MISSION]
+          enum: [DAILY_TALK_REWARD, EVENT, ADMIN, MISSION, AVATAR_ITEM]
         sourceId:
           type: string
         description:
@@ -5689,6 +5762,51 @@ components:
         equipped: { type: boolean }
         metadata: { type: object, additionalProperties: true }
         updatedAt: { type: string, format: date-time }
+
+    AvatarCatalogItem:
+      type: object
+      required: [itemKey, avatarType, slot, classStage, displayName, assetPath, layerOrder, priceStarPoint, purchasable, isDefault, status, metadata, owned, equipped]
+      properties:
+        itemKey: { type: string }
+        avatarType: { type: string, enum: [fan, star] }
+        collectionKey: { type: [string, "null"] }
+        gender: { type: [string, "null"], enum: [man, woman, null] }
+        slot: { type: string, enum: [background, base, head, wear, effect, full_skin, star_form] }
+        classStage: { type: integer, minimum: 0, maximum: 3 }
+        jobKey: { type: [string, "null"] }
+        displayName: { type: string }
+        assetPath: { type: string }
+        layerOrder: { type: integer }
+        priceStarPoint: { type: integer, minimum: 0 }
+        purchasable: { type: boolean }
+        isDefault: { type: boolean }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        owned: { type: boolean }
+        equipped: { type: boolean }
+
+    AvatarAppearance:
+      type: object
+      required: [profileId, type, classStage, recipe, layers, loadout]
+      properties:
+        profileId: { type: string, format: uuid }
+        type: { type: string, enum: [fan, star] }
+        gender: { type: [string, "null"], enum: [man, woman, null] }
+        classStage: { type: integer, minimum: 0, maximum: 3 }
+        recipe: { type: string }
+        layers:
+          type: array
+          items: { $ref: "#/components/schemas/AvatarCatalogItem" }
+        loadout: { type: object, additionalProperties: true }
+
+    AvatarCatalogResponse:
+      type: object
+      required: [appearance, items]
+      properties:
+        appearance: { $ref: "#/components/schemas/AvatarAppearance" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AvatarCatalogItem" }
 
     CharacterProfileNotification:
       type: object

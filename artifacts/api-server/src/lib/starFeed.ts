@@ -17,6 +17,7 @@ import {
   type StarFeedPostKind,
 } from "@workspace/db";
 import { ensureCharacterProfileState } from "./characterProfiles";
+import { getCharacterAvatarAppearance } from "./avatarCatalog";
 
 export const STAR_FEED_POST_TITLE_MAX = 80;
 export const STAR_FEED_POST_BODY_MAX = 500;
@@ -136,6 +137,19 @@ async function decoratePosts(meUserId: string, rows: PostRow[]): Promise<StarFee
   const postIds = rows.map((row) => row.id);
   const starProfileIds = rows.flatMap((row) => row.authorStarProfileId ? [row.authorStarProfileId] : []);
   const viewerProfileId = (await ensureCharacterProfileState(meUserId)).activeProfile.id;
+  const avatarRecipes = new Map<string, string>();
+  const avatarProfileIds = [...new Set(rows
+    .filter((row) => row.authorActivityProfileType === "fan" && row.authorActivityProfileId)
+    .map((row) => row.authorActivityProfileId!))];
+  await Promise.all(avatarProfileIds.map(async (profileId) => {
+    const appearance = await getCharacterAvatarAppearance(profileId);
+    if (appearance) avatarRecipes.set(profileId, appearance.recipe);
+  }));
+  for (const row of rows) {
+    if (row.authorActivityProfileId && avatarRecipes.has(row.authorActivityProfileId)) {
+      row.authorActivityProfileImageUrl = avatarRecipes.get(row.authorActivityProfileId)!;
+    }
+  }
   const [reactionCounts, commentCounts, myReactions, comments, followedProfiles] = await Promise.all([
     db
       .select({ postId: starFeedReactionsTable.postId, count: sql<number>`count(*)::int` })

@@ -10,7 +10,7 @@ export interface PvtTransaction {
   id: string;
   amount: number;
   type: "EARN" | "SPEND" | "ADJUST";
-  source: "DAILY_TALK_REWARD" | "EVENT" | "ADMIN" | "MISSION";
+  source: "DAILY_TALK_REWARD" | "EVENT" | "ADMIN" | "MISSION" | "AVATAR_ITEM";
   sourceId: string;
   description: string | null;
   balanceAfter: number;

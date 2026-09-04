@@ -20,6 +20,7 @@ import {
   resolveCharacterProfileActor,
 } from "../lib/characterProfiles";
 import { listPublicStarFeedPostsByAuthor } from "../lib/starFeed";
+import { equipAvatarItem, listAvatarCatalog, purchaseAvatarItem } from "../lib/avatarCatalog";
 
 const router: IRouter = Router();
 const activateSchema = z.object({ profileId: z.uuid() });
@@ -41,12 +42,24 @@ const createFanSchema = z.object({
   profileImageUrl: z.string().max(1024).nullable().optional(),
   customizeDefault: z.boolean().optional().default(false),
   customization: z.object({
-    ageStyle: z.string().trim().min(1).max(30),
-    hairStyle: z.string().trim().min(1).max(30),
-    skinTone: z.string().trim().min(1).max(30),
-    genderExpression: z.string().trim().min(1).max(30),
+    ageStyle: z.string().trim().min(1).max(30).optional(),
+    hairStyle: z.string().trim().min(1).max(30).optional(),
+    skinTone: z.string().trim().min(1).max(30).optional(),
+    genderExpression: z.string().trim().min(1).max(30).optional(),
+    gender: z.enum(["man", "woman"]).optional(),
+    baseKey: z.string().trim().min(1).max(120).optional(),
+    headKey: z.string().trim().min(1).max(120).optional(),
+    wearKey: z.string().trim().min(1).max(120).optional(),
   }).passthrough(),
 });
+const avatarItemSchema = z.object({ itemKey: z.string().trim().min(1).max(120) });
+
+function avatarErrorResponse(error: unknown): { status: number; code: string } {
+  const code = (error as Error & { code?: string }).code ?? "AVATAR_UPDATE_FAILED";
+  if (code === "PROFILE_NOT_FOUND" || code === "AVATAR_ITEM_NOT_FOUND") return { status: 404, code };
+  if (code === "PROFILE_NOT_OWNED") return { status: 403, code };
+  return { status: 409, code };
+}
 
 router.get("/users/me/profiles", requireAuth, async (req, res): Promise<void> => {
   res.json(await ensureCharacterProfileState(req.dbUser!.id));
@@ -142,6 +155,44 @@ router.get("/users/me/profiles/:profileId/inventory", requireAuth, async (req, r
     .where(eq(characterProfileInventoryTable.profileId, profileId))
     .orderBy(desc(characterProfileInventoryTable.updatedAt));
   res.json({ profileId, items });
+});
+
+router.get("/users/me/profiles/:profileId/avatar", requireAuth, async (req, res): Promise<void> => {
+  const profileId = Array.isArray(req.params.profileId) ? req.params.profileId[0] : req.params.profileId;
+  if (!z.uuid().safeParse(profileId).success) { res.status(400).json({ error: "INVALID_PROFILE_ID" }); return; }
+  try {
+    await resolveCharacterProfileActor(req.dbUser!.id, profileId);
+    const result = await listAvatarCatalog(profileId);
+    if (!result) { res.status(404).json({ error: "AVATAR_NOT_AVAILABLE" }); return; }
+    res.json(result);
+  } catch (error) {
+    const response = avatarErrorResponse(error);
+    res.status(response.status).json({ error: response.code });
+  }
+});
+
+router.post("/users/me/profiles/:profileId/avatar/purchase", requireAuth, async (req, res): Promise<void> => {
+  const profileId = Array.isArray(req.params.profileId) ? req.params.profileId[0] : req.params.profileId;
+  const parsed = avatarItemSchema.safeParse(req.body);
+  if (!z.uuid().safeParse(profileId).success || !parsed.success) { res.status(400).json({ error: "INVALID_AVATAR_PURCHASE" }); return; }
+  try {
+    res.json(await purchaseAvatarItem(req.dbUser!.id, profileId, parsed.data.itemKey));
+  } catch (error) {
+    const response = avatarErrorResponse(error);
+    res.status(response.status).json({ error: response.code });
+  }
+});
+
+router.patch("/users/me/profiles/:profileId/avatar/equipment", requireAuth, async (req, res): Promise<void> => {
+  const profileId = Array.isArray(req.params.profileId) ? req.params.profileId[0] : req.params.profileId;
+  const parsed = avatarItemSchema.safeParse(req.body);
+  if (!z.uuid().safeParse(profileId).success || !parsed.success) { res.status(400).json({ error: "INVALID_AVATAR_EQUIPMENT" }); return; }
+  try {
+    res.json(await equipAvatarItem(req.dbUser!.id, profileId, parsed.data.itemKey));
+  } catch (error) {
+    const response = avatarErrorResponse(error);
+    res.status(response.status).json({ error: response.code });
+  }
 });
 
 router.get("/users/me/profile-notifications", requireAuth, async (req, res): Promise<void> => {

@@ -2,6 +2,8 @@ import { Image } from "expo-image";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { useMediaUri } from "@/hooks/useMediaUri";
+import { parseAvatarRecipe } from "@/lib/avatarAssets";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 
 interface AvatarProps {
   uri?: string | null;
@@ -52,7 +54,8 @@ export function Avatar({
   crop = "default",
   characterType,
 }: AvatarProps) {
-  const resolvedUri = useMediaUri(uri);
+  const avatarRecipe = React.useMemo(() => parseAvatarRecipe(uri), [uri]);
+  const resolvedUri = useMediaUri(avatarRecipe ? null : uri);
   // Legacy production responses do not always include the character type.
   // Public member surfaces are FAN-scoped by default; STAR/official callers
   // must opt in explicitly. This prevents an omitted type from re-enabling the
@@ -85,6 +88,16 @@ export function Avatar({
   const faceOffset = (faceScale - 1) / 2;
   const faceTop =
     effectiveCharacterType === "official_ai" ? -size * 0.22 : 0;
+  if (avatarRecipe) {
+    return (
+      <CharacterAvatar
+        uri={uri}
+        crop="face"
+        borderRadius={size / 2}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   if (displayUri) {
     return (
       <View style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}>

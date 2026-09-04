@@ -535,6 +535,7 @@ export const PvtTransactionSource = {
   EVENT: 'EVENT',
   ADMIN: 'ADMIN',
   MISSION: 'MISSION',
+  AVATAR_ITEM: 'AVATAR_ITEM',
 } as const;
 
 export interface PvtTransaction {
@@ -903,6 +904,109 @@ export interface CharacterProfileInventoryItem {
   equipped: boolean;
   metadata: CharacterProfileInventoryItemMetadata;
   updatedAt: string;
+}
+
+export type AvatarCatalogItemAvatarType = typeof AvatarCatalogItemAvatarType[keyof typeof AvatarCatalogItemAvatarType];
+
+
+export const AvatarCatalogItemAvatarType = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AvatarCatalogItemGender = typeof AvatarCatalogItemGender[keyof typeof AvatarCatalogItemGender] | null;
+
+
+export const AvatarCatalogItemGender = {
+  man: 'man',
+  woman: 'woman',
+} as const;
+
+export type AvatarCatalogItemSlot = typeof AvatarCatalogItemSlot[keyof typeof AvatarCatalogItemSlot];
+
+
+export const AvatarCatalogItemSlot = {
+  background: 'background',
+  base: 'base',
+  head: 'head',
+  wear: 'wear',
+  effect: 'effect',
+  full_skin: 'full_skin',
+  star_form: 'star_form',
+} as const;
+
+export type AvatarCatalogItemMetadata = { [key: string]: unknown };
+
+export interface AvatarCatalogItem {
+  itemKey: string;
+  avatarType: AvatarCatalogItemAvatarType;
+  /** @nullable */
+  collectionKey?: string | null;
+  /** @nullable */
+  gender?: AvatarCatalogItemGender;
+  slot: AvatarCatalogItemSlot;
+  /**
+     * @minimum 0
+     * @maximum 3
+     */
+  classStage: number;
+  /** @nullable */
+  jobKey?: string | null;
+  displayName: string;
+  assetPath: string;
+  layerOrder: number;
+  /** @minimum 0 */
+  priceStarPoint: number;
+  purchasable: boolean;
+  isDefault: boolean;
+  status: string;
+  metadata: AvatarCatalogItemMetadata;
+  owned: boolean;
+  equipped: boolean;
+}
+
+export type AvatarAppearanceType = typeof AvatarAppearanceType[keyof typeof AvatarAppearanceType];
+
+
+export const AvatarAppearanceType = {
+  fan: 'fan',
+  star: 'star',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AvatarAppearanceGender = typeof AvatarAppearanceGender[keyof typeof AvatarAppearanceGender] | null;
+
+
+export const AvatarAppearanceGender = {
+  man: 'man',
+  woman: 'woman',
+} as const;
+
+export type AvatarAppearanceLoadout = { [key: string]: unknown };
+
+export interface AvatarAppearance {
+  profileId: string;
+  type: AvatarAppearanceType;
+  /** @nullable */
+  gender?: AvatarAppearanceGender;
+  /**
+     * @minimum 0
+     * @maximum 3
+     */
+  classStage: number;
+  recipe: string;
+  layers: AvatarCatalogItem[];
+  loadout: AvatarAppearanceLoadout;
+}
+
+export interface AvatarCatalogResponse {
+  appearance: AvatarAppearance;
+  items: AvatarCatalogItem[];
 }
 
 export type CharacterProfileNotificationData = { [key: string]: unknown };
@@ -3052,11 +3156,23 @@ size: number;
 contentType?: string;
 };
 
+export type CreateMyFanCharacterProfileBodyCustomizationGender = typeof CreateMyFanCharacterProfileBodyCustomizationGender[keyof typeof CreateMyFanCharacterProfileBodyCustomizationGender];
+
+
+export const CreateMyFanCharacterProfileBodyCustomizationGender = {
+  man: 'man',
+  woman: 'woman',
+} as const;
+
 export type CreateMyFanCharacterProfileBodyCustomization = {
-  ageStyle: string;
-  hairStyle: string;
-  skinTone: string;
-  genderExpression: string;
+  ageStyle?: string;
+  hairStyle?: string;
+  skinTone?: string;
+  genderExpression?: string;
+  gender?: CreateMyFanCharacterProfileBodyCustomizationGender;
+  baseKey?: string;
+  headKey?: string;
+  wearKey?: string;
 };
 
 export type CreateMyFanCharacterProfileBody = {
@@ -3106,6 +3222,14 @@ export type UpdateMyCharacterProfileBody = {
 export type GetMyCharacterProfileInventory200 = {
   profileId: string;
   items: CharacterProfileInventoryItem[];
+};
+
+export type PurchaseMyCharacterAvatarItemBody = {
+  itemKey: string;
+};
+
+export type EquipMyCharacterAvatarItemBody = {
+  itemKey: string;
 };
 
 export type GetMyCharacterProfileNotifications200 = {

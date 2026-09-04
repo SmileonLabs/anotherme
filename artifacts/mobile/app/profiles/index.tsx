@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
@@ -14,16 +13,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGetMe } from "@workspace/api-client-react";
 import { NeonBackdrop } from "@/components/NeonUI";
+import { Avatar } from "@/components/Avatar";
 import {
   type CharacterProfileType,
   type CharacterProfileView,
   useCharacterProfiles,
 } from "@/hooks/useCharacterProfiles";
-import { useMediaUri } from "@/hooks/useMediaUri";
 import { crossAlert } from "@/lib/crossAlert";
 
-const FAN_FALLBACK = require("../../assets/images/home-v2/fan-character-scene.png");
-const STAR_FALLBACK = require("../../assets/images/star-character-cutout.png");
 type ProfileMode = Extract<CharacterProfileType, "fan" | "star">;
 
 function ProfileRow({
@@ -32,6 +29,7 @@ function ProfileRow({
   busy,
   onActivate,
   onEdit,
+  onCustomize,
   onArchive,
 }: {
   profile: CharacterProfileView;
@@ -39,16 +37,10 @@ function ProfileRow({
   busy: boolean;
   onActivate: () => void;
   onEdit: () => void;
+  onCustomize: () => void;
   onArchive: () => void;
 }) {
-  const characterImageUrl =
-    profile.profileImageUrl &&
-    profile.profileImageUrl !== accountProfileImageUrl
-      ? profile.profileImageUrl
-      : null;
-  const imageUri = useMediaUri(characterImageUrl);
-  const fallback = profile.type === "star" ? STAR_FALLBACK : FAN_FALLBACK;
-  const usesFallback = !imageUri;
+  const characterImageUrl = profile.profileImageUrl !== accountProfileImageUrl ? profile.profileImageUrl : null;
   const status =
     profile.status === "torimia"
       ? "토르미아"
@@ -62,15 +54,7 @@ function ProfileRow({
     <View style={[styles.profileCard, profile.isActive && styles.profileCardActive]}>
       <View style={styles.profileMain}>
         <View style={[styles.avatarRing, profile.isActive && styles.avatarRingActive]}>
-          <Image
-            source={imageUri ? { uri: imageUri } : fallback}
-            style={[
-              styles.avatar,
-              usesFallback && profile.type === "fan" && styles.fanAvatarFaceCrop,
-            ]}
-            contentFit="cover"
-            contentPosition="top center"
-          />
+          <Avatar uri={characterImageUrl} name={profile.displayName} size={62} crop="face" characterType={profile.type} />
         </View>
         <View style={styles.identity}>
           <View style={styles.nameRow}>
@@ -102,6 +86,9 @@ function ProfileRow({
         >
           <Text style={styles.primaryActionText}>{profile.isActive ? "사용 중" : "이 프로필 사용"}</Text>
         </Pressable>
+        {profile.type === "fan" || profile.profileImageUrl?.startsWith("anotherme-avatar:") ? <Pressable disabled={busy} onPress={onCustomize} style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
+          <Feather name="sliders" size={17} color="#C8B7E5" />
+        </Pressable> : null}
         <Pressable disabled={busy} onPress={onEdit} style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}>
           <Feather name="edit-2" size={17} color="#C8B7E5" />
         </Pressable>
@@ -252,6 +239,7 @@ export default function ProfilesScreen() {
                 accountProfileImageUrl={me?.profileImageUrl}
                 busy={busy}
                 onActivate={() => void activate(profile)}
+                onCustomize={() => router.push({ pathname: "/profile/avatar", params: { profileId: profile.id } } as never)}
                 onEdit={() => router.push({ pathname: "/profile/edit", params: { profileId: profile.id } } as never)}
                 onArchive={() => archive(profile)}
               />

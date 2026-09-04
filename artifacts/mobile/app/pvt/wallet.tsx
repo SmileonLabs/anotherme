@@ -28,6 +28,7 @@ function sourceLabel(source: string) {
   if (source === "DAILY_TALK_REWARD") return "Talk to Earn";
   if (source === "EVENT") return "이벤트";
   if (source === "MISSION") return "미션";
+  if (source === "AVATAR_ITEM") return "아바타 아이템";
   return "관리자";
 }
 

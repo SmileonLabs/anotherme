@@ -5,7 +5,7 @@ import { usersTable } from "./users";
 export const PVT_TRANSACTION_TYPES = ["EARN", "SPEND", "ADJUST"] as const;
 export type PvtTransactionType = (typeof PVT_TRANSACTION_TYPES)[number];
 
-export const PVT_TRANSACTION_SOURCES = ["DAILY_TALK_REWARD", "EVENT", "ADMIN", "MISSION"] as const;
+export const PVT_TRANSACTION_SOURCES = ["DAILY_TALK_REWARD", "EVENT", "ADMIN", "MISSION", "AVATAR_ITEM"] as const;
 export type PvtTransactionSource = (typeof PVT_TRANSACTION_SOURCES)[number];
 
 export const pvtWalletsTable = pgTable(

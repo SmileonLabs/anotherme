@@ -1,4 +1,6 @@
 import { CustomScrollView } from "@/components/CustomScroll";
+import { Avatar } from "@/components/Avatar";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { ProfileSwitcher } from "@/components/home/ProfileSwitcher";
 import { FAN_STAT_META, readFanStat } from "@/constants/fanStats";
 import {
@@ -174,7 +176,6 @@ export default function HomeV2() {
     activeProfile.profileImageUrl !== me?.profileImageUrl
       ? activeProfile.profileImageUrl
       : null;
-  const profileImageUri = useMediaUri(characterProfileImageUrl);
   const openRareOn = React.useCallback(() => {
     if (Platform.OS === "web") {
       window.open(RARE_ON_URL, "_blank", "noopener,noreferrer");
@@ -302,17 +303,6 @@ export default function HomeV2() {
         ),
       }));
 
-  const characterSource = starImageUri
-    ? { uri: starImageUri }
-    : starLocked
-      ? STAR_RANDOM_BOX
-      : STAR_CHARACTER;
-  const avatarSource = profileImageUri
-    ? { uri: profileImageUri }
-    : isStar
-      ? characterSource
-      : FAN_CHARACTER_SCENE;
-
   const switchProfile = React.useCallback(
     async (profile: CharacterProfileView) => {
       if (profile.id === activeProfile?.id || switchingProfileId) {
@@ -407,11 +397,12 @@ export default function HomeV2() {
                 onPress={() => setProfileSwitcherOpen((open) => !open)}
                 style={({ pressed }) => [styles.avatarRing, pressed && styles.pressed]}
               >
-                <Image
-                  source={avatarSource}
-                  style={styles.avatarFaceCrop}
-                  contentFit="cover"
-                  contentPosition="top center"
+                <Avatar
+                  uri={characterProfileImageUrl}
+                  name={activeProfile?.displayName ?? me?.nickname ?? "FAN"}
+                  size={39}
+                  crop="face"
+                  characterType={activeProfile?.type ?? (isStar ? "star" : "fan")}
                 />
               </Pressable>
             </View>
@@ -447,11 +438,11 @@ export default function HomeV2() {
               <Image source={STAR_SCENE} style={StyleSheet.absoluteFill} contentFit="cover" />
             ) : !isStar ? (
               <View style={styles.fanSceneLayer}>
-                <Image
-                  source={FAN_CHARACTER_SCENE}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="contain"
-                  contentPosition="right"
+                <CharacterAvatar
+                  uri={characterProfileImageUrl}
+                  fallbackSource={FAN_CHARACTER_SCENE}
+                  crop="full"
+                  style={StyleSheet.absoluteFillObject}
                 />
               </View>
             ) : null}
@@ -498,17 +489,17 @@ export default function HomeV2() {
                 ]}
               >
                 {!starLocked ? <View style={styles.stageGlow} /> : null}
-                <Image
-                  source={characterSource}
-                  style={[
-                    styles.characterImage,
-                    compact && styles.characterImageCompact,
-                    styles.starCharacterImage,
-                    starLocked && styles.lockedRandomBoxImage,
-                  ]}
+                {starLocked ? <Image
+                  source={STAR_RANDOM_BOX}
+                  style={[styles.characterImage, compact && styles.characterImageCompact, styles.starCharacterImage, styles.lockedRandomBoxImage]}
                   contentFit="contain"
-                  contentPosition={starLocked ? "center" : "bottom"}
-                />
+                  contentPosition="center"
+                /> : <CharacterAvatar
+                  uri={characterProfileImageUrl ?? starImageUri}
+                  fallbackSource={STAR_CHARACTER}
+                  crop="full"
+                  style={[styles.characterImage, compact && styles.characterImageCompact, styles.starCharacterImage]}
+                />}
                 {starLocked ? (
                   <Pressable
                     onPress={() =>

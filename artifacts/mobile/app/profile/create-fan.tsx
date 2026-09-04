@@ -1,3 +1,4 @@
+import CreateFanAvatarScreen from "@/components/CreateFanAvatarScreen";
 import { Feather } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -15,7 +16,9 @@ const OPTIONS = {
   skinTone: ["라이트", "미디엄", "딥", "판타지"], genderExpression: ["뉴트럴", "소프트", "볼드"],
 } as const;
 
-export default function CreateFanProfileScreen() {
+export default CreateFanAvatarScreen;
+
+function LegacyCreateFanProfileScreen() {
   const router = useRouter(); const insets = useSafeAreaInsets();
   const { onboarding } = useLocalSearchParams<{ onboarding?: string }>();
   const { fanProfiles, createFanProfile, isCreatingFan } = useCharacterProfiles();

@@ -3350,7 +3350,7 @@ export const ListPvtTransactionsResponseItem = zod.object({
   "id": zod.string(),
   "amount": zod.number(),
   "type": zod.enum(['EARN', 'SPEND', 'ADJUST']),
-  "source": zod.enum(['DAILY_TALK_REWARD', 'EVENT', 'ADMIN', 'MISSION']),
+  "source": zod.enum(['DAILY_TALK_REWARD', 'EVENT', 'ADMIN', 'MISSION', 'AVATAR_ITEM']),
   "sourceId": zod.string(),
   "description": zod.string().nullish(),
   "balanceAfter": zod.number(),
@@ -4124,10 +4124,14 @@ export const CreateMyFanCharacterProfileBody = zod.object({
   "profileImageUrl": zod.string().max(createMyFanCharacterProfileBodyProfileImageUrlMax).nullish(),
   "customizeDefault": zod.boolean().default(createMyFanCharacterProfileBodyCustomizeDefaultDefault).describe('Onboarding-only flag. When true, an uncustomized default FAN is completed in place. Ordinary FAN-add flows must omit it so an existing profile is never overwritten.\n'),
   "customization": zod.object({
-  "ageStyle": zod.string(),
-  "hairStyle": zod.string(),
-  "skinTone": zod.string(),
-  "genderExpression": zod.string()
+  "ageStyle": zod.string().optional(),
+  "hairStyle": zod.string().optional(),
+  "skinTone": zod.string().optional(),
+  "genderExpression": zod.string().optional(),
+  "gender": zod.enum(['man', 'woman']).optional(),
+  "baseKey": zod.string().optional(),
+  "headKey": zod.string().optional(),
+  "wearKey": zod.string().optional()
 })
 })
 
@@ -4345,6 +4349,230 @@ export const GetMyCharacterProfileInventoryResponse = zod.object({
   "equipped": zod.boolean(),
   "metadata": zod.record(zod.string(), zod.unknown()),
   "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get the current avatar appearance and compatible item catalog
+ */
+export const GetMyCharacterAvatarParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const getMyCharacterAvatarResponseAppearanceClassStageMin = 0;
+export const getMyCharacterAvatarResponseAppearanceClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseAppearanceLayersItemClassStageMin = 0;
+export const getMyCharacterAvatarResponseAppearanceLayersItemClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const getMyCharacterAvatarResponseItemsItemClassStageMin = 0;
+export const getMyCharacterAvatarResponseItemsItemClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const GetMyCharacterAvatarResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseAppearanceClassStageMin).max(getMyCharacterAvatarResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseAppearanceLayersItemClassStageMin).max(getMyCharacterAvatarResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(getMyCharacterAvatarResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseItemsItemClassStageMin).max(getMyCharacterAvatarResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(getMyCharacterAvatarResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Purchase an avatar item with STAR Point
+ */
+export const PurchaseMyCharacterAvatarItemParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const PurchaseMyCharacterAvatarItemBody = zod.object({
+  "itemKey": zod.string()
+})
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseAppearanceClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const purchaseMyCharacterAvatarItemResponseItemsItemClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseItemsItemClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const PurchaseMyCharacterAvatarItemResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceClassStageMin).max(purchaseMyCharacterAvatarItemResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin).max(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseItemsItemClassStageMin).max(purchaseMyCharacterAvatarItemResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(purchaseMyCharacterAvatarItemResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Equip one owned avatar item in its slot
+ */
+export const EquipMyCharacterAvatarItemParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const EquipMyCharacterAvatarItemBody = zod.object({
+  "itemKey": zod.string()
+})
+
+export const equipMyCharacterAvatarItemResponseAppearanceClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseAppearanceClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const equipMyCharacterAvatarItemResponseItemsItemClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseItemsItemClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const EquipMyCharacterAvatarItemResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceClassStageMin).max(equipMyCharacterAvatarItemResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin).max(equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseItemsItemClassStageMin).max(equipMyCharacterAvatarItemResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(equipMyCharacterAvatarItemResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
 }))
 })
 

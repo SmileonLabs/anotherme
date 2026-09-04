@@ -65,7 +65,7 @@ export function useCharacterProfiles() {
     onSuccess: (state) => queryClient.setQueryData(characterProfilesQueryKey, state),
   });
   const createFan = useMutation({
-    mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customizeDefault?: boolean; customization: { ageStyle: string; hairStyle: string; skinTone: string; genderExpression: string } & Record<string, unknown> }) =>
+    mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customizeDefault?: boolean; customization: Record<string, unknown> }) =>
       customFetch<CharacterProfileState>("/api/users/me/fan-profiles", {
         method: "POST",
         responseType: "json",

@@ -14,4 +14,5 @@ export const PvtTransactionSource = {
   EVENT: 'EVENT',
   ADMIN: 'ADMIN',
   MISSION: 'MISSION',
+  AVATAR_ITEM: 'AVATAR_ITEM',
 } as const;

@@ -214,6 +214,55 @@ export const characterProfileInventoryTable = pgTable(
   ],
 );
 
+/**
+ * Versioned catalog of character artwork. The client never infers behavior
+ * from a filename; slot, gender, progression and price rules live here.
+ */
+export const avatarCatalogItemsTable = pgTable(
+  "avatar_catalog_items",
+  {
+    itemKey: text("item_key").primaryKey(),
+    avatarType: text("avatar_type").$type<"fan" | "star">().notNull(),
+    collectionKey: text("collection_key"),
+    gender: text("gender").$type<"man" | "woman" | null>(),
+    slot: text("slot").$type<"background" | "base" | "head" | "wear" | "effect" | "full_skin" | "star_form">().notNull(),
+    classStage: integer("class_stage").notNull().default(0),
+    jobKey: text("job_key"),
+    displayName: text("display_name").notNull(),
+    assetPath: text("asset_path").notNull(),
+    layerOrder: integer("layer_order").notNull().default(0),
+    priceStarPoint: integer("price_star_point").notNull().default(0),
+    purchasable: boolean("purchasable").notNull().default(false),
+    isDefault: boolean("is_default").notNull().default(false),
+    status: text("status").notNull().default("published"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("avatar_catalog_type_slot_idx").on(table.avatarType, table.slot, table.status),
+    index("avatar_catalog_collection_stage_idx").on(table.collectionKey, table.classStage),
+  ],
+);
+
+/** One authoritative, slot-safe appearance per character profile. */
+export const characterAvatarLoadoutsTable = pgTable(
+  "character_avatar_loadouts",
+  {
+    profileId: uuid("profile_id").primaryKey().references(() => characterProfilesTable.id, { onDelete: "cascade" }),
+    backgroundKey: text("background_key"),
+    baseKey: text("base_key"),
+    headKey: text("head_key"),
+    wearKey: text("wear_key"),
+    effectKey: text("effect_key"),
+    fullSkinKey: text("full_skin_key"),
+    starFormKey: text("star_form_key"),
+    version: integer("version").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => [index("character_avatar_loadouts_updated_idx").on(table.updatedAt)],
+);
+
 export const characterProfileNotificationsTable = pgTable(
   "character_profile_notifications",
   {
@@ -230,3 +279,5 @@ export const characterProfileNotificationsTable = pgTable(
 
 export type CharacterProfile = typeof characterProfilesTable.$inferSelect;
 export type ActiveCharacterProfile = typeof activeCharacterProfilesTable.$inferSelect;
+export type AvatarCatalogItem = typeof avatarCatalogItemsTable.$inferSelect;
+export type CharacterAvatarLoadout = typeof characterAvatarLoadoutsTable.$inferSelect;

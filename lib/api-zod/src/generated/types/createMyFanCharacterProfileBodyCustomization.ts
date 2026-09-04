@@ -5,10 +5,15 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateMyFanCharacterProfileBodyCustomizationGender } from './createMyFanCharacterProfileBodyCustomizationGender';
 
 export type CreateMyFanCharacterProfileBodyCustomization = {
-  ageStyle: string;
-  hairStyle: string;
-  skinTone: string;
-  genderExpression: string;
+  ageStyle?: string;
+  hairStyle?: string;
+  skinTone?: string;
+  genderExpression?: string;
+  gender?: CreateMyFanCharacterProfileBodyCustomizationGender;
+  baseKey?: string;
+  headKey?: string;
+  wearKey?: string;
 };

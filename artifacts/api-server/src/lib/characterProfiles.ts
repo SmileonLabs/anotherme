@@ -23,6 +23,13 @@ import {
   canCreateAdditionalFan,
   normalizeProfileHandle,
 } from "./characterProfilePolicy";
+import {
+  AVATAR_RECIPE_PREFIX,
+  ensureUserAvatarProfiles,
+  getCharacterAvatarAppearance,
+  initializeFanAvatarLoadout,
+  normalizeFanAvatarCustomization,
+} from "./avatarCatalog";
 
 export interface CharacterProfileView {
   id: string;
@@ -84,6 +91,12 @@ export async function getActiveCharacterIdentityMap(
     .innerJoin(usersTable, eq(usersTable.id, activeCharacterProfilesTable.userId))
     .where(inArray(activeCharacterProfilesTable.userId, uniqueIds));
 
+  const recipes = new Map<string, string>();
+  await Promise.all(rows.filter((row) => row.type === "fan" && !row.profileImageUrl?.startsWith(AVATAR_RECIPE_PREFIX)).map(async (row) => {
+    const appearance = await getCharacterAvatarAppearance(row.id);
+    if (appearance) recipes.set(row.id, appearance.recipe);
+  }));
+
   return new Map(
     rows.map((row) => [
       row.userId,
@@ -92,10 +105,10 @@ export async function getActiveCharacterIdentityMap(
         type: row.type,
         handle: row.handle,
         displayName: row.displayName,
-        profileImageUrl:
+        profileImageUrl: recipes.get(row.id) ?? (
           row.type === "fan" && row.profileImageUrl === row.accountProfileImageUrl
             ? null
-            : row.profileImageUrl,
+            : row.profileImageUrl),
         statusMessage: row.statusMessage,
       },
     ]),
@@ -108,19 +121,6 @@ function fanHandle(userId: string): string {
 
 function starHandle(profileId: string): string {
   return `star-${profileId.replaceAll("-", "")}`;
-}
-
-async function sanitizeFanProfileImageUrl(
-  userId: string,
-  candidate: string | null | undefined,
-): Promise<string | null | undefined> {
-  if (!candidate) return candidate;
-  const [account] = await db
-    .select({ profileImageUrl: usersTable.profileImageUrl })
-    .from(usersTable)
-    .where(eq(usersTable.id, userId))
-    .limit(1);
-  return candidate === account?.profileImageUrl ? null : candidate;
 }
 
 async function ensureLegacyProfileRows(userId: string): Promise<void> {
@@ -351,6 +351,7 @@ async function readCharacterProfileState(userId: string): Promise<CharacterProfi
 
 export async function ensureCharacterProfileState(userId: string): Promise<CharacterProfileState> {
   await ensureLegacyProfileRows(userId);
+  await ensureUserAvatarProfiles(userId);
   return readCharacterProfileState(userId);
 }
 
@@ -385,7 +386,7 @@ export async function createFanCharacterProfile(
   },
 ): Promise<CharacterProfileState> {
   await ensureLegacyProfileRows(userId);
-  const safeProfileImageUrl = await sanitizeFanProfileImageUrl(userId, input.profileImageUrl);
+  const customization = normalizeFanAvatarCustomization(input.customization);
   const state = await readCharacterProfileState(userId);
   const fanProfiles = state.profiles.filter((profile) => profile.type === "fan");
   const fanDetails = await db
@@ -401,16 +402,13 @@ export async function createFanCharacterProfile(
     await db.transaction(async (tx) => {
       await tx.update(characterProfilesTable).set({
         displayName: input.displayName,
-        profileImageUrl:
-          input.profileImageUrl === undefined
-            ? profile.profileImageUrl
-            : safeProfileImageUrl ?? null,
         metadata: { ...profile.metadata, onboardingCustomized: true },
         updatedAt: new Date(),
       }).where(eq(characterProfilesTable.id, profile.id));
-      await tx.update(fanCharacterProfilesTable).set({ customization: input.customization })
+      await tx.update(fanCharacterProfilesTable).set({ customization })
         .where(eq(fanCharacterProfilesTable.profileId, profile.id));
     });
+    await initializeFanAvatarLoadout(profile.id, customization);
     return activateCharacterProfile(userId, profile.id);
   }
 
@@ -429,7 +427,7 @@ export async function createFanCharacterProfile(
       type: "fan",
       handle,
       displayName: input.displayName,
-      profileImageUrl: safeProfileImageUrl ?? null,
+      profileImageUrl: null,
       stats: { fanPower: 0, supportPower: 0, empathy: 0, story: 0 },
       metadata: { onboardingCustomized: true, generation },
     }).returning();
@@ -439,11 +437,12 @@ export async function createFanCharacterProfile(
       profileId: profile.id,
       legacyFanUserId: null,
       generation,
-      customization: input.customization,
+      customization,
     });
     return rows;
   });
   if (!created) throw new Error("FAN profile creation failed");
+  await initializeFanAvatarLoadout(created.id, customization);
   return activateCharacterProfile(userId, created.id);
 }
 
@@ -595,13 +594,11 @@ export async function updateCharacterProfile(
     (error as Error & { code?: string }).code = "PROFILE_NOT_FOUND";
     throw error;
   }
-  const safeChanges =
-    target.type === "fan" && Object.prototype.hasOwnProperty.call(changes, "profileImageUrl")
-      ? {
-          ...changes,
-          profileImageUrl: await sanitizeFanProfileImageUrl(userId, changes.profileImageUrl),
-        }
-      : changes;
+  // FAN portraits are derived from the avatar loadout. Ignore the legacy
+  // profileImageUrl field so older clients cannot overwrite the recipe.
+  const safeChanges = target.type === "fan"
+    ? Object.fromEntries(Object.entries(changes).filter(([key]) => key !== "profileImageUrl"))
+    : changes;
   const [updated] = await db
     .update(characterProfilesTable)
     .set({ ...safeChanges, updatedAt: new Date() })
@@ -618,6 +615,7 @@ export async function updateCharacterProfile(
     (error as Error & { code?: string }).code = "PROFILE_NOT_FOUND";
     throw error;
   }
+  if (target.type === "fan") await getCharacterAvatarAppearance(profileId);
   return readCharacterProfileState(userId);
 }
 
@@ -628,6 +626,7 @@ export async function getPublicCharacterProfile(viewerUserId: string, profileId:
     .where(and(eq(characterProfilesTable.id, profileId), isNull(characterProfilesTable.archivedAt)))
     .limit(1);
   if (!profile || (profile.status !== "active" && profile.ownerUserId !== viewerUserId)) return null;
+  const avatarAppearance = await getCharacterAvatarAppearance(profile.id);
   const [ownerAccount] = await db
     .select({ profileImageUrl: usersTable.profileImageUrl })
     .from(usersTable)
@@ -677,7 +676,7 @@ export async function getPublicCharacterProfile(viewerUserId: string, profileId:
     type: profile.type,
     handle: profile.handle,
     displayName: profile.displayName,
-    profileImageUrl: safeProfileImageUrl,
+    profileImageUrl: avatarAppearance?.recipe ?? safeProfileImageUrl,
     statusMessage: profile.statusMessage,
     level: profile.level,
     xp: profile.xp,
@@ -685,9 +684,10 @@ export async function getPublicCharacterProfile(viewerUserId: string, profileId:
     jobStage: profile.jobStage,
     jobLabel: metadataJobLabel || normalizedJobKey || fallbackJobLabel,
     characterImageUrl:
-      profile.type === "fan"
+      avatarAppearance?.recipe ?? (profile.type === "fan"
         ? safeMetadataCharacterImage
-        : safeMetadataCharacterImage ?? safeProfileImageUrl,
+        : safeMetadataCharacterImage ?? safeProfileImageUrl),
+    avatarAppearance,
     stats: profile.stats,
     metadata: profile.metadata,
     isMine: profile.ownerUserId === viewerUserId,

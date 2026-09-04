@@ -27,6 +27,7 @@ import { resolveNftReferenceImage } from "./nftReferenceImage";
 import { ObjectStorageService } from "./objectStorage";
 import { computeEvolutionStage, computeStarLevel } from "./starGrowthPolicy";
 import { getNftPublishReadiness } from "./nftRpgContent";
+import { getCharacterAvatarAppearance } from "./avatarCatalog";
 
 const OWNERSHIP_RECHECK_MS = 2 * 60 * 1000;
 
@@ -688,5 +689,6 @@ export async function recordStarActivity(params: {
     granted = true;
   });
 
+  if (granted) await getCharacterAvatarAppearance(profile.id);
   return granted;
 }

@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CustomScrollView } from "@/components/CustomScroll";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { FAN_STAT_META, readFanStat } from "@/constants/fanStats";
 import { useMediaUri } from "@/hooks/useMediaUri";
 import type { StarFeedPost } from "@/hooks/useStarFeed";
@@ -138,11 +139,6 @@ export function PublicCharacterProfileScreen({ profileId }: { profileId: string 
       return true;
     });
   }, [query.data?.pages]);
-  const resolvedCharacterImage = useMediaUri(
-    profile?.type === "fan"
-      ? profile?.characterImageUrl
-      : profile?.characterImageUrl ?? profile?.profileImageUrl,
-  );
   const contentWidth = Math.min(width, 520) - 24;
   const gridGap = 6;
   const tileSize = Math.floor((contentWidth - gridGap * 2) / 3);
@@ -159,10 +155,6 @@ export function PublicCharacterProfileScreen({ profileId }: { profileId: string 
   const stats = isFan
     ? FAN_STAT_META.map((item) => ({ ...item, value: readFanStat(profile?.stats, item.key) }))
     : STAR_STATS.map((item) => ({ ...item, value: safeNumber(profile?.stats?.[item.key]) }));
-  const characterSource = resolvedCharacterImage
-    ? { uri: resolvedCharacterImage }
-    : isFan ? FAN_CHARACTER_FALLBACK : STAR_CHARACTER_FALLBACK;
-
   const goBack = React.useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)/feed" as never);
@@ -200,7 +192,12 @@ export function PublicCharacterProfileScreen({ profileId }: { profileId: string 
             </Pressable>
 
             <View style={styles.characterSide}>
-              <Image source={characterSource} contentFit="contain" contentPosition="bottom center" transition={180} style={styles.characterImage} />
+              <CharacterAvatar
+                uri={profile.characterImageUrl ?? profile.profileImageUrl}
+                fallbackSource={isFan ? FAN_CHARACTER_FALLBACK : STAR_CHARACTER_FALLBACK}
+                crop="full"
+                style={styles.characterImage}
+              />
             </View>
 
             <View style={styles.profileSide}>

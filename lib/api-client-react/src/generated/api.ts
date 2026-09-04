@@ -32,6 +32,7 @@ import type {
   AnotherMeToneProfile,
   AnotherMeToneProfileInput,
   ApiError,
+  AvatarCatalogResponse,
   BattleCreateInput,
   BattleFeedPostInput,
   BattleFeedPostResult,
@@ -81,6 +82,7 @@ import type {
   DiscoverStarFeedByHashtagParams,
   DungeonInput,
   DungeonState,
+  EquipMyCharacterAvatarItemBody,
   EquipStarNftInput,
   EquipStarNftResult,
   EquippedStarProfileResponse,
@@ -159,6 +161,7 @@ import type {
   PublicNftCollection,
   PublicProfile,
   PublicUser,
+  PurchaseMyCharacterAvatarItemBody,
   PushTokenInput,
   PvtTransaction,
   PvtWallet,
@@ -12030,6 +12033,227 @@ export function useGetMyCharacterProfileInventory<TData = Awaited<ReturnType<typ
 
 
 
+
+export const getGetMyCharacterAvatarUrl = (profileId: string,) => {
+
+
+
+
+  return `/api/users/me/profiles/${profileId}/avatar`
+}
+
+/**
+ * @summary Get the current avatar appearance and compatible item catalog
+ */
+export const getMyCharacterAvatar = async (profileId: string, options?: RequestInit): Promise<AvatarCatalogResponse> => {
+
+  return customFetch<AvatarCatalogResponse>(getGetMyCharacterAvatarUrl(profileId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyCharacterAvatarQueryKey = (profileId: string,) => {
+    return [
+    `/api/users/me/profiles/${profileId}/avatar`
+    ] as const;
+    }
+
+
+export const getGetMyCharacterAvatarQueryOptions = <TData = Awaited<ReturnType<typeof getMyCharacterAvatar>>, TError = ErrorType<void>>(profileId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterAvatar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyCharacterAvatarQueryKey(profileId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyCharacterAvatar>>> = ({ signal }) => getMyCharacterAvatar(profileId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(profileId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterAvatar>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyCharacterAvatarQueryResult = NonNullable<Awaited<ReturnType<typeof getMyCharacterAvatar>>>
+export type GetMyCharacterAvatarQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the current avatar appearance and compatible item catalog
+ */
+
+export function useGetMyCharacterAvatar<TData = Awaited<ReturnType<typeof getMyCharacterAvatar>>, TError = ErrorType<void>>(
+ profileId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyCharacterAvatar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyCharacterAvatarQueryOptions(profileId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPurchaseMyCharacterAvatarItemUrl = (profileId: string,) => {
+
+
+
+
+  return `/api/users/me/profiles/${profileId}/avatar/purchase`
+}
+
+/**
+ * @summary Purchase an avatar item with STAR Point
+ */
+export const purchaseMyCharacterAvatarItem = async (profileId: string,
+    purchaseMyCharacterAvatarItemBody: PurchaseMyCharacterAvatarItemBody, options?: RequestInit): Promise<AvatarCatalogResponse> => {
+
+  return customFetch<AvatarCatalogResponse>(getPurchaseMyCharacterAvatarItemUrl(profileId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      purchaseMyCharacterAvatarItemBody,)
+  }
+);}
+
+
+
+
+export const getPurchaseMyCharacterAvatarItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<PurchaseMyCharacterAvatarItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<PurchaseMyCharacterAvatarItemBody>}, TContext> => {
+
+const mutationKey = ['purchaseMyCharacterAvatarItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>, {profileId: string;data: BodyType<PurchaseMyCharacterAvatarItemBody>}> = (props) => {
+          const {profileId,data} = props ?? {};
+
+          return  purchaseMyCharacterAvatarItem(profileId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PurchaseMyCharacterAvatarItemMutationResult = NonNullable<Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>>
+    export type PurchaseMyCharacterAvatarItemMutationBody = BodyType<PurchaseMyCharacterAvatarItemBody>
+    export type PurchaseMyCharacterAvatarItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Purchase an avatar item with STAR Point
+ */
+export const usePurchaseMyCharacterAvatarItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<PurchaseMyCharacterAvatarItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof purchaseMyCharacterAvatarItem>>,
+        TError,
+        {profileId: string;data: BodyType<PurchaseMyCharacterAvatarItemBody>},
+        TContext
+      > => {
+      return useMutation(getPurchaseMyCharacterAvatarItemMutationOptions(options));
+    }
+
+export const getEquipMyCharacterAvatarItemUrl = (profileId: string,) => {
+
+
+
+
+  return `/api/users/me/profiles/${profileId}/avatar/equipment`
+}
+
+/**
+ * @summary Equip one owned avatar item in its slot
+ */
+export const equipMyCharacterAvatarItem = async (profileId: string,
+    equipMyCharacterAvatarItemBody: EquipMyCharacterAvatarItemBody, options?: RequestInit): Promise<AvatarCatalogResponse> => {
+
+  return customFetch<AvatarCatalogResponse>(getEquipMyCharacterAvatarItemUrl(profileId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      equipMyCharacterAvatarItemBody,)
+  }
+);}
+
+
+
+
+export const getEquipMyCharacterAvatarItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<EquipMyCharacterAvatarItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<EquipMyCharacterAvatarItemBody>}, TContext> => {
+
+const mutationKey = ['equipMyCharacterAvatarItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>, {profileId: string;data: BodyType<EquipMyCharacterAvatarItemBody>}> = (props) => {
+          const {profileId,data} = props ?? {};
+
+          return  equipMyCharacterAvatarItem(profileId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EquipMyCharacterAvatarItemMutationResult = NonNullable<Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>>
+    export type EquipMyCharacterAvatarItemMutationBody = BodyType<EquipMyCharacterAvatarItemBody>
+    export type EquipMyCharacterAvatarItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Equip one owned avatar item in its slot
+ */
+export const useEquipMyCharacterAvatarItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>, TError,{profileId: string;data: BodyType<EquipMyCharacterAvatarItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof equipMyCharacterAvatarItem>>,
+        TError,
+        {profileId: string;data: BodyType<EquipMyCharacterAvatarItemBody>},
+        TContext
+      > => {
+      return useMutation(getEquipMyCharacterAvatarItemMutationOptions(options));
+    }
 
 export const getGetMyCharacterProfileNotificationsUrl = () => {
 

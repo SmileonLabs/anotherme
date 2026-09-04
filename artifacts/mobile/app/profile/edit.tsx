@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,12 +14,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useGetMe } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
-import { ImageTooLargeError, uploadBlob } from "@/lib/uploadImage";
 import { Avatar } from "@/components/Avatar";
-import { ImageCropModal } from "@/components/ImageCropModal";
 import { useColors } from "@/hooks/useColors";
 import { profileHistoryQueryKey } from "@/hooks/useProfileHistory";
 import { starFeedQueryKey } from "@/hooks/useStarFeed";
@@ -39,10 +35,6 @@ export default function EditProfileScreen() {
 
   const [nickname, setNickname] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-  // undefined = unchanged, string = new object path, null = removed
-  const [imagePath, setImagePath] = useState<string | null | undefined>(undefined);
-  const [cropUri, setCropUri] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (targetProfile) {
@@ -51,65 +43,10 @@ export default function EditProfileScreen() {
     }
   }, [targetProfile]);
 
-  const previewUri = imagePath !== undefined ? imagePath : targetProfile?.profileImageUrl;
+  const previewUri = targetProfile?.profileImageUrl;
+  const canCustomizeAvatar = targetProfile?.type === "fan" || targetProfile?.profileImageUrl?.startsWith("anotherme-avatar:");
 
-  const handlePickAvatar = async () => {
-    if (uploading) return;
-    try {
-      if (Platform.OS === "web") {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-        });
-        if (result.canceled || !result.assets?.length) return;
-        setCropUri(result.assets[0].uri);
-        return;
-      }
-
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        crossAlert("권한 필요", "사진 접근 권한을 허용해주세요");
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.length) return;
-      setUploading(true);
-      const blob = await (await fetch(result.assets[0].uri)).blob();
-      const path = await uploadBlob(blob);
-      setImagePath(path);
-    } catch (e) {
-      if (e instanceof ImageTooLargeError) {
-        crossAlert("사진 크기 초과", "사진 크기는 10MB를 초과할 수 없습니다.");
-      } else {
-        crossAlert("오류", "이미지를 불러오지 못했습니다");
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleCropConfirm = async (blob: Blob) => {
-    setUploading(true);
-    try {
-      const path = await uploadBlob(blob);
-      setImagePath(path);
-      setCropUri(null);
-    } catch (e) {
-      if (e instanceof ImageTooLargeError) {
-        crossAlert("사진 크기 초과", "사진 크기는 10MB를 초과할 수 없습니다.");
-      } else {
-        crossAlert("오류", "이미지 업로드에 실패했습니다");
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const saving = uploading || isUpdating;
+  const saving = isUpdating;
 
   const handleSave = async () => {
     if (!nickname.trim()) {
@@ -125,7 +62,6 @@ export default function EditProfileScreen() {
         profileId: targetProfile.id,
         displayName: nickname.trim(),
         statusMessage: statusMessage.trim() || null,
-        ...(imagePath !== undefined ? { profileImageUrl: imagePath } : {}),
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: starFeedQueryKey }),
@@ -148,7 +84,7 @@ export default function EditProfileScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.avatarSection}>
-          <Pressable onPress={handlePickAvatar} disabled={uploading} style={styles.avatarPress}>
+          <Pressable onPress={() => canCustomizeAvatar && targetProfile && router.push({ pathname: "/profile/avatar", params: { profileId: targetProfile.id } } as never)} disabled={!canCustomizeAvatar} style={styles.avatarPress}>
             <Avatar
               uri={previewUri}
               name={targetProfile?.displayName ?? "?"}
@@ -157,15 +93,11 @@ export default function EditProfileScreen() {
               characterType={targetProfile?.type ?? "fan"}
             />
             <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
-              {uploading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Ionicons name="camera" size={16} color="#fff" />
-              )}
+              <Ionicons name={canCustomizeAvatar ? "options" : "lock-closed"} size={16} color="#fff" />
             </View>
           </Pressable>
-          <Pressable onPress={handlePickAvatar} disabled={uploading} hitSlop={8}>
-            <Text style={[styles.changePhotoText, { color: colors.primary }]}>{uploading ? "업로드 중..." : "사진 변경"}</Text>
+          <Pressable onPress={() => canCustomizeAvatar && targetProfile && router.push({ pathname: "/profile/avatar", params: { profileId: targetProfile.id } } as never)} disabled={!canCustomizeAvatar} hitSlop={8}>
+            <Text style={[styles.changePhotoText, { color: colors.primary }]}>{canCustomizeAvatar ? "아바타 꾸미기" : "성장 외형은 자동 적용됩니다"}</Text>
           </Pressable>
           <Pressable onPress={() => router.push("/profile/history" as never)} hitSlop={8}>
             <Text style={[styles.historyLink, { color: colors.mutedForeground }]}>프로필 히스토리 보기</Text>
@@ -221,11 +153,6 @@ export default function EditProfileScreen() {
         </Pressable>
       </CustomScrollView>
 
-      <ImageCropModal
-        imageUri={cropUri}
-        onCancel={() => setCropUri(null)}
-        onConfirm={handleCropConfirm}
-      />
     </KeyboardAvoidingView>
   );
 }

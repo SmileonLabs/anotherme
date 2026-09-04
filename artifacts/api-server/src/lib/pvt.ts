@@ -177,3 +177,59 @@ export async function grantPvtInTransaction(
 
   return { balanceAfter: transaction?.balanceAfter ?? balanceAfter };
 }
+
+/**
+ * Atomically spends STAR Point and records the negative ledger entry. Reusing
+ * the same source id is idempotent, which protects purchases from double taps
+ * and client retries.
+ */
+export async function spendPvtInTransaction(
+  tx: any,
+  params: {
+    userId: string;
+    amount: number;
+    source: PvtTransactionSource;
+    sourceId: string;
+    description: string;
+  },
+): Promise<{ balanceAfter: number; spent: boolean }> {
+  const amount = normalizePvtGrantAmount(params.amount);
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`anotherme:pvt:${params.source}:${params.sourceId}:SPEND`}))`,
+  );
+  const [existing] = await tx
+    .select({ balanceAfter: pvtTransactionsTable.balanceAfter })
+    .from(pvtTransactionsTable)
+    .where(and(
+      eq(pvtTransactionsTable.userId, params.userId),
+      eq(pvtTransactionsTable.source, params.source),
+      eq(pvtTransactionsTable.sourceId, params.sourceId),
+      eq(pvtTransactionsTable.type, "SPEND"),
+    ))
+    .limit(1);
+  if (existing) return { balanceAfter: existing.balanceAfter, spent: false };
+
+  await tx.insert(pvtWalletsTable).values({ userId: params.userId, balance: 0 })
+    .onConflictDoNothing({ target: pvtWalletsTable.userId });
+  const [wallet] = await tx.select().from(pvtWalletsTable)
+    .where(eq(pvtWalletsTable.userId, params.userId)).for("update");
+  if (!wallet || wallet.balance < amount) {
+    const error = new Error("Insufficient STAR Point balance");
+    (error as Error & { code?: string }).code = "INSUFFICIENT_STAR_POINT";
+    throw error;
+  }
+
+  const balanceAfter = wallet.balance - amount;
+  await tx.update(pvtWalletsTable).set({ balance: balanceAfter, updatedAt: new Date() })
+    .where(eq(pvtWalletsTable.userId, params.userId));
+  await tx.insert(pvtTransactionsTable).values({
+    userId: params.userId,
+    amount: -amount,
+    type: "SPEND",
+    source: params.source,
+    sourceId: params.sourceId,
+    description: params.description,
+    balanceAfter,
+  });
+  return { balanceAfter, spent: true };
+}
