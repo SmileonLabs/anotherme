@@ -99,8 +99,18 @@ const HOME_MISSIONS: readonly MissionPresentation[] = [
 
 const STAR_STATS = [
   { key: "charm", label: "매력", icon: "heart" as const, color: "#F062D7" },
-  { key: "stagePresence", label: "스타성", icon: "star" as const, color: "#FFE02F" },
-  { key: "bond", label: "유대감", icon: "message-circle" as const, color: "#39D9FF" },
+  {
+    key: "stagePresence",
+    label: "스타성",
+    icon: "star" as const,
+    color: "#FFE02F",
+  },
+  {
+    key: "bond",
+    label: "유대감",
+    icon: "message-circle" as const,
+    color: "#39D9FF",
+  },
   { key: "lore", label: "영향력", icon: "award" as const, color: "#F6C733" },
 ] as const;
 
@@ -113,7 +123,10 @@ function safeStat(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function readableJob(jobKey: string | null | undefined, fallback: string): string {
+function readableJob(
+  jobKey: string | null | undefined,
+  fallback: string,
+): string {
   if (!jobKey) return fallback;
   return jobKey
     .split(/[_-]/g)
@@ -122,7 +135,10 @@ function readableJob(jobKey: string | null | undefined, fallback: string): strin
     .join(" ");
 }
 
-function findMission(quests: Quest[], definition: MissionPresentation): Quest | undefined {
+function findMission(
+  quests: Quest[],
+  definition: MissionPresentation,
+): Quest | undefined {
   return quests.find((quest) => quest.key === definition.key);
 }
 
@@ -167,7 +183,9 @@ export default function HomeV2() {
   const [selectedMode, setSelectedMode] = React.useState<PlayModeChoice>("fan");
   const [refreshing, setRefreshing] = React.useState(false);
   const [profileSwitcherOpen, setProfileSwitcherOpen] = React.useState(false);
-  const [switchingProfileId, setSwitchingProfileId] = React.useState<string | null>(null);
+  const [switchingProfileId, setSwitchingProfileId] = React.useState<
+    string | null
+  >(null);
   const starImageUri = useMediaUri(equippedStar?.imageUrl);
   // Legacy FAN profiles copied the member account photo during initialization.
   // A character-facing avatar must never be replaced by that account image.
@@ -204,7 +222,9 @@ export default function HomeV2() {
         refetchPlayMode(),
         refetchProfiles(),
       ]);
-      await queryClient.invalidateQueries({ queryKey: getGetMyQuestsQueryKey() });
+      await queryClient.invalidateQueries({
+        queryKey: getGetMyQuestsQueryKey(),
+      });
     } finally {
       setRefreshing(false);
     }
@@ -226,7 +246,13 @@ export default function HomeV2() {
         refetchPlayMode(),
         refetchProfiles(),
       ]);
-    }, [refetchMe, refetchPlayMode, refetchProfiles, refetchQuests, refetchRequests]),
+    }, [
+      refetchMe,
+      refetchPlayMode,
+      refetchProfiles,
+      refetchQuests,
+      refetchRequests,
+    ]),
   );
 
   const selectMode = React.useCallback(
@@ -234,10 +260,11 @@ export default function HomeV2() {
       setSelectedMode(nextMode);
       const candidate =
         nextMode === "star"
-          ? profiles.find((profile) =>
-              profile.type === "star" &&
-              (profile.status === "active" || profile.status === "torimia") &&
-              (profile.id === equippedStar?.id || !equippedStar),
+          ? profiles.find(
+              (profile) =>
+                profile.type === "star" &&
+                (profile.status === "active" || profile.status === "torimia") &&
+                (profile.id === equippedStar?.id || !equippedStar),
             )
           : profiles.find(
               (profile) =>
@@ -251,14 +278,7 @@ export default function HomeV2() {
       }
       if (nextMode !== mode) await setMode(nextMode);
     },
-    [
-      activateProfile,
-      activeProfile?.id,
-      equippedStar,
-      mode,
-      profiles,
-      setMode,
-    ],
+    [activateProfile, activeProfile?.id, equippedStar, mode, profiles, setMode],
   );
 
   const isStar = selectedMode === "star";
@@ -266,24 +286,24 @@ export default function HomeV2() {
   const level = isStar
     ? activeProfile?.type === "star"
       ? activeProfile.level
-      : equippedStar?.level ?? 1
+      : (equippedStar?.level ?? 1)
     : activeProfile?.type === "fan"
       ? activeProfile.level
-      : fanProfile?.level ?? 1;
+      : (fanProfile?.level ?? 1);
   const xp = isStar
     ? activeProfile?.type === "star"
       ? activeProfile.xp
-      : equippedStar?.xp ?? 0
+      : (equippedStar?.xp ?? 0)
     : activeProfile?.type === "fan"
       ? activeProfile.xp
-      : fanProfile?.xp ?? 0;
+      : (fanProfile?.xp ?? 0);
   const floor = xpFloor(level);
   const nextTarget = Math.max(1, xpFloor(level + 1) - floor);
   const xpIntoLevel = Math.max(0, xp - floor);
   const xpPercent = Math.min(100, Math.round((xpIntoLevel / nextTarget) * 100));
   const profileName = isStar
-    ? equippedStar?.displayName ?? "STAR 미장착"
-    : activeProfile?.displayName ?? me?.nickname ?? "FAN";
+    ? (equippedStar?.displayName ?? "STAR 미장착")
+    : (activeProfile?.displayName ?? me?.nickname ?? "FAN");
   const jobName = isStar
     ? equippedStar
       ? readableJob(activeProfile?.jobKey, "STAR")
@@ -298,7 +318,9 @@ export default function HomeV2() {
     : FAN_STAT_META.map((stat) => ({
         ...stat,
         value: readFanStat(
-          activeProfile?.type === "fan" ? activeProfile.stats : fanProfile?.stats,
+          activeProfile?.type === "fan"
+            ? activeProfile.stats
+            : fanProfile?.stats,
           stat.key,
         ),
       }));
@@ -334,9 +356,24 @@ export default function HomeV2() {
     router.push("/profiles" as never);
   }, [router]);
 
+  const openAvatarCustomization = React.useCallback(
+    (profile: CharacterProfileView) => {
+      setProfileSwitcherOpen(false);
+      router.push({
+        pathname: "/profile/avatar",
+        params: { profileId: profile.id },
+      } as never);
+    },
+    [router],
+  );
+
   const openProfileCreation = React.useCallback(() => {
     setProfileSwitcherOpen(false);
-    router.push((selectedMode === "fan" ? "/profile/create-fan" : "/profiles/summon-star") as never);
+    router.push(
+      (selectedMode === "fan"
+        ? "/profile/create-fan"
+        : "/profiles/summon-star") as never,
+    );
   }, [router, selectedMode]);
 
   React.useEffect(() => {
@@ -345,7 +382,10 @@ export default function HomeV2() {
     }
   }, [profileSwitcherOpen]);
 
-  const contentMinHeight = Math.max(0, height - insets.top - insets.bottom - 70);
+  const contentMinHeight = Math.max(
+    0,
+    height - insets.top - insets.bottom - 70,
+  );
 
   return (
     <View style={styles.screen}>
@@ -359,7 +399,11 @@ export default function HomeV2() {
           },
         ]}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor="#8D43FF" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshAll}
+            tintColor="#8D43FF"
+          />
         }
       >
         <View style={styles.content}>
@@ -385,24 +429,39 @@ export default function HomeV2() {
                 accessibilityLabel="알림"
                 hitSlop={10}
                 onPress={() => router.push("/settings/notifications")}
-                style={({ pressed }) => [styles.bellButton, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.bellButton,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Feather name="bell" size={29} color="#F3F0EA" strokeWidth={1.6} />
-                {incomingRequests.length > 0 ? <View style={styles.notificationDot} /> : null}
+                <Feather
+                  name="bell"
+                  size={29}
+                  color="#F3F0EA"
+                  strokeWidth={1.6}
+                />
+                {incomingRequests.length > 0 ? (
+                  <View style={styles.notificationDot} />
+                ) : null}
               </Pressable>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="활동 프로필 전환"
                 accessibilityState={{ expanded: profileSwitcherOpen }}
                 onPress={() => setProfileSwitcherOpen((open) => !open)}
-                style={({ pressed }) => [styles.avatarRing, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.avatarRing,
+                  pressed && styles.pressed,
+                ]}
               >
                 <Avatar
                   uri={characterProfileImageUrl}
                   name={activeProfile?.displayName ?? me?.nickname ?? "FAN"}
                   size={39}
                   crop="face"
-                  characterType={activeProfile?.type ?? (isStar ? "star" : "fan")}
+                  characterType={
+                    activeProfile?.type ?? (isStar ? "star" : "fan")
+                  }
                 />
               </Pressable>
             </View>
@@ -423,6 +482,7 @@ export default function HomeV2() {
             topInset={insets.top}
             onClose={() => setProfileSwitcherOpen(false)}
             onSelect={(profile) => void switchProfile(profile)}
+            onCustomize={openAvatarCustomization}
             onAdd={openProfileCreation}
             onManage={openProfileManagement}
           />
@@ -435,7 +495,11 @@ export default function HomeV2() {
             ]}
           >
             {isStar && !starLocked ? (
-              <Image source={STAR_SCENE} style={StyleSheet.absoluteFill} contentFit="cover" />
+              <Image
+                source={STAR_SCENE}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+              />
             ) : !isStar ? (
               <View style={styles.fanSceneLayer}>
                 <CharacterAvatar
@@ -449,7 +513,11 @@ export default function HomeV2() {
             <LinearGradient
               colors={
                 isStar
-                  ? ["rgba(2,2,9,0.99)", "rgba(3,3,13,0.92)", "rgba(3,2,15,0.16)"]
+                  ? [
+                      "rgba(2,2,9,0.99)",
+                      "rgba(3,3,13,0.92)",
+                      "rgba(3,2,15,0.16)",
+                    ]
                   : ["rgba(2,2,9,0.99)", "rgba(3,3,13,0.95)", "rgba(3,2,15,0)"]
               }
               locations={isStar ? [0, 0.48, 1] : [0, 0.43, 0.64]}
@@ -458,7 +526,9 @@ export default function HomeV2() {
               style={StyleSheet.absoluteFill}
             />
             <View style={styles.characterCopy}>
-              <Text style={[styles.level, compact && styles.levelCompact]}>Lv. {level}</Text>
+              <Text style={[styles.level, compact && styles.levelCompact]}>
+                Lv. {level}
+              </Text>
               <View style={styles.xpTrack}>
                 <View style={[styles.xpFill, { width: `${xpPercent}%` }]} />
               </View>
@@ -467,15 +537,23 @@ export default function HomeV2() {
                 {isStar ? "STAR XP" : "FAN XP"}
               </Text>
               <Text style={styles.identity} numberOfLines={1}>
-                이름: {profileName} <Text style={styles.identityDivider}>│</Text> 직업: {jobName}
+                이름: {profileName}{" "}
+                <Text style={styles.identityDivider}>│</Text> 직업: {jobName}
               </Text>
               <View style={styles.statDivider} />
               <View style={styles.statList}>
                 {stats.map((stat) => (
                   <View key={stat.key} style={styles.statRow}>
-                    <Feather name={stat.icon} size={22} color={stat.color} strokeWidth={1.7} />
+                    <Feather
+                      name={stat.icon}
+                      size={22}
+                      color={stat.color}
+                      strokeWidth={1.7}
+                    />
                     <Text style={styles.statLabel}>{stat.label}</Text>
-                    <Text style={styles.statValue}>{stat.value.toLocaleString()}</Text>
+                    <Text style={styles.statValue}>
+                      {stat.value.toLocaleString()}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -489,23 +567,42 @@ export default function HomeV2() {
                 ]}
               >
                 {!starLocked ? <View style={styles.stageGlow} /> : null}
-                {starLocked ? <Image
-                  source={STAR_RANDOM_BOX}
-                  style={[styles.characterImage, compact && styles.characterImageCompact, styles.starCharacterImage, styles.lockedRandomBoxImage]}
-                  contentFit="contain"
-                  contentPosition="center"
-                /> : <CharacterAvatar
-                  uri={characterProfileImageUrl ?? starImageUri}
-                  fallbackSource={STAR_CHARACTER}
-                  crop="full"
-                  style={[styles.characterImage, compact && styles.characterImageCompact, styles.starCharacterImage]}
-                />}
+                {starLocked ? (
+                  <Image
+                    source={STAR_RANDOM_BOX}
+                    style={[
+                      styles.characterImage,
+                      compact && styles.characterImageCompact,
+                      styles.starCharacterImage,
+                      styles.lockedRandomBoxImage,
+                    ]}
+                    contentFit="contain"
+                    contentPosition="center"
+                  />
+                ) : (
+                  <CharacterAvatar
+                    uri={characterProfileImageUrl ?? starImageUri}
+                    fallbackSource={STAR_CHARACTER}
+                    crop="full"
+                    style={[
+                      styles.characterImage,
+                      compact && styles.characterImageCompact,
+                      styles.starCharacterImage,
+                    ]}
+                  />
+                )}
                 {starLocked ? (
                   <Pressable
                     onPress={() =>
-                      router.push({ pathname: "/(tabs)/persona", params: { focus: "star-nft" } })
+                      router.push({
+                        pathname: "/(tabs)/persona",
+                        params: { focus: "star-nft" },
+                      })
                     }
-                    style={({ pressed }) => [styles.starLockBadge, pressed && styles.pressed]}
+                    style={({ pressed }) => [
+                      styles.starLockBadge,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Feather name="lock" size={13} color="#FFFFFF" />
                     <Text style={styles.starLockText}>NFT 장착하기</Text>
@@ -520,7 +617,10 @@ export default function HomeV2() {
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push("/(tabs)/quests" as never)}
-              style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.moreButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Text style={styles.moreText}>더보기</Text>
               <Feather name="chevron-right" size={20} color="#DB32FF" />
@@ -534,7 +634,10 @@ export default function HomeV2() {
                 <MissionCard
                   key={definition.key}
                   definition={definition}
-                  progress={quest?.progress ?? (definition.key === "daily_attendance" ? 1 : 0)}
+                  progress={
+                    quest?.progress ??
+                    (definition.key === "daily_attendance" ? 1 : 0)
+                  }
                   target={quest?.target ?? definition.fallbackTarget}
                   onPress={() => router.push(definition.route as never)}
                 />
@@ -546,11 +649,22 @@ export default function HomeV2() {
             accessibilityRole="button"
             accessibilityLabel="RARE ON 쇼핑하러 가기"
             onPress={openRareOn}
-            style={({ pressed }) => [styles.banner, pressed && styles.bannerPressed]}
+            style={({ pressed }) => [
+              styles.banner,
+              pressed && styles.bannerPressed,
+            ]}
           >
-            <Image source={RARE_ON_BANNER} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <Image
+              source={RARE_ON_BANNER}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+            />
             <LinearGradient
-              colors={["rgba(7,3,17,0)", "rgba(6,3,16,0.30)", "rgba(6,3,16,0.96)"]}
+              colors={[
+                "rgba(7,3,17,0)",
+                "rgba(6,3,16,0.30)",
+                "rgba(6,3,16,0.96)",
+              ]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFill}
@@ -558,7 +672,9 @@ export default function HomeV2() {
             <View style={styles.bannerCopy}>
               <View style={styles.bannerEyebrow}>
                 <Feather name="award" size={15} color="#FFE9C9" />
-                <Text style={styles.bannerEyebrowText}>스타 리미티드 에디션 쇼핑몰</Text>
+                <Text style={styles.bannerEyebrowText}>
+                  스타 리미티드 에디션 쇼핑몰
+                </Text>
               </View>
               <Text style={styles.bannerTitle}>RARE ON</Text>
               <Text style={styles.bannerDescription} numberOfLines={1}>
@@ -640,8 +756,18 @@ function MissionCard({
         end={{ x: 0.9, y: 1 }}
         style={[styles.missionCard, { borderColor: definition.borderColor }]}
       >
-        <View style={[styles.missionIcon, { backgroundColor: definition.iconBackground }]}>
-          <Feather name={definition.icon} size={26} color={definition.accent} strokeWidth={1.6} />
+        <View
+          style={[
+            styles.missionIcon,
+            { backgroundColor: definition.iconBackground },
+          ]}
+        >
+          <Feather
+            name={definition.icon}
+            size={26}
+            color={definition.accent}
+            strokeWidth={1.6}
+          />
         </View>
         <Text style={styles.missionTitle} numberOfLines={1}>
           {definition.title}
@@ -883,7 +1009,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(220,189,255,0.55)",
   },
-  starLockText: { color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  starLockText: {
+    color: "#FFFFFF",
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+  },
   sectionHeader: {
     height: 49,
     flexDirection: "row",
@@ -892,8 +1022,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     paddingBottom: 10,
   },
-  sectionTitle: { color: "#F1EEE9", fontFamily: "Inter_500Medium", fontSize: 19 },
-  moreButton: { flexDirection: "row", alignItems: "center", paddingVertical: 3 },
+  sectionTitle: {
+    color: "#F1EEE9",
+    fontFamily: "Inter_500Medium",
+    fontSize: 19,
+  },
+  moreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 3,
+  },
   moreText: {
     color: "#A8A2A9",
     fontFamily: "Inter_400Regular",

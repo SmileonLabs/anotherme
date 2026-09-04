@@ -20,6 +20,7 @@ import {
   useGetPublicCharacterProfile,
 } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { PersonaCard } from "@/components/PersonaCard";
 import { StarLockCard } from "@/components/StarLockCard";
 import { NeonBackdrop } from "@/components/NeonUI";
@@ -42,6 +43,7 @@ import {
   type CharacterProfileView,
 } from "@/hooks/useCharacterProfiles";
 import { usePvtWallet } from "@/hooks/usePvtWallet";
+import { AVATAR_RECIPE_PREFIX } from "@/lib/avatarAssets";
 
 type StatKey =
   | "logic"
@@ -291,12 +293,10 @@ export function PersonaScreen({
       ];
   const syncTimeline = cardSync?.syncTimeline?.length
     ? cardSync.syncTimeline
-    : (ontologyProfile?.evidenceSummary ?? [])
-        .slice(0, 3)
-        .map((label) => ({
-          label,
-          createdAt: ontologyProfile?.updatedAt ?? null,
-        }));
+    : (ontologyProfile?.evidenceSummary ?? []).slice(0, 3).map((label) => ({
+        label,
+        createdAt: ontologyProfile?.updatedAt ?? null,
+      }));
   const recentEvents = persona?.recentEvents ?? [];
   const visibleRecentEvents = eventsExpanded
     ? recentEvents
@@ -394,7 +394,9 @@ export function PersonaScreen({
                 starUnlocked={starUnlocked}
                 equippedStar={equippedStar}
                 activeCharacterProfile={activeCharacterProfile}
-                onStarRegistration={() => router.push("/profiles/summon-star" as never)}
+                onStarRegistration={() =>
+                  router.push("/profiles/summon-star" as never)
+                }
                 onEditProfile={() => router.push("/profile/edit")}
                 onProfileManagement={() => router.push("/profiles" as never)}
                 onStarPoint={() => router.push("/pvt/wallet" as never)}
@@ -1354,10 +1356,18 @@ function MyDashboard({
         ...stat,
         value: readFanStat(stats, stat.key),
       }));
-  const characterSource =
-    isStarMode && equippedStar?.imageUrl
-      ? { uri: equippedStar.imageUrl }
-      : require("../../assets/images/home-v2/fan-character-scene.png");
+  const characterAvatarUri = isStarMode
+    ? activeCharacterProfile?.type === "star"
+      ? (activeCharacterProfile.profileImageUrl ??
+        equippedStar?.imageUrl ??
+        null)
+      : (equippedStar?.imageUrl ?? null)
+    : activeCharacterProfile?.profileImageUrl?.startsWith(AVATAR_RECIPE_PREFIX)
+      ? activeCharacterProfile.profileImageUrl
+      : null;
+  const characterFallback = isStarMode
+    ? require("../../assets/images/star-character-cutout.png")
+    : require("../../assets/images/home-v2/fan-character-scene.png");
   const membershipLabel =
     activeCharacterProfile?.type === "official_ai"
       ? "Official AI"
@@ -1382,11 +1392,11 @@ function MyDashboard({
         style={styles.dashboardProfileCard}
       >
         <View pointerEvents="none" style={styles.dashboardProfileGlow} />
-        <Image
-          source={characterSource}
+        <CharacterAvatar
+          uri={characterAvatarUri}
+          fallbackSource={characterFallback}
+          crop="full"
           style={styles.dashboardCharacterScene}
-          contentFit={isStarMode ? "contain" : "cover"}
-          contentPosition="center"
         />
         <View style={styles.dashboardProfileCopy}>
           <Text style={styles.dashboardNickname} numberOfLines={1}>
@@ -1576,7 +1586,9 @@ function MyDashboard({
         <View style={styles.dashboardProfileManagerCopy}>
           <Feather name="layers" size={18} color="#C89CFF" />
           <View>
-            <Text style={styles.dashboardProfileManagerTitle}>캐릭터 프로필 관리</Text>
+            <Text style={styles.dashboardProfileManagerTitle}>
+              캐릭터 프로필 관리
+            </Text>
             <Text style={styles.dashboardProfileManagerSub}>
               FAN 추가 · NFT STAR 소환 · 활동 프로필 전환
             </Text>

@@ -21,6 +21,7 @@ interface ProfileSwitcherProps {
   topInset: number;
   onClose: () => void;
   onSelect: (profile: CharacterProfileView) => void;
+  onCustomize: (profile: CharacterProfileView) => void;
   onAdd: () => void;
   onManage: () => void;
 }
@@ -34,6 +35,7 @@ export function ProfileSwitcher({
   topInset,
   onClose,
   onSelect,
+  onCustomize,
   onAdd,
   onManage,
 }: ProfileSwitcherProps) {
@@ -80,23 +82,30 @@ export function ProfileSwitcher({
                     isSwitching={profile.id === switchingProfileId}
                     disabled={
                       switchingProfileId !== null ||
-                      (profile.status !== "active" && profile.status !== "torimia")
+                      (profile.status !== "active" &&
+                        profile.status !== "torimia")
                     }
                     showDivider={index < availableProfiles.length - 1}
-                    onPress={() => onSelect(profile)}
+                    onSelect={() => onSelect(profile)}
+                    onCustomize={() => onCustomize(profile)}
                   />
                 ))}
               </ScrollView>
             ) : (
               <View style={styles.empty}>
-                <Text style={styles.emptyText}>사용할 수 있는 프로필이 없어요.</Text>
+                <Text style={styles.emptyText}>
+                  사용할 수 있는 프로필이 없어요.
+                </Text>
               </View>
             )}
 
             <Pressable
               accessibilityRole="button"
               onPress={onAdd}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.addButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Feather name="plus-circle" size={16} color="#C99AFF" />
               <Text style={styles.addText}>
@@ -106,7 +115,10 @@ export function ProfileSwitcher({
             <Pressable
               accessibilityRole="button"
               onPress={onManage}
-              style={({ pressed }) => [styles.manageButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.manageButton,
+                pressed && styles.pressed,
+              ]}
             >
               <Feather name="settings" size={15} color="#B997FF" />
               <Text style={styles.manageText}>프로필 관리</Text>
@@ -125,22 +137,35 @@ function ProfileSwitcherRow({
   isSwitching,
   disabled,
   showDivider,
-  onPress,
+  onSelect,
+  onCustomize,
 }: {
   profile: CharacterProfileView;
   isActive: boolean;
   isSwitching: boolean;
   disabled: boolean;
   showDivider: boolean;
-  onPress: () => void;
+  onSelect: () => void;
+  onCustomize: () => void;
 }) {
   const buttonLabel =
-    profile.status === "active" || profile.status === "torimia" ? "바꾸기" : "잠김";
+    profile.status === "active" || profile.status === "torimia"
+      ? "아바타 꾸미기"
+      : "잠김";
 
   return (
     <View style={[styles.row, showDivider && styles.rowDivider]}>
-      <View style={styles.rowIdentity}>
-        <View style={[styles.rowAvatarRing, isActive && styles.rowAvatarRingActive]}>
+      <Pressable
+        accessibilityRole="menuitem"
+        accessibilityLabel={`${profile.displayName} 프로필로 전환`}
+        accessibilityState={{ selected: isActive, disabled }}
+        disabled={disabled}
+        onPress={onSelect}
+        style={({ pressed }) => [styles.rowIdentity, pressed && styles.pressed]}
+      >
+        <View
+          style={[styles.rowAvatarRing, isActive && styles.rowAvatarRingActive]}
+        >
           <Avatar
             uri={profile.profileImageUrl}
             name={profile.displayName}
@@ -154,14 +179,14 @@ function ProfileSwitcherRow({
             {profile.displayName}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       <Pressable
         accessibilityRole="menuitem"
         accessibilityLabel={`${profile.displayName} 프로필 ${buttonLabel}`}
         accessibilityState={{ selected: isActive, disabled }}
         disabled={disabled}
-        onPress={onPress}
+        onPress={onCustomize}
         style={({ pressed }) => [
           styles.switchButton,
           isActive && styles.activeButton,
@@ -274,7 +299,7 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
   },
   switchButton: {
-    minWidth: 67,
+    minWidth: 96,
     height: 36,
     paddingHorizontal: 12,
     borderRadius: 9,
