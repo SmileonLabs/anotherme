@@ -11,6 +11,8 @@ import type { PublicUser } from './publicUser';
 
 export interface CallWithCaller {
   id: string;
+  /** @nullable */
+  attemptId?: string | null;
   roomName: string;
   callerId: string;
   calleeId: string;

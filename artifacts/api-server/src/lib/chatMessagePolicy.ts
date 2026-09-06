@@ -24,7 +24,12 @@ export type MessageValidationResult =
   | { ok: false; error: string };
 
 export type MessagePageResult =
-  | { ok: true; limit: number; beforeSeq: number | null }
+  | {
+      ok: true;
+      limit: number;
+      beforeSeq: number | null;
+      afterSeq: number | null;
+    }
   | { ok: false; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -165,15 +170,32 @@ function parsePositiveInteger(value: string | undefined, max: number): number | 
   return Number.isSafeInteger(parsed) && parsed <= max ? parsed : undefined;
 }
 
+function parseNonNegativeInteger(value: string | undefined, max: number): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed <= max ? parsed : undefined;
+}
+
 export function parseMessagePage(query: Record<string, unknown>): MessagePageResult {
   const rawLimit = singleQueryValue(query.limit);
   const rawBeforeSeq = singleQueryValue(query.beforeSeq);
+  const rawAfterSeq = singleQueryValue(query.afterSeq);
   const limit = rawLimit === undefined ? DEFAULT_MESSAGE_PAGE_SIZE : parsePositiveInteger(rawLimit, MAX_MESSAGE_PAGE_SIZE);
   if (!limit) return { ok: false, error: `limit must be between 1 and ${MAX_MESSAGE_PAGE_SIZE}` };
-  if (rawBeforeSeq === undefined) return { ok: true, limit, beforeSeq: null };
-  const beforeSeq = parsePositiveInteger(rawBeforeSeq, Number.MAX_SAFE_INTEGER);
-  if (!beforeSeq) return { ok: false, error: "beforeSeq must be a positive integer" };
-  return { ok: true, limit, beforeSeq };
+  if (rawBeforeSeq !== undefined && rawAfterSeq !== undefined) {
+    return { ok: false, error: "beforeSeq and afterSeq are mutually exclusive" };
+  }
+  if (rawBeforeSeq !== undefined) {
+    const beforeSeq = parsePositiveInteger(rawBeforeSeq, Number.MAX_SAFE_INTEGER);
+    if (!beforeSeq) return { ok: false, error: "beforeSeq must be a positive integer" };
+    return { ok: true, limit, beforeSeq, afterSeq: null };
+  }
+  if (rawAfterSeq !== undefined) {
+    const afterSeq = parseNonNegativeInteger(rawAfterSeq, Number.MAX_SAFE_INTEGER);
+    if (afterSeq === undefined) return { ok: false, error: "afterSeq must be a non-negative integer" };
+    return { ok: true, limit, beforeSeq: null, afterSeq };
+  }
+  return { ok: true, limit, beforeSeq: null, afterSeq: null };
 }
 
 function canonicalize(value: unknown): string {

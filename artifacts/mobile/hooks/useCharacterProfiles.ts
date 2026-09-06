@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React from "react";
 import { customFetch, setCharacterProfileIdGetter } from "@workspace/api-client-react";
 import { playModeQueryKey } from "./usePlayMode";
+import {
+  CHARACTER_PROFILES_ROOT_KEY,
+  prepareProfileStateTransition,
+} from "@/lib/profileQueryIsolation";
 
 export type CharacterProfileType = "fan" | "star" | "official_ai";
 export type CharacterProfileStatus = "active" | "locked" | "torimia" | "archived";
@@ -28,18 +32,53 @@ export interface CharacterProfileState {
   profiles: CharacterProfileView[];
 }
 
-export const characterProfilesQueryKey = ["character-profiles"] as const;
+export const characterProfilesQueryKey = [CHARACTER_PROFILES_ROOT_KEY] as const;
+const characterProfileTransitionScope = { id: "character-profile-transition" } as const;
 
 export function useCharacterProfiles() {
   const queryClient = useQueryClient();
+  const commitProfileState = React.useCallback(
+    async (state: CharacterProfileState) => {
+      const previous = queryClient.getQueryData<CharacterProfileState>(
+        characterProfilesQueryKey,
+      )?.activeProfile.id;
+      const switched = prepareProfileStateTransition(
+        queryClient,
+        previous,
+        state.activeProfile.id,
+        (profileId) => setCharacterProfileIdGetter(() => profileId),
+      );
+      queryClient.setQueryData(characterProfilesQueryKey, state);
+
+      if (switched) {
+        await queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] !== characterProfilesQueryKey[0],
+          refetchType: "active",
+        });
+      }
+    },
+    [queryClient],
+  );
   const query = useQuery({
     queryKey: characterProfilesQueryKey,
-    queryFn: () =>
-      customFetch<CharacterProfileState>("/api/users/me/profiles", {
+    queryFn: async () => {
+      const state = await customFetch<CharacterProfileState>("/api/users/me/profiles", {
         responseType: "json",
-      }),
+      });
+      const previous = queryClient.getQueryData<CharacterProfileState>(
+        characterProfilesQueryKey,
+      )?.activeProfile.id;
+      prepareProfileStateTransition(
+        queryClient,
+        previous,
+        state.activeProfile.id,
+        (profileId) => setCharacterProfileIdGetter(() => profileId),
+      );
+      return state;
+    },
   });
   const activation = useMutation({
+    scope: characterProfileTransitionScope,
     mutationFn: (profileId: string) =>
       customFetch<CharacterProfileState>("/api/users/me/active-profile", {
         method: "PATCH",
@@ -47,12 +86,7 @@ export function useCharacterProfiles() {
         body: JSON.stringify({ profileId }),
       }),
     onSuccess: async (state) => {
-      setCharacterProfileIdGetter(() => state.activeProfile.id);
-      queryClient.setQueryData(characterProfilesQueryKey, state);
-      await queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] !== characterProfilesQueryKey[0],
-        refetchType: "active",
-      });
+      await commitProfileState(state);
     },
   });
   const update = useMutation({
@@ -65,6 +99,7 @@ export function useCharacterProfiles() {
     onSuccess: (state) => queryClient.setQueryData(characterProfilesQueryKey, state),
   });
   const createFan = useMutation({
+    scope: characterProfileTransitionScope,
     mutationFn: (body: { displayName: string; handle?: string; profileImageUrl?: string | null; customizeDefault?: boolean; customization: Record<string, unknown> }) =>
       customFetch<CharacterProfileState>("/api/users/me/fan-profiles", {
         method: "POST",
@@ -72,25 +107,18 @@ export function useCharacterProfiles() {
         body: JSON.stringify(body),
       }),
     onSuccess: async (state) => {
-      setCharacterProfileIdGetter(() => state.activeProfile.id);
-      queryClient.setQueryData(characterProfilesQueryKey, state);
+      await commitProfileState(state);
       await queryClient.invalidateQueries({ queryKey: playModeQueryKey });
     },
   });
   const archive = useMutation({
+    scope: characterProfileTransitionScope,
     mutationFn: (profileId: string) => customFetch<CharacterProfileState>(`/api/users/me/profiles/${profileId}`, { method: "DELETE", responseType: "json" }),
     onSuccess: async (state) => {
-      setCharacterProfileIdGetter(() => state.activeProfile.id);
-      queryClient.setQueryData(characterProfilesQueryKey, state);
+      await commitProfileState(state);
       await queryClient.invalidateQueries({ queryKey: playModeQueryKey });
     },
   });
-
-  React.useEffect(() => {
-    const profileId = query.data?.activeProfile.id;
-    if (!profileId) return;
-    setCharacterProfileIdGetter(() => profileId);
-  }, [query.data?.activeProfile.id]);
 
   return {
     state: query.data,

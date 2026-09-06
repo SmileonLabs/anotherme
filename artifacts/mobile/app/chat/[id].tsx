@@ -21,7 +21,6 @@ import {
   getGetDungeonStateQueryKey,
   getGetRoomQueryKey,
   getListRoomsQueryKey,
-  useFetchRoomMessages,
   useGetDungeonState,
   useGetMe,
   useGetRoom,
@@ -42,6 +41,8 @@ import { MessageComposer } from "@/components/MessageComposer";
 import { useColors } from "@/hooks/useColors";
 import { useChatPolling } from "@/hooks/useChatPolling";
 import { useChatSendHandlers } from "@/hooks/useChatSendHandlers";
+import { useReliableRoomMessages } from "@/hooks/useReliableRoomMessages";
+import { useEphemeralSignal } from "@/hooks/useEphemeralSignal";
 import { useInvertedChatListController } from "@/hooks/useInvertedChatListController";
 import { useChatRoomIdentity } from "@/hooks/useChatRoomIdentity";
 import {
@@ -53,6 +54,7 @@ import {
 } from "@/hooks/useAnotherMe";
 import { useCall } from "@/components/CallProvider";
 import { usePlayMode } from "@/hooks/usePlayMode";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 import { crossAlert } from "@/lib/crossAlert";
 import { mediaUri } from "@/lib/apiBase";
 import { userDisplayName } from "@/lib/friendNames";
@@ -72,6 +74,7 @@ import {
   unpinMessage,
   type DeleteMessageScope,
 } from "@/lib/messageActions";
+import { chatDiagnosticVariantEnabled } from "@/lib/chatPerformanceDiagnostics";
 
 const EMPTY_STICKER_BADGES: MessageStickerBadge[] = [];
 
@@ -115,11 +118,15 @@ export default function ChatScreen() {
   const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
 
   const { data: me } = useGetMe();
+  const { activeProfile } = useCharacterProfiles();
   const { data: room } = useGetRoom(id);
   const { data: roomsForForward = [] } = useListRooms({
     query: { enabled: !!forwardTarget, queryKey: getListRoomsQueryKey() },
   });
-  const { data: messages = [], refetch } = useFetchRoomMessages(id);
+  const { data: messages = [], refetch } = useReliableRoomMessages(id, {
+    userId: me?.id,
+    profileId: activeProfile?.id,
+  });
   const { data: typingUsers = [], refetch: refetchTyping } = useGetTypingUsers(id);
   const leaveRoom = useLeaveRoom();
   const summonAnotherMe = useSummonAnotherMe();
@@ -652,9 +659,11 @@ export default function ChatScreen() {
     handlePickImage,
     handlePickFile,
     handleCancelUpload,
+    retryMessage,
   } = useChatSendHandlers({
     roomId: id,
     me,
+    senderProfile: activeProfile,
     replyTo,
     clearReply,
     clientKeyRef,
@@ -664,12 +673,20 @@ export default function ChatScreen() {
     clearDungeonThinking: clearDmThinking,
   });
 
-  // Fired by the composer (already throttled there) while the user types.
-  const handleTyping = React.useCallback(() => {
-    // Typing is a best-effort heartbeat. Calling the request directly avoids
-    // subscribing the entire chat screen to mutation pending/success state.
-    void signalTyping(id).catch(() => {});
-  }, [id]);
+  // Typing is a disposable heartbeat: never queue stale signals, never allow
+  // more than one request in flight, and abandon a stalled cellular request.
+  const handleTyping = useEphemeralSignal(
+    (signal) =>
+      chatDiagnosticVariantEnabled("disableTyping")
+        ? Promise.resolve()
+        : signalTyping(id, { signal }),
+    {
+      minIntervalMs: 2_000,
+      timeoutMs: 4_000,
+      operationKey: id,
+      diagnosticName: "typing",
+    },
+  );
 
   const handleSummonAnotherMe = React.useCallback(async () => {
     if (!otherMember?.id || summonAnotherMe.isPending) return;
@@ -838,10 +855,16 @@ export default function ChatScreen() {
       const showSender = isAnotherMe || (isMultiParty && !isMe && !isDM && prevMsg?.senderId !== item.senderId);
       const showDate = !prevMsg || !isSameDay(prevMsg.createdAt, item.createdAt);
       let readLabel: string | undefined;
-      if (isMe && isUserMessage && !isDungeon) {
-        if ((item as any)._pending) {
+      const deliveryState = (item as any)._deliveryState as
+        | "pending"
+        | "failed"
+        | undefined;
+      if (isMe && isUserMessage) {
+        if (deliveryState === "failed") {
+          readLabel = "전송 실패";
+        } else if (deliveryState === "pending" || (item as any)._pending) {
           readLabel = "전송 중";
-        } else if (readReceiptOtherCount > 0) {
+        } else if (!isDungeon && readReceiptOtherCount > 0) {
           const readCount = item.readCount ?? 0;
           if (isGroupRoom) {
             const unread = Math.max(0, readReceiptOtherCount - readCount);
@@ -893,6 +916,10 @@ export default function ChatScreen() {
             stickerBadges={(item as any).stickerBadges ?? EMPTY_STICKER_BADGES}
             linkPreview={(item as any).linkPreview ?? null}
             onPressReply={scrollToMessage}
+            retryClientMessageId={
+              deliveryState === "failed" ? item.clientMessageId : null
+            }
+            onRetryMessage={retryMessage}
           />
         </>
       );
@@ -917,6 +944,7 @@ export default function ChatScreen() {
       listMessages,
       me?.id,
       readReceiptOtherCount,
+      retryMessage,
       scrollToMessage,
       selectedMessageId,
     ],
@@ -984,7 +1012,9 @@ export default function ChatScreen() {
         ref={listRef}
         data={listMessages}
         inverted
-        keyExtractor={(item) => clientKeyRef.current.get(item.id) ?? item.id}
+        keyExtractor={(item) =>
+          clientKeyRef.current.get(item.id) ?? item.clientMessageId ?? item.id
+        }
         style={[styles.flex, { opacity: listReady ? 1 : 0 }]}
         contentContainerStyle={styles.messageList}
         ListEmptyComponent={

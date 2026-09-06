@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -15,6 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StickerPicker } from "./StickerPicker";
 import { useColors } from "@/hooks/useColors";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
+import {
+  chatPerformanceDiagnosticsEnabled,
+  chatPerformanceNow,
+  noteChatInputCommit,
+  noteChatRender,
+} from "@/lib/chatPerformanceDiagnostics";
 
 const INPUT_MIN_HEIGHT = 44;
 const INPUT_MAX_HEIGHT = 124;
@@ -66,6 +72,7 @@ function MessageComposerComponent({
   replyPreview,
   onCancelReply,
 }: MessageComposerProps) {
+  noteChatRender("composerRenders");
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const pwaBottom = usePwaBottomInset();
@@ -77,6 +84,20 @@ function MessageComposerComponent({
   const composingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
   const submittingRef = useRef(false);
+  const inputStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const startedAt = inputStartedAtRef.current;
+    if (startedAt === null) return;
+    inputStartedAtRef.current = null;
+    if (typeof requestAnimationFrame === "function") {
+      // Do not cancel the previous sample when another key lands before the
+      // frame. Cancelling systematically hides the worst bursts on a busy iPhone.
+      requestAnimationFrame(() => noteChatInputCommit(startedAt));
+      return;
+    }
+    noteChatInputCommit(startedAt);
+  }, [text]);
 
   const handleContentSizeChange = useCallback((event: any) => {
     const next = Math.min(
@@ -159,6 +180,11 @@ function MessageComposerComponent({
     },
     [submit],
   );
+
+  const handleDiagnosticKeyDown = useCallback(() => {
+    if (!chatPerformanceDiagnosticsEnabled()) return;
+    inputStartedAtRef.current = chatPerformanceNow();
+  }, []);
 
   const hasText = text.trim().length > 0;
   const uploadLabel = uploading === "image" ? "사진 업로드 중" : uploading === "file" ? "파일 업로드 중" : null;
@@ -273,6 +299,7 @@ function MessageComposerComponent({
               ? ({
                   onCompositionStart: handleCompositionStart,
                   onCompositionEnd: handleCompositionEnd,
+                  onKeyDown: handleDiagnosticKeyDown,
                 } as object)
               : {})}
             onFocus={() => setShowStickers(false)}

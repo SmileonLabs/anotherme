@@ -306,6 +306,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserProfile"
 
+    delete:
+      operationId: revokePushToken
+      tags: [users]
+      summary: Revoke a push token owned by the authenticated user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenInput"
+      responses:
+        "204":
+          description: Token revoked or already absent
+
   /users/me/persona:
     get:
       operationId: getMyPersona
@@ -1297,6 +1312,12 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: afterSeq
+          in: query
+          description: Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.
+          schema:
+            type: integer
+            minimum: 0
         - name: limit
           in: query
           description: Page size, from 1 through 100 (defaults to 50).
@@ -1605,6 +1626,8 @@ paths:
       tags: [calls]
       summary: Start a voice or video call
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CallAttemptId"
       requestBody:
         required: true
         content:
@@ -1647,6 +1670,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Call
@@ -1667,6 +1691,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Call accepted
@@ -1687,6 +1712,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Joined
@@ -1707,6 +1733,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call declined
@@ -1727,6 +1755,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call cancelled
@@ -1747,6 +1777,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call ended
@@ -1754,6 +1786,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Call"
+
+  /calls/diagnostics:
+    post:
+      operationId: reportQueuedCallDiagnostic
+      tags: [calls]
+      summary: Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueuedCallDiagnostic"
+      responses:
+        "204":
+          description: Diagnostic accepted
+        "400":
+          description: Invalid or oversized diagnostic
+        "404":
+          description: Call ID is not visible to the authenticated participant
+
+  /calls/{id}/diagnostics:
+    post:
+      operationId: reportCallDiagnostic
+      tags: [calls]
+      summary: Report a diagnostic for a known call
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CallAttemptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallDiagnostic"
+      responses:
+        "204":
+          description: Diagnostic accepted
+        "400":
+          description: Invalid diagnostic
+        "404":
+          description: Call not found or caller is not a participant
+
+  /webhooks/livekit:
+    post:
+      operationId: receiveLiveKitWebhook
+      tags: [calls]
+      summary: Receive a signature-verified LiveKit lifecycle webhook
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/webhook+json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Webhook accepted or irrelevant to an active call
+        "401":
+          description: Invalid LiveKit signature
 
   /storage/uploads/request-url:
     post:
@@ -4645,6 +4746,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Failed call, or the existing terminal call
@@ -4846,6 +4949,20 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    CallAttemptId:
+      name: X-Call-Attempt-Id
+      in: header
+      required: false
+      description: UUID shared by every stage of one client call attempt.
+      schema: { type: string, format: uuid }
+    CallOperationId:
+      name: X-Idempotency-Key
+      in: header
+      required: false
+      description: UUID that makes a terminal call-control operation replay-safe.
+      schema: { type: string, format: uuid }
 
   schemas:
     ApiError:
@@ -7707,6 +7824,36 @@ components:
         media:
           $ref: "#/components/schemas/CallMedia"
 
+    CallDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [phase]
+      properties:
+        phase: { type: string, minLength: 1, maxLength: 100 }
+        platform: { type: string, maxLength: 50 }
+        role: { type: string, maxLength: 50 }
+        details:
+          type: object
+          maxProperties: 20
+          additionalProperties: true
+
+    QueuedCallDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [eventId, attemptId, phase, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        attemptId: { type: string, format: uuid }
+        callId: { type: string, format: uuid }
+        phase: { type: string, minLength: 1, maxLength: 100 }
+        platform: { type: string, maxLength: 50 }
+        role: { type: string, maxLength: 50 }
+        occurredAt: { type: string, format: date-time }
+        details:
+          type: object
+          maxProperties: 20
+          additionalProperties: true
+
     CallMedia:
       type: string
       enum: [audio, video]
@@ -7730,6 +7877,9 @@ components:
       properties:
         id:
           type: string
+        attemptId:
+          type: ["string", "null"]
+          format: uuid
         roomName:
           type: string
         callerId:
@@ -7763,6 +7913,9 @@ components:
       properties:
         id:
           type: string
+        attemptId:
+          type: ["string", "null"]
+          format: uuid
         roomName:
           type: string
         callerId:

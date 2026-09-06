@@ -13,6 +13,11 @@ export type FetchRoomMessagesParams = {
  */
 beforeSeq?: number;
 /**
+ * Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.
+ * @minimum 0
+ */
+afterSeq?: number;
+/**
  * Page size, from 1 through 100 (defaults to 50).
  * @minimum 1
  * @maximum 100

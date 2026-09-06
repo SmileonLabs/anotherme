@@ -18,13 +18,18 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import {
+  setAuthTokenGetter,
+  setBaseUrl,
+  setCharacterProfileIdGetter,
+} from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CallProvider } from "@/components/CallProvider";
 import { PushRegistrar } from "@/components/PushRegistrar";
 import { NativePushRegistrar } from "@/components/NativePushRegistrar";
 import { ForegroundNotifier } from "@/components/ForegroundNotifier";
 import { UnreadBadgeSync } from "@/components/UnreadBadgeSync";
+import { ChatOutboxDrainer } from "@/components/ChatOutboxDrainer";
 import { ThemeModeContext, ThemeModeProvider, useThemeMode } from "@/hooks/useThemeMode";
 import { useColors } from "@/hooks/useColors";
 import { getApiBase } from "@/lib/apiBase";
@@ -60,14 +65,16 @@ try {
   SplashScreen.preventAutoHideAsync();
 } catch {}
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 5000,
+function createSessionQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 1,
+        staleTime: 5000,
+      },
     },
-  },
-});
+  });
+}
 
 function RealtimeInvalidator() {
   useRealtimeInvalidation();
@@ -80,20 +87,26 @@ function PresenceHeartbeat() {
 }
 
 function ApiAuthBridge({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
-  const authState = !isLoaded ? null : isSignedIn ? "signed-in" : "signed-out";
-  const [readyState, setReadyState] = useState<"signed-in" | "signed-out" | null>(null);
+  const { isLoaded, isSignedIn, getToken, userId, sessionId } = useAuth();
+  const authState = !isLoaded
+    ? null
+    : isSignedIn
+      ? `signed-in:${sessionId ?? userId ?? "pending"}`
+      : "signed-out";
+  const [readyState, setReadyState] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoaded) {
       setAuthTokenGetter(null);
+      setCharacterProfileIdGetter(null);
       setReadyState(null);
       return;
     }
 
     if (!isSignedIn) {
       setAuthTokenGetter(null);
-      setReadyState("signed-out");
+      setCharacterProfileIdGetter(null);
+      setReadyState(authState);
       return;
     }
 
@@ -101,12 +114,13 @@ function ApiAuthBridge({ children }: { children: React.ReactNode }) {
     // until the bearer-token getter is installed, otherwise the first wave of
     // /users/me and /admin requests races this effect and receives 401.
     setAuthTokenGetter(() => getToken());
-    setReadyState("signed-in");
+    setReadyState(authState);
     return () => {
       setAuthTokenGetter(null);
+      setCharacterProfileIdGetter(null);
       setReadyState(null);
     };
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, sessionId, userId]);
 
   if (!authState || readyState !== authState) {
     return (
@@ -117,6 +131,24 @@ function ApiAuthBridge({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+function SessionQueryProvider({ children }: { children: React.ReactNode }) {
+  const { isSignedIn, userId, sessionId } = useAuth();
+  const sessionKey = isSignedIn
+    ? sessionId ?? userId ?? "signed-in-pending"
+    : "signed-out";
+  const client = React.useMemo(createSessionQueryClient, [sessionKey]);
+
+  useEffect(
+    () => () => {
+      void client.cancelQueries();
+      client.clear();
+    },
+    [client],
+  );
+
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
 function RootStackNav() {
@@ -373,12 +405,13 @@ export default function RootLayout() {
         >
           <ApiAuthBridge>
             <SafeAreaProvider>
-              <QueryClientProvider client={queryClient}>
+              <SessionQueryProvider>
                 <WalletConnectionProvider>
                   <GestureHandlerRootView style={{ flex: 1 }}>
                     <CallProvider>
                     <RealtimeInvalidator />
                     <PresenceHeartbeat />
+                    <ChatOutboxDrainer />
                     <UnreadBadgeSync />
                     {Platform.OS === "web" ? (
                       <>
@@ -395,7 +428,7 @@ export default function RootLayout() {
                     </CallProvider>
                   </GestureHandlerRootView>
                 </WalletConnectionProvider>
-              </QueryClientProvider>
+              </SessionQueryProvider>
             </SafeAreaProvider>
           </ApiAuthBridge>
         </ClerkProvider>

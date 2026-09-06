@@ -282,6 +282,18 @@ export const RegisterPushTokenResponse = zod.object({
 
 
 /**
+ * @summary Revoke a push token owned by the authenticated user
+ */
+export const revokePushTokenBodyTokenMax = 8192;
+
+
+
+export const RevokePushTokenBody = zod.object({
+  "token": zod.string().min(1).max(revokePushTokenBodyTokenMax)
+})
+
+
+/**
  * @summary Get my Another Me persona
  */
 export const GetMyPersonaResponse = zod.object({
@@ -1216,12 +1228,15 @@ export const FetchRoomMessagesParams = zod.object({
 })
 
 
+export const fetchRoomMessagesQueryAfterSeqMin = 0;
+
 export const fetchRoomMessagesQueryLimitMax = 100;
 
 
 
 export const FetchRoomMessagesQueryParams = zod.object({
   "beforeSeq": zod.coerce.number().min(1).optional().describe('Return messages with roomSeq lower than this cursor.'),
+  "afterSeq": zod.coerce.number().min(fetchRoomMessagesQueryAfterSeqMin).optional().describe('Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.'),
   "limit": zod.coerce.number().min(1).max(fetchRoomMessagesQueryLimitMax).optional().describe('Page size, from 1 through 100 (defaults to 50).')
 })
 
@@ -1499,6 +1514,10 @@ export const UnblockUserParams = zod.object({
 /**
  * @summary Start a voice or video call
  */
+export const CreateCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const CreateCallBody = zod.object({
   "calleeId": zod.string().uuid(),
   "roomId": zod.string().uuid().optional(),
@@ -1511,6 +1530,7 @@ export const CreateCallBody = zod.object({
  */
 export const ListIncomingCallsResponseItem = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1547,8 +1567,13 @@ export const GetCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const GetCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const GetCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1572,9 +1597,14 @@ export const AcceptCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const AcceptCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const AcceptCallResponse = zod.object({
   "call": zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1601,9 +1631,14 @@ export const JoinCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const JoinCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const JoinCallResponse = zod.object({
   "call": zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1630,8 +1665,14 @@ export const DeclineCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const DeclineCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const DeclineCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1655,8 +1696,14 @@ export const CancelCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const CancelCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const CancelCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1680,8 +1727,14 @@ export const EndCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const EndCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const EndCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
@@ -1695,6 +1748,64 @@ export const EndCallResponse = zod.object({
   "cancelledAt": zod.string().nullish(),
   "endedAt": zod.string().nullish(),
   "durationSec": zod.number().nullish()
+})
+
+
+/**
+ * @summary Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+ */
+export const reportQueuedCallDiagnosticBodyPhaseMax = 100;
+
+export const reportQueuedCallDiagnosticBodyPlatformMax = 50;
+
+export const reportQueuedCallDiagnosticBodyRoleMax = 50;
+
+
+
+export const ReportQueuedCallDiagnosticBody = zod.object({
+  "eventId": zod.string().uuid(),
+  "attemptId": zod.string().uuid(),
+  "callId": zod.string().uuid().optional(),
+  "phase": zod.string().min(1).max(reportQueuedCallDiagnosticBodyPhaseMax),
+  "platform": zod.string().max(reportQueuedCallDiagnosticBodyPlatformMax).optional(),
+  "role": zod.string().max(reportQueuedCallDiagnosticBodyRoleMax).optional(),
+  "occurredAt": zod.coerce.date(),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
+ * @summary Report a diagnostic for a known call
+ */
+export const ReportCallDiagnosticParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ReportCallDiagnosticHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
+export const reportCallDiagnosticBodyPhaseMax = 100;
+
+export const reportCallDiagnosticBodyPlatformMax = 50;
+
+export const reportCallDiagnosticBodyRoleMax = 50;
+
+
+
+export const ReportCallDiagnosticBody = zod.object({
+  "phase": zod.string().min(1).max(reportCallDiagnosticBodyPhaseMax),
+  "platform": zod.string().max(reportCallDiagnosticBodyPlatformMax).optional(),
+  "role": zod.string().max(reportCallDiagnosticBodyRoleMax).optional(),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
+ * @summary Receive a signature-verified LiveKit lifecycle webhook
+ */
+export const ReceiveLiveKitWebhookHeader = zod.object({
+  "Authorization": zod.string()
 })
 
 
@@ -5325,8 +5436,14 @@ export const FailCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const FailCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const FailCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),

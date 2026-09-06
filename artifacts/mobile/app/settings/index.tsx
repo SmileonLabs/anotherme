@@ -13,6 +13,7 @@ import { useColors } from "@/hooks/useColors";
 import { gradientsDark } from "@/constants/colors";
 import { useKnowledgeAdminMe } from "@/hooks/useKnowledge";
 import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
+import { clearChatOutboxForOwner } from "@/lib/chatMessageOutbox";
 
 function ThemeSelector() {
   const colors = useColors();
@@ -103,10 +104,31 @@ export default function SettingsScreen() {
   const { data: knowledgeAdmin } = useKnowledgeAdminMe();
   const { activeProfile } = useCharacterProfiles();
 
+  const performLogout = async () => {
+    const previousOwnerId = me?.id ?? null;
+    // Clear before and after Clerk changes session state. The first removal
+    // minimizes plaintext lifetime; the second is idempotent and closes the
+    // window in which an already-settling request could finish during sign-out.
+    if (previousOwnerId) {
+      await clearChatOutboxForOwner(previousOwnerId).catch(() => undefined);
+    }
+    try {
+      await signOut();
+    } finally {
+      if (previousOwnerId) {
+        await clearChatOutboxForOwner(previousOwnerId).catch(() => undefined);
+      }
+    }
+  };
+
   const handleLogout = () => {
     crossAlert("로그아웃", "정말 로그아웃하시겠습니까?", [
       { text: "취소", style: "cancel" },
-      { text: "로그아웃", style: "destructive", onPress: () => void signOut() },
+      {
+        text: "로그아웃",
+        style: "destructive",
+        onPress: () => void performLogout(),
+      },
     ]);
   };
 

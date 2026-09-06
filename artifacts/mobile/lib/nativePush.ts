@@ -17,6 +17,7 @@ import {
   terminalCallIdFromData,
   type IncomingCallIntent,
 } from "@/lib/callNotifications";
+import { nativePushMatchesCurrentOwner } from "@/lib/nativePushOwner";
 
 export const nativePushSupported = Platform.OS !== "web";
 export const GENERAL_NOTIFICATION_CHANNEL_ID = "general-notifications";
@@ -75,6 +76,14 @@ export async function registerForPushTokenAsync(): Promise<string | null> {
     }
     const token = await messaging().getToken();
     return token || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getExistingNativePushToken(): Promise<string | null> {
+  try {
+    return (await messaging().getToken()) || null;
   } catch {
     return null;
   }
@@ -139,6 +148,7 @@ export function subscribeForegroundIncomingCall(
   handler: (intent: IncomingCallIntent) => void,
 ): () => void {
   return messaging().onMessage(async (remoteMessage) => {
+    if (!(await nativePushMatchesCurrentOwner(remoteMessage.data?.recipientUserId))) return;
     const terminalCallId = terminalCallIdFromData(remoteMessage.data);
     if (terminalCallId) {
       await cancelIncomingCallNotification(terminalCallId);
@@ -161,7 +171,8 @@ export function subscribePushTokenRefresh(
 export function subscribeNotificationOpen(
   handler: (url: string) => void,
 ): () => void {
-  return messaging().onNotificationOpenedApp((remoteMessage) => {
+  return messaging().onNotificationOpenedApp(async (remoteMessage) => {
+    if (!(await nativePushMatchesCurrentOwner(remoteMessage.data?.recipientUserId))) return;
     const url = notificationUrlFromData(remoteMessage.data);
     if (url) handler(url);
   });
@@ -170,6 +181,9 @@ export function subscribeNotificationOpen(
 export async function getInitialNotificationUrl(): Promise<string | null> {
   try {
     const remoteMessage = await messaging().getInitialNotification();
+    if (!(await nativePushMatchesCurrentOwner(remoteMessage?.data?.recipientUserId))) {
+      return null;
+    }
     return notificationUrlFromData(remoteMessage?.data);
   } catch {
     return null;

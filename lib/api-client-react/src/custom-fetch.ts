@@ -1,5 +1,9 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  /** Caller-selected deadline. Long uploads/streams should use their own policy. */
+  timeoutMs?: number;
+  /** Stable correlation id for retries of one logical attempt. */
+  requestId?: string;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
@@ -8,6 +12,46 @@ export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
 export type CharacterProfileIdGetter = () => string | null;
+
+function withoutQueryOrFragment(url: string): string {
+  const boundary = url.search(/[?#]/);
+  return boundary < 0 ? url : url.slice(0, boundary);
+}
+
+export class RequestTimeoutError extends Error {
+  readonly name = "RequestTimeoutError";
+  readonly method: string;
+  readonly url: string;
+  readonly timeoutMs: number;
+  readonly requestId: string;
+
+  constructor(
+    method: string,
+    url: string,
+    timeoutMs: number,
+    requestId: string,
+  ) {
+    const safeUrl = withoutQueryOrFragment(url);
+    super(`Request timed out after ${timeoutMs}ms (${method} ${safeUrl})`);
+    this.method = method;
+    this.url = safeUrl;
+    this.timeoutMs = timeoutMs;
+    this.requestId = requestId;
+  }
+}
+
+/**
+ * The signed-in session changed while a request was acquiring credentials or
+ * awaiting its response. The old response must never be delivered into the new
+ * session's cache or mutation callbacks.
+ */
+export class StaleRequestContextError extends Error {
+  readonly name = "StaleRequestContextError";
+
+  constructor() {
+    super("The authenticated request context changed before completion.");
+  }
+}
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -19,6 +63,8 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 let _characterProfileIdGetter: CharacterProfileIdGetter | null = null;
+let _authContextGeneration = 0;
+let _profileContextGeneration = 0;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -44,10 +90,14 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+  _authContextGeneration += 1;
 }
 
 export function setCharacterProfileIdGetter(getter: CharacterProfileIdGetter | null): void {
+  const previous = _characterProfileIdGetter?.() ?? null;
+  const next = getter?.() ?? null;
   _characterProfileIdGetter = getter;
+  if (previous !== next) _profileContextGeneration += 1;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -82,6 +132,84 @@ function resolveUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
   if (isUrl(input)) return input.toString();
   return input.url;
+}
+
+export function createRequestId(): string {
+  const cryptoObject = globalThis.crypto as Crypto | undefined;
+  if (typeof cryptoObject?.randomUUID === "function") return cryptoObject.randomUUID();
+  return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function abortFailure(signal: AbortSignal): unknown {
+  const reason = (signal as AbortSignal & { reason?: unknown }).reason;
+  if (reason !== undefined) return reason;
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function requestAbortContext(
+  signals: Array<AbortSignal | null | undefined>,
+  timeoutMs: number | undefined,
+) {
+  const sources = [...new Set(signals.filter((signal): signal is AbortSignal => Boolean(signal)))];
+  if (sources.length === 0 && timeoutMs == null) {
+    return { signal: undefined, timedOut: () => false, cleanup: () => {} };
+  }
+
+  const controller = new AbortController();
+  let timeoutReached = false;
+  const listeners = sources.map((source) => {
+    const abortFromCaller = () => {
+      if (!controller.signal.aborted) controller.abort(abortFailure(source));
+    };
+    if (source.aborted) abortFromCaller();
+    else source.addEventListener("abort", abortFromCaller, { once: true });
+    return { source, abortFromCaller };
+  });
+
+  const timer = timeoutMs == null
+    ? undefined
+    : setTimeout(() => {
+        if (controller.signal.aborted) return;
+        timeoutReached = true;
+        controller.abort();
+      }, timeoutMs);
+
+  return {
+    signal: controller.signal,
+    timedOut: () => timeoutReached,
+    cleanup: () => {
+      if (timer != null) clearTimeout(timer);
+      for (const { source, abortFromCaller } of listeners) {
+        source.removeEventListener("abort", abortFromCaller);
+      }
+    },
+  };
+}
+
+async function waitWithSignal<T>(value: PromiseLike<T> | T, signal: AbortSignal | undefined) {
+  if (!signal) return await value;
+  if (signal.aborted) throw abortFailure(signal);
+
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(abortFailure(signal));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(value).then(
+      (result) => {
+        cleanup();
+        resolve(result);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
 }
 
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
@@ -201,7 +329,7 @@ export class ApiError<T = unknown> extends Error {
     this.headers = response.headers;
     this.response = response;
     this.method = requestInfo.method;
-    this.url = response.url || requestInfo.url;
+    this.url = withoutQueryOrFragment(response.url || requestInfo.url);
   }
 }
 
@@ -222,8 +350,9 @@ export class ResponseParseError extends Error {
     cause: unknown,
     requestInfo: { method: string; url: string },
   ) {
+    const safeUrl = withoutQueryOrFragment(response.url || requestInfo.url);
     super(
-      `Failed to parse response from ${requestInfo.method} ${response.url || requestInfo.url} ` +
+      `Failed to parse response from ${requestInfo.method} ${safeUrl} ` +
         `(${response.status} ${response.statusText}) as JSON`,
     );
     Object.setPrototypeOf(this, new.target.prototype);
@@ -233,7 +362,7 @@ export class ResponseParseError extends Error {
     this.headers = response.headers;
     this.response = response;
     this.method = requestInfo.method;
-    this.url = response.url || requestInfo.url;
+    this.url = safeUrl;
     this.rawBody = rawBody;
     this.cause = cause;
   }
@@ -333,7 +462,13 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const {
+    responseType = "auto",
+    timeoutMs,
+    requestId = createRequestId(),
+    headers: headersInit,
+    ...init
+  } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -342,6 +477,18 @@ export async function customFetch<T = unknown>(
   }
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+  if (!headers.has("x-request-id")) headers.set("x-request-id", requestId);
+
+  // Capture one coherent caller context before the first await. Reading the
+  // profile getter after token acquisition could otherwise turn a request
+  // initiated as profile A into a write attributed to profile B.
+  const authContextGeneration = _authContextGeneration;
+  const profileContextGeneration = _profileContextGeneration;
+  const authTokenGetter = _authTokenGetter;
+  const capturedProfileId =
+    !headers.has("x-character-profile-id") && _characterProfileIdGetter
+      ? _characterProfileIdGetter()
+      : null;
 
   if (
     typeof init.body === "string" &&
@@ -355,28 +502,69 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
-  // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
-    if (token) {
-      headers.set("authorization", `Bearer ${token}`);
-    }
-  }
-
-  if (_characterProfileIdGetter && !headers.has("x-character-profile-id")) {
-    const profileId = _characterProfileIdGetter();
-    if (profileId) headers.set("x-character-profile-id", profileId);
-  }
-
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
-
-  if (!response.ok) {
-    const errorData = await parseErrorBody(response, method);
-    throw new ApiError(response, errorData, requestInfo);
+  if (timeoutMs != null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new TypeError("customFetch: timeoutMs must be a positive finite number.");
   }
+  const requestSignal = isRequest(input) ? input.signal : undefined;
+  const abortContext = requestAbortContext([requestSignal, init.signal], timeoutMs);
+  try {
+    if (abortContext.signal?.aborted) throw abortFailure(abortContext.signal);
 
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+    // Token acquisition is part of the caller-visible request deadline. The
+    // getter itself may not be cancellable, but a late result is ignored after
+    // abort and never starts a network request.
+    if (authTokenGetter && !headers.has("authorization")) {
+      const token = await waitWithSignal(authTokenGetter(), abortContext.signal);
+      if (_authContextGeneration !== authContextGeneration) {
+        throw new StaleRequestContextError();
+      }
+      if (token) headers.set("authorization", `Bearer ${token}`);
+    }
+
+    if (capturedProfileId) {
+      headers.set("x-character-profile-id", capturedProfileId);
+    }
+
+    const response = await waitWithSignal(
+      fetch(input, {
+        ...init,
+        method,
+        headers,
+        signal: abortContext.signal,
+      }),
+      abortContext.signal,
+    );
+
+    // Keep the deadline alive until the response body has been consumed. A
+    // fetch promise resolves when response headers arrive; clearing the timer
+    // there would allow a stalled JSON/body stream to hang indefinitely.
+    if (!response.ok) {
+      const errorData = await waitWithSignal(
+        parseErrorBody(response, method),
+        abortContext.signal,
+      );
+      throw new ApiError(response, errorData, requestInfo);
+    }
+
+    const parsed = await waitWithSignal(
+      parseSuccessBody(response, responseType, requestInfo),
+      abortContext.signal,
+    );
+    if (
+      _authContextGeneration !== authContextGeneration ||
+      _profileContextGeneration !== profileContextGeneration
+    ) {
+      throw new StaleRequestContextError();
+    }
+    return parsed as T;
+  } catch (error) {
+    if (timeoutMs != null && abortContext.timedOut()) {
+      throw new RequestTimeoutError(method, requestInfo.url, timeoutMs, requestId);
+    }
+    throw error;
+  } finally {
+    abortContext.cleanup();
+  }
 }

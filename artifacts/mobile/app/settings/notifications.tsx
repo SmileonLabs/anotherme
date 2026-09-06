@@ -15,6 +15,10 @@ import {
   registerForPushTokenAsync,
   type NativePushState,
 } from "@/lib/nativePush";
+import {
+  pushRegistrationCoordinator,
+  type PushRegistrationOwnerToken,
+} from "@/lib/pushRegistrationCoordinator";
 
 export default function NotificationsScreen() {
   const colors = useColors();
@@ -23,6 +27,26 @@ export default function NotificationsScreen() {
   const registerPushToken = useRegisterPushToken();
   const [pushState, setPushState] = React.useState<WebPushState | null>(null);
   const [nativeState, setNativeState] = React.useState<NativePushState | null>(null);
+  const mountedRef = React.useRef(true);
+  React.useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  const registerForOwner = React.useCallback(
+    async (ownerToken: PushRegistrationOwnerToken, token: string) => {
+      if (!pushRegistrationCoordinator.isCurrent(ownerToken)) {
+        throw new Error("push owner changed during registration");
+      }
+      const registered = await pushRegistrationCoordinator.enqueue(ownerToken, () =>
+        registerPushToken.mutateAsync({ data: { token } }),
+      );
+      if (!registered) throw new Error("push owner changed during registration");
+    },
+    [registerPushToken],
+  );
 
   const refreshPushState = React.useCallback(async () => {
     if (!webPushSupported) {
@@ -62,11 +86,11 @@ export default function NotificationsScreen() {
     };
   }, [refreshPushState, refreshNativeState]);
 
-  const enablePush = React.useCallback(async () => {
-    const result = await subscribeWebPush((token) =>
-      registerPushToken.mutateAsync({ data: { token } }),
-    );
+  const enablePush = React.useCallback(async (ownerToken: PushRegistrationOwnerToken) => {
+    const result = await subscribeWebPush((token) => registerForOwner(ownerToken, token));
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     await refreshPushState();
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     if (result !== "granted") {
       crossAlert(
         "알림 권한 필요",
@@ -77,11 +101,13 @@ export default function NotificationsScreen() {
       return false;
     }
     return true;
-  }, [registerPushToken, refreshPushState]);
+  }, [refreshPushState, registerForOwner]);
 
-  const enableNativePush = React.useCallback(async () => {
+  const enableNativePush = React.useCallback(async (ownerToken: PushRegistrationOwnerToken) => {
     const token = await registerForPushTokenAsync();
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     await refreshNativeState();
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     if (!token) {
       crossAlert(
         "알림 권한 필요",
@@ -89,15 +115,22 @@ export default function NotificationsScreen() {
       );
       return false;
     }
-    await registerPushToken.mutateAsync({ data: { token } });
+    await registerForOwner(ownerToken, token);
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     await refreshNativeState();
+    if (!mountedRef.current || !pushRegistrationCoordinator.isCurrent(ownerToken)) return false;
     return true;
-  }, [registerPushToken, refreshNativeState]);
+  }, [refreshNativeState, registerForOwner]);
 
   const handleToggle = async (value: boolean) => {
+    const operationOwner = pushRegistrationCoordinator.capture();
+    if (!operationOwner || operationOwner.ownerId !== me?.id) return;
+    const isCurrentOperation = () =>
+      mountedRef.current && pushRegistrationCoordinator.isCurrent(operationOwner);
     try {
       if (value && !webPushSupported && !nativePushSupported) {
         await refetch();
+        if (!isCurrentOperation()) return;
         crossAlert(
           "알림을 사용할 수 없습니다",
           "이 브라우저에서는 푸시 알림을 사용할 수 없습니다. iPhone/iPad는 Safari에서 홈 화면에 추가한 PWA로 열어야 하고, PC는 Chrome/Edge 같은 푸시 지원 브라우저가 필요합니다.",
@@ -107,23 +140,31 @@ export default function NotificationsScreen() {
       // On web, secure the push subscription BEFORE persisting "enabled" so the
       // stored flag never claims notifications are on without a usable subscription.
       if (value && webPushSupported) {
-        const ok = await enablePush();
+        const ok = await enablePush(operationOwner);
+        if (!isCurrentOperation()) return;
         if (!ok) {
           await refetch();
+          if (!isCurrentOperation()) return;
           return;
         }
       }
       if (value && nativePushSupported) {
-        const ok = await enableNativePush();
+        const ok = await enableNativePush(operationOwner);
+        if (!isCurrentOperation()) return;
         if (!ok) {
           await refetch();
+          if (!isCurrentOperation()) return;
           return;
         }
       }
+      if (!isCurrentOperation()) return;
       await updateMe.mutateAsync({ data: { notificationEnabled: value } });
+      if (!isCurrentOperation()) return;
       await refetch();
     } catch {
+      if (!isCurrentOperation()) return;
       await refetch();
+      if (!isCurrentOperation()) return;
       crossAlert("오류", "설정 변경에 실패했습니다");
     }
   };
@@ -198,7 +239,16 @@ export default function NotificationsScreen() {
                 : "이 기기에서 푸시 구독이 등록되지 않았습니다. 아래 버튼을 눌러 활성화하면 앱을 내려놓아도 알림 소리가 울립니다."}
             </Text>
             <Pressable
-              onPress={enablePush}
+              onPress={() => {
+                const owner = pushRegistrationCoordinator.capture();
+                if (owner && owner.ownerId === me?.id) {
+                  void enablePush(owner).catch(() => {
+                    if (pushRegistrationCoordinator.isCurrent(owner)) {
+                      crossAlert("오류", "알림 활성화에 실패했습니다");
+                    }
+                  });
+                }
+              }}
               style={[styles.button, { backgroundColor: colors.primary }]}
             >
               <Text style={styles.buttonText}>알림 활성화</Text>
@@ -215,7 +265,16 @@ export default function NotificationsScreen() {
               이 기기에서 푸시 알림 권한 또는 FCM 기기 등록이 완료되지 않았습니다. 아래 버튼을 눌러 시스템 권한을 허용하고 기기를 등록해 주세요.
             </Text>
             <Pressable
-              onPress={enableNativePush}
+              onPress={() => {
+                const owner = pushRegistrationCoordinator.capture();
+                if (owner && owner.ownerId === me?.id) {
+                  void enableNativePush(owner).catch(() => {
+                    if (pushRegistrationCoordinator.isCurrent(owner)) {
+                      crossAlert("오류", "기기 알림 활성화에 실패했습니다");
+                    }
+                  });
+                }
+              }}
               style={[styles.button, { backgroundColor: colors.primary }]}
             >
               <Text style={styles.buttonText}>기기 알림 활성화</Text>

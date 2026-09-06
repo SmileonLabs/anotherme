@@ -9,15 +9,8 @@ import React, {
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@clerk/expo";
-import { RoomEvent, Track, type Room } from "livekit-client";
+import { DisconnectReason, RoomEvent, Track, type Room } from "livekit-client";
 import {
-  useAcceptCall,
-  useCancelCall,
-  useCreateCall,
-  useDeclineCall,
-  useEndCall,
-  getCall,
-  useJoinCall,
   type Call,
   type CallWithCaller,
 } from "@workspace/api-client-react";
@@ -27,6 +20,7 @@ import {
   leaveCall,
   prepareVideoCall,
   primeAudioPlayback,
+  resumeCallAudio,
   setCameraEnabled,
   setMuted,
   switchCamera,
@@ -41,22 +35,69 @@ import { cancelIncomingCallNotification } from "@/lib/callNotifications";
 import { useColors } from "@/hooks/useColors";
 import { Avatar } from "@/components/Avatar";
 import { CallVideoView } from "@/components/CallVideoView";
-import { markCallFailed, reportCallDiagnostic } from "@/lib/callApi";
+import {
+  acceptTrackedCall,
+  configureCallReliabilityOwner,
+  createCallAttemptId,
+  createTrackedCall,
+  declineTrackedCall,
+  enqueueCallTermination,
+  flushPendingCallReliability,
+  getTrackedCall,
+  installCallReliabilityFlushTriggers,
+  joinTrackedCall,
+  markCallFailed,
+  reportCallDiagnostic,
+  resolveTrackedCallAttempt,
+} from "@/lib/callApi";
 import { crossAlert } from "@/lib/crossAlert";
 import { isTerminalCallStatus, type CallMode } from "@/lib/callLifecycle";
+import { canApplyCallCardAction } from "@/lib/callAttemptPolicy";
+import {
+  CALL_STATUS_CONFIRM_DELAYS_MS,
+  INITIAL_REMOTE_AUDIO_OBSERVE_MS,
+  classifyAudioPath,
+  classifyVideoPath,
+  connectionRecoverySignal,
+  shouldAttemptFinalRejoin,
+  type AudioPathState,
+  type CallMediaSnapshot,
+  type VideoPathState,
+} from "@/lib/callRecoveryPolicy";
 import { useCallPolling } from "@/hooks/useCallPolling";
 import { usePlayMode } from "@/hooks/usePlayMode";
 
 const RING_TIMEOUT_MS = 45_000;
 const KEEPALIVE_MIN_INTERVAL_MS = 8000;
-const DISCONNECT_GRACE_MS = 12_000;
-const REMOTE_MEDIA_READY_TIMEOUT_MS = 25_000;
+const MEDIA_STATS_TIMEOUT_MS = 4_000;
 
-type MediaReadinessDiagnostic = (phase: string, details?: Record<string, unknown>) => void;
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-function remoteMediaSnapshot(room: Room, media: CallMedia) {
-  let microphoneSubscribed = false;
-  let cameraSubscribed = media !== "video";
+async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("operation_timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function remoteMediaSnapshot(room: Room): CallMediaSnapshot {
+  let remoteMicrophonePublished = false;
+  let remoteMicrophoneSubscribed = false;
+  let remoteMicrophoneMuted = false;
+  let remoteMicrophoneLive = false;
+  let remoteCameraPublished = false;
+  let remoteCameraSubscribed = false;
+  let remoteCameraMuted = false;
+  let remoteCameraLive = false;
   let participantCount = 0;
 
   for (const participant of room.remoteParticipants.values()) {
@@ -70,114 +111,143 @@ function remoteMediaSnapshot(room: Room, media: CallMedia) {
     // instead of failing the entire join from this synchronous readiness check.
     try {
       if (microphone && !microphone.track) microphone.setSubscribed(true);
-      if (media === "video" && camera && !camera.track) camera.setSubscribed(true);
+      if (camera && !camera.track) camera.setSubscribed(true);
     } catch {}
-    microphoneSubscribed ||= !!microphone?.track;
-    cameraSubscribed ||= !!camera?.track;
+    remoteMicrophonePublished ||= !!microphone;
+    remoteMicrophoneSubscribed ||= !!microphone?.track;
+    remoteMicrophoneMuted ||= !!microphone?.isMuted;
+    remoteMicrophoneLive ||= microphone?.track?.mediaStreamTrack?.readyState === "live";
+    remoteCameraPublished ||= !!camera;
+    remoteCameraSubscribed ||= !!camera?.track;
+    remoteCameraMuted ||= !!camera?.isMuted;
+    remoteCameraLive ||= camera?.track?.mediaStreamTrack?.readyState === "live";
   }
 
+  const localMicrophone = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+  const localMicrophoneTrack = localMicrophone?.track?.mediaStreamTrack;
   return {
     participantCount,
-    microphoneSubscribed,
-    cameraSubscribed,
-    ready: participantCount > 0 && microphoneSubscribed && cameraSubscribed,
-    connectionState: room.state,
+    localMicrophonePublished: !!localMicrophone?.track,
+    localMicrophoneMuted: !!localMicrophone?.isMuted || !!localMicrophoneTrack?.muted,
+    localMicrophoneLive: localMicrophoneTrack?.readyState === "live",
+    remoteMicrophonePublished,
+    remoteMicrophoneSubscribed,
+    remoteMicrophoneMuted,
+    remoteMicrophoneLive,
+    remoteCameraPublished,
+    remoteCameraSubscribed,
+    remoteCameraMuted,
+    remoteCameraLive,
+    playbackAllowed: Platform.OS !== "web" || room.canPlaybackAudio,
   };
 }
 
-/**
- * A call being accepted in the API only means the signaling workflow advanced.
- * Do not show "통화 중" until this client has actually subscribed to the other
- * participant's microphone (and camera for video). Both peers run this check, so
- * an active UI now represents a real two-way media path rather than one local
- * camera/microphone publication.
- */
-function waitForRemoteMedia(
-  room: Room,
-  media: CallMedia,
-  diagnostic: MediaReadinessDiagnostic,
-): Promise<void> {
-  const initial = remoteMediaSnapshot(room, media);
-  diagnostic("remote_media_wait_start", initial);
-  if (initial.ready) {
-    diagnostic("remote_media_ready", initial);
-    return Promise.resolve();
+function disconnectReasonName(reason: unknown): string {
+  if (typeof reason === "number") {
+    return (DisconnectReason as unknown as Record<number, string>)[reason] ?? String(reason);
   }
+  return reason == null ? "unknown" : String(reason);
+}
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const events = [
-      RoomEvent.ParticipantConnected,
-      RoomEvent.ParticipantActive,
-      RoomEvent.TrackPublished,
-      RoomEvent.TrackSubscribed,
-      RoomEvent.TrackUnmuted,
-      RoomEvent.Reconnected,
-    ] as const;
+type StatsTrack = {
+  getRTCStatsReport?: () => Promise<unknown>;
+};
 
-    const cleanup = () => {
-      clearTimeout(timer);
-      events.forEach((event) => room.off(event, check));
-      room.off(RoomEvent.TrackSubscriptionFailed, onSubscriptionFailed);
-      room.off(RoomEvent.Disconnected, onDisconnected);
-    };
-    const finish = (err?: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (err) reject(err);
-      else resolve();
-    };
-    const check = () => {
-      const snapshot = remoteMediaSnapshot(room, media);
-      if (!snapshot.ready) return;
-      diagnostic("remote_media_ready", snapshot);
-      finish();
-    };
-    const onSubscriptionFailed = (
-      trackSid: string,
-      _participant: unknown,
-      reason?: unknown,
-    ) => {
-      diagnostic("remote_media_subscription_failed", {
-        trackSid,
-        reason: reason == null ? undefined : String(reason),
-        ...remoteMediaSnapshot(room, media),
-      });
-    };
-    const onDisconnected = (reason?: unknown) => {
-      diagnostic("remote_media_room_disconnected", {
-        reason: reason == null ? undefined : String(reason),
-        ...remoteMediaSnapshot(room, media),
-      });
-      finish(new Error("media_room_disconnected"));
-    };
-    const timer = setTimeout(() => {
-      const snapshot = remoteMediaSnapshot(room, media);
-      diagnostic("remote_media_timeout", {
-        timeoutMs: REMOTE_MEDIA_READY_TIMEOUT_MS,
-        ...snapshot,
-      });
-      finish(new Error("remote_media_timeout"));
-    }, REMOTE_MEDIA_READY_TIMEOUT_MS);
+type MediaFlowCounters = {
+  audioBytesSent: number | null;
+  audioBytesReceived: number | null;
+  videoBytesSent: number | null;
+  videoBytesReceived: number | null;
+};
 
-    events.forEach((event) => room.on(event, check));
-    room.on(RoomEvent.TrackSubscriptionFailed, onSubscriptionFailed);
-    room.on(RoomEvent.Disconnected, onDisconnected);
-    check();
-  });
+function counterFromStats(
+  report: unknown,
+  statsType: "outbound-rtp" | "inbound-rtp",
+  field: "bytesSent" | "bytesReceived",
+): number | null {
+  let total = 0;
+  let found = false;
+  const visit = (raw: unknown) => {
+    if (!raw || typeof raw !== "object") return;
+    const stat = raw as Record<string, unknown>;
+    if (stat.type !== statsType) return;
+    const value = stat[field];
+    if (typeof value !== "number" || !Number.isFinite(value)) return;
+    total += value;
+    found = true;
+  };
+  const iterable = report as {
+    forEach?: (callback: (value: unknown) => void) => void;
+    values?: () => Iterable<unknown>;
+  } | null;
+  if (typeof iterable?.forEach === "function") iterable.forEach(visit);
+  else if (typeof iterable?.values === "function") {
+    for (const value of iterable.values()) visit(value);
+  }
+  return found ? total : null;
+}
+
+async function trackCounter(
+  track: StatsTrack | null | undefined,
+  statsType: "outbound-rtp" | "inbound-rtp",
+  field: "bytesSent" | "bytesReceived",
+): Promise<number | null> {
+  if (typeof track?.getRTCStatsReport !== "function") return null;
+  try {
+    return counterFromStats(
+      await settleWithin(track.getRTCStatsReport(), MEDIA_STATS_TIMEOUT_MS),
+      statsType,
+      field,
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function mediaFlowCounters(room: Room): Promise<MediaFlowCounters> {
+  const localMicrophone = room.localParticipant.getTrackPublication(Track.Source.Microphone)
+    ?.track as StatsTrack | undefined;
+  const localCamera = room.localParticipant.getTrackPublication(Track.Source.Camera)
+    ?.track as StatsTrack | undefined;
+  const remoteMicrophones: StatsTrack[] = [];
+  const remoteCameras: StatsTrack[] = [];
+  for (const participant of room.remoteParticipants.values()) {
+    const microphone = participant.getTrackPublication(Track.Source.Microphone)?.track;
+    const camera = participant.getTrackPublication(Track.Source.Camera)?.track;
+    if (microphone) remoteMicrophones.push(microphone as StatsTrack);
+    if (camera) remoteCameras.push(camera as StatsTrack);
+  }
+  const sumRemote = async (
+    tracks: StatsTrack[],
+    field: "bytesSent" | "bytesReceived",
+  ) => {
+    const counters = await Promise.all(
+      tracks.map((track) => trackCounter(track, "inbound-rtp", field)),
+    );
+    const available = counters.filter((value): value is number => value != null);
+    return available.length > 0 ? available.reduce((sum, value) => sum + value, 0) : null;
+  };
+  const [audioBytesSent, audioBytesReceived, videoBytesSent, videoBytesReceived] =
+    await Promise.all([
+      trackCounter(localMicrophone, "outbound-rtp", "bytesSent"),
+      sumRemote(remoteMicrophones, "bytesReceived"),
+      trackCounter(localCamera, "outbound-rtp", "bytesSent"),
+      sumRemote(remoteCameras, "bytesReceived"),
+    ]);
+  return { audioBytesSent, audioBytesReceived, videoBytesSent, videoBytesReceived };
+}
+
+function counterDelta(current: number | null, previous: number | null): number | null {
+  if (current == null || previous == null) return null;
+  return Math.max(0, current - previous);
 }
 
 function callFailureCode(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message === "call_foreground_service_unavailable") return "native_module_unavailable";
   if (message === "microphone_permission_denied") return "microphone_permission_denied";
-  if (message === "camera_permission_denied") return "camera_permission_denied";
   if (message === "audio_session_start_failed") return "audio_session_start_failed";
   if (message === "microphone_publish_failed") return "microphone_publish_failed";
-  if (message === "camera_publish_failed") return "camera_publish_failed";
-  if (message === "remote_media_timeout") return "remote_media_timeout";
-  if (message === "media_room_disconnected") return "media_room_disconnected";
   if (/network|websocket|signal|connect/i.test(message)) return "transport_connect_failed";
   return "unknown_join_failure";
 }
@@ -203,7 +273,11 @@ export function useCall(): CallContextValue {
 }
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, userId } = useAuth();
+
+  useEffect(() => {
+    configureCallReliabilityOwner(isSignedIn ? userId : null);
+  }, [isSignedIn, userId]);
 
   return (
     <CallContext.Provider
@@ -233,26 +307,36 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const [liveRoom, setLiveRoom] = useState<Room | null>(null);
   const [cameraOn, setCameraOnState] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [audioPath, setAudioPath] = useState<AudioPathState>("waiting_for_participant");
+  const [videoPath, setVideoPath] = useState<VideoPathState>("not_requested");
+  const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
+  const [recoveryStage, setRecoveryStage] = useState<"none" | "sdk" | "validating" | "rejoining">("none");
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const activeCallRef = useRef(activeCall);
+  activeCallRef.current = activeCall;
+  const incomingRef = useRef(incoming);
+  incomingRef.current = incoming;
+  const liveRoomRef = useRef(liveRoom);
+  liveRoomRef.current = liveRoom;
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
   const cameraWantedRef = useRef(true);
   const expectedDisconnectRef = useRef(false);
   const disconnectHandlingRef = useRef(false);
   const joinedCallIdRef = useRef<string | null>(null);
   const mediaJoinCallIdRef = useRef<string | null>(null);
+  // Server generation and local diagnostic correlation are deliberately
+  // separate for legacy calls whose durable attempt_id is null.
+  const attemptIdRef = useRef<string | undefined>(undefined);
+  const diagnosticAttemptIdRef = useRef(createCallAttemptId());
+  const sessionGenerationRef = useRef(0);
+  const finalRejoinAttemptsRef = useRef(0);
   const appStateRef = useRef(AppState.currentState);
   const mediaAppStateRef = useRef(AppState.currentState);
   const lastKeepAliveAtRef = useRef(0);
-  const disconnectGraceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disconnectGenerationRef = useRef(0);
-
-  const createCall = useCreateCall();
-  const acceptCall = useAcceptCall();
-  const declineCall = useDeclineCall();
-  const cancelCall = useCancelCall();
-  const endCall = useEndCall();
-  const joinCallMut = useJoinCall();
+  const expectedDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Realtime events drive incoming calls; this is a slow fallback for reconnect gaps.
   const { incomingList, refetchIncoming, watched, refetchWatched, watchId } = useCallPolling({
@@ -265,6 +349,11 @@ function CallManager({ children }: { children: React.ReactNode }) {
     if (modeRef.current !== "idle") return;
     const next = incomingList?.[0];
     if (next) {
+      sessionGenerationRef.current += 1;
+      const serverAttemptId = (next as CallWithCaller & { attemptId?: string }).attemptId;
+      attemptIdRef.current = serverAttemptId ?? undefined;
+      diagnosticAttemptIdRef.current = serverAttemptId ?? createCallAttemptId();
+      finalRejoinAttemptsRef.current = 0;
       setIncoming(next);
       setPeerName(next.caller.nickname);
       setCallMedia(next.media ?? "audio");
@@ -273,6 +362,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
       setMode("incoming");
     }
   }, [incomingList]);
+
+  useEffect(() => installCallReliabilityFlushTriggers(), []);
 
   // Poll the relevant call to detect remote accept/decline/end/expiry.
   // - outgoing/joining/active: watch our active call
@@ -286,6 +377,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
       const previousState = appStateRef.current;
       appStateRef.current = state;
       if (previousState !== "active" && state === "active") {
+        flushPendingCallReliability();
         void refetchIncoming();
         if (watchId) void refetchWatched();
       }
@@ -293,25 +385,33 @@ function CallManager({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [refetchIncoming, refetchWatched, watchId]);
 
-  const clearDisconnectGrace = useCallback(() => {
-    disconnectGenerationRef.current += 1;
-    if (disconnectGraceTimerRef.current) {
-      clearTimeout(disconnectGraceTimerRef.current);
-      disconnectGraceTimerRef.current = null;
-    }
+  const clearDisconnectHandling = useCallback(() => {
     disconnectHandlingRef.current = false;
   }, []);
 
-  const reset = useCallback(async () => {
-    clearDisconnectGrace();
+  const reset = useCallback(async (expectedGeneration?: number): Promise<boolean> => {
+    if (
+      expectedGeneration !== undefined &&
+      expectedGeneration !== sessionGenerationRef.current
+    ) {
+      return false;
+    }
+    const resetGeneration = ++sessionGenerationRef.current;
+    clearDisconnectHandling();
     expectedDisconnectRef.current = true;
+    if (expectedDisconnectTimerRef.current) {
+      clearTimeout(expectedDisconnectTimerRef.current);
+      expectedDisconnectTimerRef.current = null;
+    }
     stopRingback();
     stopRingtone();
-    await Promise.allSettled([leaveCall(), cancelIncomingCallNotification()]);
     joinedCallIdRef.current = null;
     mediaJoinCallIdRef.current = null;
+    liveRoomRef.current = null;
     lastKeepAliveAtRef.current = 0;
-    setMode("idle");
+    finalRejoinAttemptsRef.current = 0;
+    attemptIdRef.current = undefined;
+    diagnosticAttemptIdRef.current = createCallAttemptId();
     setActiveCall(null);
     setIncoming(null);
     setPeerName("");
@@ -319,28 +419,64 @@ function CallManager({ children }: { children: React.ReactNode }) {
     setLiveRoom(null);
     setCameraOnState(true);
     cameraWantedRef.current = true;
+    mutedRef.current = false;
     setMutedState(false);
     setConnecting(false);
-    setTimeout(() => {
-      expectedDisconnectRef.current = false;
+    setRecoveryStage("none");
+    setAudioPath("waiting_for_participant");
+    setVideoPath("not_requested");
+    setAudioPlaybackBlocked(false);
+    await Promise.allSettled([leaveCall(), cancelIncomingCallNotification()]);
+    setMode("idle");
+    expectedDisconnectTimerRef.current = setTimeout(() => {
+      if (sessionGenerationRef.current === resetGeneration) {
+        expectedDisconnectRef.current = false;
+      }
+      expectedDisconnectTimerRef.current = null;
     }, 1000);
-  }, [clearDisconnectGrace]);
+    return true;
+  }, [clearDisconnectHandling]);
 
   // A signed-out/unmounted call manager must not leave the Android foreground
   // service running after its React owner disappears.
   useEffect(() => {
     return () => {
-      clearDisconnectGrace();
+      sessionGenerationRef.current += 1;
+      clearDisconnectHandling();
       expectedDisconnectRef.current = true;
+      if (expectedDisconnectTimerRef.current) {
+        clearTimeout(expectedDisconnectTimerRef.current);
+        expectedDisconnectTimerRef.current = null;
+      }
       stopRingback();
       stopRingtone();
       void Promise.allSettled([leaveCall(), cancelIncomingCallNotification()]);
     };
-  }, [clearDisconnectGrace]);
+  }, [clearDisconnectHandling]);
 
   const diagnosticFor = useCallback(
-    (callId: string, role: string) => (phase: string, details?: Record<string, unknown>) => {
-      reportCallDiagnostic(callId, { phase, platform: Platform.OS, role, details });
+    (callId: string, role: string, generation = sessionGenerationRef.current) => {
+      const attemptId = diagnosticAttemptIdRef.current;
+      return (phase: string, details?: Record<string, unknown>) => {
+        reportCallDiagnostic(callId, {
+          attemptId,
+          phase,
+          platform: Platform.OS,
+          role,
+          details,
+        });
+        if (generation !== sessionGenerationRef.current) return;
+        if (phase === "web_remote_audio_play_blocked" || phase === "web_audio_playback_blocked") {
+          setAudioPlaybackBlocked(true);
+        }
+        if (
+          phase === "web_remote_audio_playing" ||
+          phase === "web_audio_unlocked" ||
+          phase === "web_audio_playback_allowed"
+        ) {
+          setAudioPlaybackBlocked(false);
+        }
+      };
     },
     [],
   );
@@ -350,8 +486,10 @@ function CallManager({ children }: { children: React.ReactNode }) {
       result: Awaited<ReturnType<typeof joinCall>>,
       callId: string,
       role: string,
+      cameraExpected = true,
     ) => {
       reportCallDiagnostic(callId, {
+        attemptId: diagnosticAttemptIdRef.current,
         phase: "join_result",
         platform: Platform.OS,
         role,
@@ -362,26 +500,35 @@ function CallManager({ children }: { children: React.ReactNode }) {
         },
       });
       if (!result.microphonePublished) throw new Error("microphone_publish_failed");
-      if (result.media === "video" && !result.cameraPublished) {
-        throw new Error("camera_publish_failed");
+      if (cameraExpected && result.media === "video" && !result.cameraPublished) {
+        reportCallDiagnostic(callId, {
+          attemptId: diagnosticAttemptIdRef.current,
+          phase: "local_camera_unavailable_audio_continues",
+          platform: Platform.OS,
+          role,
+          details: { media: result.media },
+        });
       }
     },
     [],
   );
 
   const failCallLocally = useCallback(
-    async (callId: string | null, role: string, err: unknown) => {
+    async (callId: string | null, role: string, err: unknown, generation?: number) => {
+      if (generation !== undefined && generation !== sessionGenerationRef.current) return;
       if (callId) {
         const message = err instanceof Error ? err.message : String(err);
         reportCallDiagnostic(callId, {
+          attemptId: diagnosticAttemptIdRef.current,
           phase: "join_failed",
           platform: Platform.OS,
           role,
           details: { code: callFailureCode(err), message },
         });
-        await markCallFailed(callId);
+        await markCallFailed(callId, attemptIdRef.current);
       }
-      await reset();
+      const didReset = await reset(generation);
+      if (!didReset) return;
       crossAlert("통화 연결 실패", "통화 연결에 실패했습니다. 잠시 후 다시 시도해주세요.");
     },
     [reset],
@@ -416,11 +563,14 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const joinAcceptedOutgoing = useCallback(
     async (call: Call) => {
       if (joinedCallIdRef.current === call.id || mediaJoinCallIdRef.current === call.id) return;
+      const generation = sessionGenerationRef.current;
       mediaJoinCallIdRef.current = call.id;
       stopRingback();
       const media = call.media ?? callMedia;
       const isCurrentJoin = () =>
-        mediaJoinCallIdRef.current === call.id && modeRef.current !== "idle";
+        generation === sessionGenerationRef.current &&
+        mediaJoinCallIdRef.current === call.id &&
+        modeRef.current !== "idle";
       setActiveCall(call);
       setCallMedia(media);
       setCameraOnState(media === "video");
@@ -429,7 +579,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
       setConnecting(true);
       let shouldMarkFailed = false;
       try {
-        const session = await joinCallMut.mutateAsync({ id: call.id });
+        const session = await joinTrackedCall(call.id, attemptIdRef.current);
         shouldMarkFailed = true;
         if (!isCurrentJoin()) return;
         const joinedMedia = session.call.media ?? media;
@@ -439,38 +589,38 @@ function CallManager({ children }: { children: React.ReactNode }) {
         setCallMedia(joinedMedia);
         setCameraOnState(joinedMedia === "video");
         cameraWantedRef.current = joinedMedia === "video";
-        const onDiagnostic = diagnosticFor(call.id, "caller");
+        const onDiagnostic = diagnosticFor(call.id, "caller", generation);
         const joined = await joinCall(session.url, session.token, {
           media: joinedMedia,
           onDiagnostic,
         });
         if (!isCurrentJoin()) {
-          await leaveCall();
+          await leaveCall(joined.room);
           return;
         }
         validateJoinResult(joined, call.id, "caller");
+        liveRoomRef.current = joined.room;
         setLiveRoom(joined.room);
-        await waitForRemoteMedia(joined.room, joinedMedia, onDiagnostic);
-        if (!isCurrentJoin()) {
-          await leaveCall();
-          return;
-        }
+        setCameraOnState(joinedMedia === "video" && joined.cameraPublished);
+        cameraWantedRef.current = joinedMedia === "video" && joined.cameraPublished;
         joinedCallIdRef.current = call.id;
         setConnecting(false);
+        setRecoveryStage("none");
         setMode("active");
       } catch (err) {
-        if (mediaJoinCallIdRef.current !== call.id) return;
-        if (shouldMarkFailed) await failCallLocally(call.id, "caller", err);
-        else await reset();
+        if (!isCurrentJoin()) return;
+        if (shouldMarkFailed) await failCallLocally(call.id, "caller", err, generation);
+        else await reset(generation);
       } finally {
         if (mediaJoinCallIdRef.current === call.id) mediaJoinCallIdRef.current = null;
       }
     },
-    [callMedia, diagnosticFor, failCallLocally, joinCallMut, reset, validateJoinResult],
+    [callMedia, diagnosticFor, failCallLocally, reset, validateJoinResult],
   );
 
   useEffect(() => {
-    if (!watched) return;
+    if (!watched || watched.id !== watchId) return;
+    const generation = sessionGenerationRef.current;
     const ended = isTerminalCallStatus(watched.status);
 
     if (modeRef.current === "incoming") {
@@ -493,9 +643,9 @@ function CallManager({ children }: { children: React.ReactNode }) {
     }
 
     if (ended) {
-      void reset();
+      void reset(generation);
     }
-  }, [watched, joinAcceptedOutgoing, reset]);
+  }, [watchId, watched, joinAcceptedOutgoing, reset]);
 
   useEffect(() => {
     if (callMedia !== "video" || mode !== "active" || connecting || !liveRoom) return;
@@ -509,13 +659,142 @@ function CallManager({ children }: { children: React.ReactNode }) {
   }, [callMedia, connecting, liveRoom, mode]);
 
   useEffect(() => {
-    if (!activeCall?.id || !liveRoom || (mode !== "outgoing" && mode !== "active")) return;
+    if (!activeCall?.id || !liveRoom || mode !== "active") return;
     const callId = activeCall.id;
+    const generation = sessionGenerationRef.current;
+    const diagnostic = diagnosticFor(callId, "media-path", generation);
+    let lastAudio: AudioPathState | null = null;
+    let lastVideo: VideoPathState | null = null;
+    const observe = () => {
+      if (
+        generation !== sessionGenerationRef.current ||
+        liveRoomRef.current !== liveRoom ||
+        activeCallRef.current?.id !== callId
+      ) {
+        return;
+      }
+      const snapshot = remoteMediaSnapshot(liveRoom);
+      const nextAudio = classifyAudioPath(snapshot);
+      const nextVideo = classifyVideoPath(snapshot, callMedia === "video");
+      setAudioPath(nextAudio);
+      setVideoPath(nextVideo);
+      if (nextAudio !== lastAudio || nextVideo !== lastVideo) {
+        lastAudio = nextAudio;
+        lastVideo = nextVideo;
+        diagnostic("media_path_changed", {
+          audioPath: nextAudio,
+          videoPath: nextVideo,
+          ...snapshot,
+        });
+      }
+    };
+    const events = [
+      RoomEvent.ParticipantConnected,
+      RoomEvent.ParticipantDisconnected,
+      RoomEvent.ParticipantActive,
+      RoomEvent.TrackPublished,
+      RoomEvent.TrackSubscribed,
+      RoomEvent.TrackUnsubscribed,
+      RoomEvent.TrackMuted,
+      RoomEvent.TrackUnmuted,
+      RoomEvent.AudioPlaybackStatusChanged,
+      RoomEvent.Reconnected,
+    ] as const;
+    events.forEach((event) => liveRoom.on(event, observe));
+    const timer = setTimeout(() => {
+      if (generation !== sessionGenerationRef.current || liveRoomRef.current !== liveRoom) return;
+      const snapshot = remoteMediaSnapshot(liveRoom);
+      const currentAudio = classifyAudioPath(snapshot);
+      if (currentAudio !== "ready" && currentAudio !== "remote_muted") {
+        diagnostic("initial_remote_audio_observation_elapsed", {
+          timeoutMs: INITIAL_REMOTE_AUDIO_OBSERVE_MS,
+          audioPath: currentAudio,
+          ...snapshot,
+        });
+      }
+    }, INITIAL_REMOTE_AUDIO_OBSERVE_MS);
+    observe();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((event) => liveRoom.off(event, observe));
+    };
+  }, [activeCall?.id, callMedia, diagnosticFor, liveRoom, mode]);
+
+  useEffect(() => {
+    if (!activeCall?.id || !liveRoom || mode !== "active") return;
+    const callId = activeCall.id;
+    const generation = sessionGenerationRef.current;
+    const diagnostic = diagnosticFor(callId, "media-flow", generation);
+    let previous: MediaFlowCounters | null = null;
+    let sampledAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const isCurrent = () =>
+      !cancelled &&
+      generation === sessionGenerationRef.current &&
+      liveRoomRef.current === liveRoom &&
+      activeCallRef.current?.id === callId;
+    const sample = async () => {
+      if (!isCurrent()) return;
+      const current = await mediaFlowCounters(liveRoom);
+      if (!isCurrent()) return;
+      const now = Date.now();
+      const prior = previous;
+      const hadPrevious = prior !== null;
+      if (prior) {
+        const audioBytesSentDelta = counterDelta(current.audioBytesSent, prior.audioBytesSent);
+        const audioBytesReceivedDelta = counterDelta(
+          current.audioBytesReceived,
+          prior.audioBytesReceived,
+        );
+        const videoBytesSentDelta = counterDelta(current.videoBytesSent, prior.videoBytesSent);
+        const videoBytesReceivedDelta = counterDelta(
+          current.videoBytesReceived,
+          prior.videoBytesReceived,
+        );
+        // A subscribed/live track is not proof that packets are flowing. Record
+        // actual RTP byte movement in both directions without terminating an
+        // otherwise-valid silent or camera-off call when a sample is zero.
+        diagnostic("media_flow_sample", {
+          sampleMs: now - sampledAt,
+          audioBytesSentDelta,
+          audioBytesReceivedDelta,
+          videoBytesSentDelta,
+          videoBytesReceivedDelta,
+          audioOutboundObserved: audioBytesSentDelta == null ? null : audioBytesSentDelta > 0,
+          audioInboundObserved:
+            audioBytesReceivedDelta == null ? null : audioBytesReceivedDelta > 0,
+          videoOutboundObserved: videoBytesSentDelta == null ? null : videoBytesSentDelta > 0,
+          videoInboundObserved:
+            videoBytesReceivedDelta == null ? null : videoBytesReceivedDelta > 0,
+          playbackAllowed: Platform.OS !== "web" || liveRoom.canPlaybackAudio,
+        });
+      }
+      previous = current;
+      sampledAt = now;
+      timer = setTimeout(sample, hadPrevious ? 30_000 : 5_000);
+    };
+    // Capture a baseline now, a first useful delta after five seconds, then keep
+    // low-frequency samples for long-call/reconnect diagnosis.
+    void sample();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeCall?.id, diagnosticFor, liveRoom, mode]);
+
+  useEffect(() => {
+    if (!activeCall?.id || !liveRoom || mode !== "active") return;
+    const callId = activeCall.id;
+    const generation = sessionGenerationRef.current;
+    const attemptId = attemptIdRef.current;
+    const diagnosticAttemptId = diagnosticAttemptIdRef.current;
     const report = (phase: string, details?: Record<string, unknown>) => {
       reportCallDiagnostic(callId, {
+        attemptId: diagnosticAttemptId,
         phase,
         platform: Platform.OS,
-        role: mode === "outgoing" ? "caller" : "in-call",
+        role: "in-call",
         details,
       });
     };
@@ -524,93 +803,190 @@ function CallManager({ children }: { children: React.ReactNode }) {
       callMode: modeRef.current,
       connectionState: liveRoom.state,
     });
+    const isCurrent = () =>
+      generation === sessionGenerationRef.current &&
+      liveRoomRef.current === liveRoom &&
+      activeCallRef.current?.id === callId &&
+      modeRef.current === "active";
     const onReconnecting = () => {
+      if (!isCurrent()) return;
       setConnecting(true);
+      setRecoveryStage("sdk");
       report("livekit_reconnecting", connectionDetails());
     };
     const onReconnected = () => {
-      clearDisconnectGrace();
+      if (!isCurrent()) return;
+      clearDisconnectHandling();
+      finalRejoinAttemptsRef.current = 0;
       setConnecting(false);
+      setRecoveryStage("none");
       report("livekit_reconnected", connectionDetails());
     };
     const onDisconnected = (reason?: unknown) => {
+      if (!isCurrent()) return;
       const expected = expectedDisconnectRef.current || modeRef.current === "idle";
+      const reasonName = disconnectReasonName(reason);
       report("livekit_disconnected", {
         ...connectionDetails(),
         expected,
-        reason: reason == null ? undefined : String(reason),
+        reason: reasonName,
       });
       if (expected || disconnectHandlingRef.current) return;
-      const currentMode = modeRef.current;
-      if (currentMode !== "outgoing" && currentMode !== "active") return;
       disconnectHandlingRef.current = true;
       setConnecting(true);
-      const generation = ++disconnectGenerationRef.current;
-      report("livekit_disconnect_grace_started", {
-        ...connectionDetails(),
-        graceMs: DISCONNECT_GRACE_MS,
-      });
-      disconnectGraceTimerRef.current = setTimeout(() => {
-        disconnectGraceTimerRef.current = null;
-        void (async () => {
-          let currentCall: Call | null = null;
+      setRecoveryStage("validating");
+      report("final_disconnect_status_validation_started", connectionDetails());
+      void (async () => {
+        let currentCall: Call | null = null;
+        for (const delayMs of CALL_STATUS_CONFIRM_DELAYS_MS) {
+          if (delayMs > 0) await wait(delayMs);
+          if (!isCurrent() || expectedDisconnectRef.current) return;
           try {
-            currentCall = await getCall(callId);
+            currentCall = await getTrackedCall(callId, attemptId);
+            break;
           } catch (err) {
-            report("livekit_disconnect_grace_status_check_failed", {
-              message: err instanceof Error ? err.message : String(err),
+            report("final_disconnect_status_validation_failed", {
+              delayMs,
+              errorName: err instanceof Error ? err.name : "unknown",
             });
           }
+        }
+        if (!isCurrent() || expectedDisconnectRef.current) return;
+        if (currentCall && isTerminalCallStatus(currentCall.status)) {
+          report("final_disconnect_terminal", { status: currentCall.status });
+          await reset(generation);
+          return;
+        }
+        if (
+          !shouldAttemptFinalRejoin({
+            expectedDisconnect: expectedDisconnectRef.current,
+            mode: modeRef.current,
+            serverStatus: currentCall?.status,
+            finalRejoinAttempts: finalRejoinAttemptsRef.current,
+            disconnectReason: reasonName,
+          })
+        ) {
+          report("final_disconnect_not_rejoinable", {
+            reason: reasonName,
+            status: currentCall?.status,
+            finalRejoinAttempts: finalRejoinAttemptsRef.current,
+          });
+          const didReset = await reset(generation);
+          if (didReset) {
+            crossAlert("통화 연결 끊김", "연결이 종료되었습니다. 잠시 후 다시 시도해주세요.");
+          }
+          return;
+        }
+
+        finalRejoinAttemptsRef.current += 1;
+        const rejoinGeneration = ++sessionGenerationRef.current;
+        setRecoveryStage("rejoining");
+        report("final_disconnect_rejoin_started", {
+          attempt: finalRejoinAttemptsRef.current,
+          reason: reasonName,
+        });
+        try {
+          const session = await joinTrackedCall(callId, attemptId);
           if (
-            generation !== disconnectGenerationRef.current ||
+            rejoinGeneration !== sessionGenerationRef.current ||
             expectedDisconnectRef.current ||
-            modeRef.current === "idle"
+            modeRef.current !== "active"
           ) {
             return;
           }
-          if (currentCall && isTerminalCallStatus(currentCall.status)) {
-            report("livekit_disconnect_grace_terminal", { status: currentCall.status });
-            await reset();
+          const media = session.call.media ?? callMedia;
+          if (media === "video" && cameraWantedRef.current) {
+            await prepareVideoCall().catch(() => {});
+          }
+          const joined = await joinCall(session.url, session.token, {
+            media,
+            cameraEnabled: cameraWantedRef.current,
+            onDiagnostic: diagnosticFor(callId, "rejoin", rejoinGeneration),
+          });
+          if (
+            rejoinGeneration !== sessionGenerationRef.current ||
+            expectedDisconnectRef.current ||
+            modeRef.current !== "active"
+          ) {
+            await leaveCall(joined.room);
             return;
           }
-          // A transient transport failure must not immediately fail the shared
-          // server call. Only report failure after the reconnect window expires
-          // and the authoritative status is still active.
-          if (currentCall?.status === "active") {
-            await markCallFailed(callId);
-            report("livekit_disconnect_grace_expired", { status: currentCall.status });
-          } else {
-            report("livekit_disconnect_grace_expired_without_status", {
-              status: currentCall?.status,
-            });
+          validateJoinResult(joined, callId, "rejoin", cameraWantedRef.current);
+          if (mutedRef.current) await setMuted(true);
+          if (
+            rejoinGeneration !== sessionGenerationRef.current ||
+            expectedDisconnectRef.current ||
+            modeRef.current !== "active"
+          ) {
+            await leaveCall(joined.room);
+            return;
           }
-          await reset();
-          crossAlert(
-            "통화 연결 끊김",
-            "잠금/백그라운드 전환 중 통화 연결이 끊겼습니다. 다시 걸어주세요.",
-          );
-        })().finally(() => {
-          if (generation === disconnectGenerationRef.current) {
-            disconnectHandlingRef.current = false;
+          liveRoomRef.current = joined.room;
+          setLiveRoom(joined.room);
+          setActiveCall(session.call);
+          setCallMedia(media);
+          setCameraOnState(media === "video" && joined.cameraPublished);
+          cameraWantedRef.current = media === "video" && joined.cameraPublished;
+          setConnecting(false);
+          setRecoveryStage("none");
+          disconnectHandlingRef.current = false;
+          report("final_disconnect_rejoin_succeeded", {
+            attempt: finalRejoinAttemptsRef.current,
+          });
+        } catch (err) {
+          if (rejoinGeneration !== sessionGenerationRef.current) return;
+          report("final_disconnect_rejoin_failed", {
+            attempt: finalRejoinAttemptsRef.current,
+            errorName: err instanceof Error ? err.name : "unknown",
+          });
+          await markCallFailed(callId, attemptId);
+          const didReset = await reset(rejoinGeneration);
+          if (didReset) {
+            crossAlert("통화 연결 끊김", "연결을 복구하지 못했습니다. 다시 걸어주세요.");
           }
-        });
-      }, DISCONNECT_GRACE_MS);
+        }
+      })().finally(() => {
+        if (generation === sessionGenerationRef.current) {
+          disconnectHandlingRef.current = false;
+        }
+      });
     };
     liveRoom.on(RoomEvent.Reconnecting, onReconnecting);
     liveRoom.on(RoomEvent.Reconnected, onReconnected);
     liveRoom.on(RoomEvent.Disconnected, onDisconnected);
+    // A final disconnect can happen after joinCall() resolves but before React
+    // commits this effect. Attach first, then inspect the current state so that
+    // neither side of that listener-registration window can lose recovery.
+    const observedState = connectionRecoverySignal(liveRoom.state);
+    if (observedState === "reconnecting") {
+      onReconnecting();
+    } else if (observedState === "disconnected") {
+      report("livekit_disconnected_observed_on_attach", connectionDetails());
+      onDisconnected("state_observed_disconnected");
+    }
     return () => {
       liveRoom.off(RoomEvent.Reconnecting, onReconnecting);
       liveRoom.off(RoomEvent.Reconnected, onReconnected);
       liveRoom.off(RoomEvent.Disconnected, onDisconnected);
     };
-  }, [activeCall?.id, clearDisconnectGrace, liveRoom, mode, reset]);
+  }, [
+    activeCall?.id,
+    callMedia,
+    clearDisconnectHandling,
+    diagnosticFor,
+    liveRoom,
+    mode,
+    reset,
+    validateJoinResult,
+  ]);
 
   useEffect(() => {
     if (!activeCall?.id || !liveRoom || mode !== "active") return;
     const callId = activeCall.id;
+    const attemptId = diagnosticAttemptIdRef.current;
     const diagnostic = (phase: string, details?: Record<string, unknown>) => {
       reportCallDiagnostic(callId, {
+        attemptId,
         phase,
         platform: Platform.OS,
         role: "in-call",
@@ -646,6 +1022,12 @@ function CallManager({ children }: { children: React.ReactNode }) {
         return;
       }
       if (modeRef.current !== "idle") return;
+      const generation = ++sessionGenerationRef.current;
+      const attemptId = createCallAttemptId();
+      attemptIdRef.current = attemptId;
+      diagnosticAttemptIdRef.current = attemptId;
+      finalRejoinAttemptsRef.current = 0;
+      expectedDisconnectRef.current = false;
       // Grab media-playback permission NOW, on the genuine button gesture —
       // the createCall await below would otherwise spend the activation before
       // joinCall() can pre-authorize audio, leaving the caller silent.
@@ -659,15 +1041,48 @@ function CallManager({ children }: { children: React.ReactNode }) {
       cameraWantedRef.current = media === "video";
       setMode("outgoing");
       setConnecting(true);
+      setRecoveryStage("none");
+      reportCallDiagnostic(null, {
+        attemptId,
+        phase: "create_call_api_start",
+        platform: Platform.OS,
+        role: "caller",
+        details: { media, hasRoomId: !!roomId },
+      });
       try {
-        const session = await createCall.mutateAsync({ data: { calleeId, roomId, media } });
+        const session = await createTrackedCall({ calleeId, roomId, media }, attemptId);
+        if (
+          generation !== sessionGenerationRef.current ||
+          String(modeRef.current) !== "outgoing"
+        ) {
+          // The user may have cancelled while the create response was in flight.
+          // End the exact late call A; the server's call-id fence prevents this
+          // cleanup from touching a newer call B.
+          await enqueueCallTermination(session.call.id, attemptId).catch(() => {});
+          return;
+        }
+        reportCallDiagnostic(session.call.id, {
+          attemptId,
+          phase: "create_call_api_succeeded",
+          platform: Platform.OS,
+          role: "caller",
+          details: { media: session.call.media },
+        });
         setActiveCall(session.call);
         setConnecting(false);
-      } catch {
-        await reset();
+      } catch (err) {
+        if (generation !== sessionGenerationRef.current) return;
+        reportCallDiagnostic(null, {
+          attemptId,
+          phase: "create_call_api_failed",
+          platform: Platform.OS,
+          role: "caller",
+          details: { errorName: err instanceof Error ? err.name : "unknown" },
+        });
+        await reset(generation);
       }
     },
-    [createCall, reset],
+    [reset],
   );
 
   // Join an existing call from the in-chat call card. Either party may tap the
@@ -675,6 +1090,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const joinFromCard = useCallback(
     async (callId: string, peer: string, media: CallMedia = "audio") => {
       if (!voiceCallSupported) return false;
+      if (!canApplyCallCardAction(modeRef.current, incomingRef.current?.id, callId)) return false;
       // Already in a call (outgoing/joining/active) → ignore. If a matching incoming
       // modal is up, clear it so we don't show both the modal and the overlay.
       if (
@@ -688,6 +1104,11 @@ function CallManager({ children }: { children: React.ReactNode }) {
         setIncoming(null);
         void cancelIncomingCallNotification();
       }
+      const generation = ++sessionGenerationRef.current;
+      attemptIdRef.current = undefined;
+      diagnosticAttemptIdRef.current = createCallAttemptId();
+      finalRejoinAttemptsRef.current = 0;
+      expectedDisconnectRef.current = false;
       // Unlock audio on the card-tap gesture, before the join await.
       primeAudioPlayback();
       const videoReady = media === "video" ? prepareVideoCall() : Promise.resolve();
@@ -697,12 +1118,19 @@ function CallManager({ children }: { children: React.ReactNode }) {
       cameraWantedRef.current = media === "video";
       mediaJoinCallIdRef.current = callId;
       const isCurrentJoin = () =>
-        mediaJoinCallIdRef.current === callId && modeRef.current !== "idle";
+        generation === sessionGenerationRef.current &&
+        mediaJoinCallIdRef.current === callId &&
+        modeRef.current !== "idle";
       setMode("joining");
       setConnecting(true);
       let shouldMarkFailed = false;
       try {
-        const session = await joinCallMut.mutateAsync({ id: callId });
+        const resolved = await resolveTrackedCallAttempt(callId);
+        if (!isCurrentJoin()) return false;
+        const attemptId = resolved.attemptId;
+        attemptIdRef.current = attemptId;
+        diagnosticAttemptIdRef.current = attemptId ?? createCallAttemptId();
+        const session = await joinTrackedCall(callId, attemptId);
         shouldMarkFailed = true;
         if (!isCurrentJoin()) return false;
         const joinedMedia = session.call.media ?? media;
@@ -718,36 +1146,35 @@ function CallManager({ children }: { children: React.ReactNode }) {
         setCallMedia(joinedMedia);
         setCameraOnState(joinedMedia === "video");
         cameraWantedRef.current = joinedMedia === "video";
-        const onDiagnostic = diagnosticFor(callId, "join-card");
+        const onDiagnostic = diagnosticFor(callId, "join-card", generation);
         const joined = await joinCall(session.url, session.token, {
           media: joinedMedia,
           onDiagnostic,
         });
         if (!isCurrentJoin()) {
-          await leaveCall();
+          await leaveCall(joined.room);
           return false;
         }
         validateJoinResult(joined, callId, "join-card");
+        liveRoomRef.current = joined.room;
         setLiveRoom(joined.room);
-        await waitForRemoteMedia(joined.room, joinedMedia, onDiagnostic);
-        if (!isCurrentJoin()) {
-          await leaveCall();
-          return false;
-        }
+        setCameraOnState(joinedMedia === "video" && joined.cameraPublished);
+        cameraWantedRef.current = joinedMedia === "video" && joined.cameraPublished;
         joinedCallIdRef.current = callId;
         setConnecting(false);
+        setRecoveryStage("none");
         setMode("active");
         return true;
       } catch (err) {
-        if (mediaJoinCallIdRef.current !== callId) return false;
-        if (shouldMarkFailed) await failCallLocally(callId, "join-card", err);
-        else await reset();
+        if (!isCurrentJoin()) return false;
+        if (shouldMarkFailed) await failCallLocally(callId, "join-card", err, generation);
+        else await reset(generation);
         return false;
       } finally {
         if (mediaJoinCallIdRef.current === callId) mediaJoinCallIdRef.current = null;
       }
     },
-    [diagnosticFor, failCallLocally, joinCallMut, reset, validateJoinResult],
+    [diagnosticFor, failCallLocally, reset, validateJoinResult],
   );
 
   // Decline an incoming call straight from a notification action (no modal up).
@@ -755,24 +1182,30 @@ function CallManager({ children }: { children: React.ReactNode }) {
   // the call ring out to "missed".
   const declineFromCard = useCallback(
     async (callId: string) => {
+      if (!canApplyCallCardAction(modeRef.current, incomingRef.current?.id, callId)) return false;
       if (modeRef.current === "incoming") {
         setIncoming(null);
         setMode("idle");
         void cancelIncomingCallNotification();
       }
       try {
-        await declineCall.mutateAsync({ id: callId });
+        const resolved = await resolveTrackedCallAttempt(callId);
+        const attemptId = resolved.attemptId;
+        await declineTrackedCall(callId, attemptId);
         return true;
       } catch {
         return false;
       }
     },
-    [declineCall],
+    [],
   );
 
   const handleAccept = useCallback(async () => {
     if (!incoming) return;
     const currentIncoming = incoming;
+    const generation = sessionGenerationRef.current;
+    const attemptId = attemptIdRef.current;
+    expectedDisconnectRef.current = false;
     // Unlock audio on the accept-button gesture, before the accept await.
     primeAudioPlayback();
     const initialMedia = currentIncoming.media ?? "audio";
@@ -786,12 +1219,14 @@ function CallManager({ children }: { children: React.ReactNode }) {
     void cancelIncomingCallNotification();
     mediaJoinCallIdRef.current = currentIncoming.id;
     const isCurrentJoin = () =>
-      mediaJoinCallIdRef.current === currentIncoming.id && modeRef.current !== "idle";
+      generation === sessionGenerationRef.current &&
+      mediaJoinCallIdRef.current === currentIncoming.id &&
+      modeRef.current !== "idle";
     setMode("joining");
     setConnecting(true);
     let shouldMarkFailed = false;
     try {
-      const session = await acceptCall.mutateAsync({ id: currentIncoming.id });
+      const session = await acceptTrackedCall(currentIncoming.id, attemptId);
       shouldMarkFailed = true;
       if (!isCurrentJoin()) return;
       const media = session.call.media ?? currentIncoming.media ?? "audio";
@@ -807,68 +1242,93 @@ function CallManager({ children }: { children: React.ReactNode }) {
       setCallMedia(media);
       setCameraOnState(media === "video");
       cameraWantedRef.current = media === "video";
-      const onDiagnostic = diagnosticFor(currentIncoming.id, "callee");
+      const onDiagnostic = diagnosticFor(currentIncoming.id, "callee", generation);
       const joined = await joinCall(session.url, session.token, {
         media,
         onDiagnostic,
       });
       if (!isCurrentJoin()) {
-        await leaveCall();
+        await leaveCall(joined.room);
         return;
       }
       validateJoinResult(joined, currentIncoming.id, "callee");
+      liveRoomRef.current = joined.room;
       setLiveRoom(joined.room);
-      await waitForRemoteMedia(joined.room, media, onDiagnostic);
-      if (!isCurrentJoin()) {
-        await leaveCall();
-        return;
-      }
+      setCameraOnState(media === "video" && joined.cameraPublished);
+      cameraWantedRef.current = media === "video" && joined.cameraPublished;
       joinedCallIdRef.current = currentIncoming.id;
       setConnecting(false);
+      setRecoveryStage("none");
       setMode("active");
     } catch (err) {
-      if (mediaJoinCallIdRef.current !== currentIncoming.id) return;
-      if (shouldMarkFailed) await failCallLocally(currentIncoming.id, "callee", err);
-      else await reset();
+      if (!isCurrentJoin()) return;
+      if (shouldMarkFailed) await failCallLocally(currentIncoming.id, "callee", err, generation);
+      else await reset(generation);
     } finally {
       if (mediaJoinCallIdRef.current === currentIncoming.id) mediaJoinCallIdRef.current = null;
     }
-  }, [incoming, acceptCall, diagnosticFor, failCallLocally, reset, validateJoinResult]);
+  }, [incoming, diagnosticFor, failCallLocally, reset, validateJoinResult]);
 
   const handleDecline = useCallback(async () => {
     const id = incoming?.id;
+    const attemptId = attemptIdRef.current;
     setIncoming(null);
     setMode("idle");
     void cancelIncomingCallNotification();
     if (id) {
       try {
-        await declineCall.mutateAsync({ id });
+        await declineTrackedCall(id, attemptId);
       } catch {}
     }
-  }, [incoming, declineCall]);
+  }, [incoming]);
 
   const handleEnd = useCallback(async () => {
-    const id = activeCall?.id;
-    // A caller hanging up while still ringing (callee never answered) is a
-    // cancel, not an end — so it records as "cancelled" rather than a 0s call.
-    const wasRinging = modeRef.current === "outgoing";
-    await reset();
-    if (id) {
-      try {
-        if (wasRinging) {
-          await cancelCall.mutateAsync({ id });
-        } else {
-          await endCall.mutateAsync({ id });
-        }
-      } catch {}
+    if (expectedDisconnectRef.current) return;
+    expectedDisconnectRef.current = true;
+    const generation = sessionGenerationRef.current;
+    // join-from-card knows the call id before its accept/join response returns.
+    // Use that id as a fallback so a user hangup during the request is not lost.
+    const id = activeCall?.id ?? mediaJoinCallIdRef.current ?? incoming?.id;
+    try {
+      if (id) {
+        // `/end` is server-idempotent and maps a still-ringing caller hangup to
+        // `cancelled`. Persist first so force-close/offline cannot silently drop it.
+        await enqueueCallTermination(id, attemptIdRef.current);
+      }
+    } catch {
+      if (id) {
+        reportCallDiagnostic(id, {
+          attemptId: diagnosticAttemptIdRef.current,
+          phase: "termination_outbox_persist_failed",
+          platform: Platform.OS,
+          role: "in-call",
+        });
+      }
+    } finally {
+      await reset(generation);
     }
-  }, [activeCall, cancelCall, endCall, reset]);
+  }, [activeCall?.id, incoming?.id, reset]);
 
   const toggleMute = useCallback(async () => {
     const next = !muted;
+    mutedRef.current = next;
     setMutedState(next);
-    await setMuted(next);
-  }, [muted]);
+    try {
+      await setMuted(next);
+    } catch {
+      mutedRef.current = !next;
+      setMutedState(!next);
+      if (activeCall?.id) {
+        reportCallDiagnostic(activeCall.id, {
+          attemptId: diagnosticAttemptIdRef.current,
+          phase: "microphone_toggle_failed",
+          platform: Platform.OS,
+          role: "in-call",
+          details: { requestedMuted: next },
+        });
+      }
+    }
+  }, [activeCall?.id, muted]);
 
   const toggleCamera = useCallback(async () => {
     const next = !cameraOn;
@@ -883,6 +1343,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
       setCameraOnState(!next);
       if (activeCall?.id) {
         reportCallDiagnostic(activeCall.id, {
+          attemptId: diagnosticAttemptIdRef.current,
           phase: "camera_toggle_failed",
           platform: Platform.OS,
           role: "in-call",
@@ -899,9 +1360,43 @@ function CallManager({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [cameraOn]);
 
+  const handleResumeAudio = useCallback(async () => {
+    const restored = await resumeCallAudio();
+    setAudioPlaybackBlocked(!restored);
+    if (activeCall?.id) {
+      reportCallDiagnostic(activeCall.id, {
+        attemptId: diagnosticAttemptIdRef.current,
+        phase: restored ? "manual_audio_resume_succeeded" : "manual_audio_resume_failed",
+        platform: Platform.OS,
+        role: "in-call",
+      });
+    }
+  }, [activeCall?.id]);
+
   const visibleMedia = mode === "incoming" ? incoming?.media ?? callMedia : callMedia;
   const isVideoCall = visibleMedia === "video";
   const showWebCallHint = Platform.OS === "web" && mode === "active";
+  const needsAudioGesture =
+    Platform.OS === "web" &&
+    mode === "active" &&
+    (audioPlaybackBlocked || audioPath === "playback_blocked");
+  const activeStatus = (() => {
+    if (recoveryStage === "sdk") return "네트워크 연결 복구 중...";
+    if (recoveryStage === "validating") return "통화 상태 확인 중...";
+    if (recoveryStage === "rejoining") return "통화 재연결 중...";
+    if (needsAudioGesture) return "상대방 소리를 재생하려면 아래 버튼을 눌러주세요.";
+    if (muted) return "내 마이크 음소거 중";
+    if (audioPath === "waiting_for_participant") return "상대방 연결 대기 중...";
+    if (audioPath === "waiting_for_remote_microphone") return "상대방 음성 대기 중...";
+    if (audioPath === "waiting_for_audio_subscription") return "상대방 음성 연결 중...";
+    if (audioPath === "remote_audio_track_unavailable") return "상대방 음성 복구 중...";
+    if (audioPath === "remote_muted") return "상대방이 음소거했습니다.";
+    if (audioPath === "local_muted") return "내 마이크 음소거 중";
+    if (audioPath === "local_microphone_missing") return "내 마이크를 확인해주세요.";
+    if (isVideoCall && !cameraOn) return "음성 통화 중 · 내 카메라 꺼짐";
+    if (isVideoCall && videoPath !== "ready") return "음성 통화 중 · 상대 영상 대기 중";
+    return isVideoCall ? "영상통화 중" : "통화 중";
+  })();
 
   return (
     <CallContext.Provider
@@ -950,9 +1445,9 @@ function CallManager({ children }: { children: React.ReactNode }) {
                     ? connecting
                       ? "통화 생성 중..."
                       : "영상통화 연결 중..."
-                    : mode === "joining" || connecting
+                    : mode === "joining"
                       ? "영상통화 연결 중..."
-                      : "영상통화 중"}
+                      : activeStatus}
                 </Text>
                 <Text style={styles.identityLight}>{callIdentityLabel}</Text>
                 {showWebCallHint && (
@@ -970,9 +1465,9 @@ function CallManager({ children }: { children: React.ReactNode }) {
                   ? connecting
                     ? "통화 생성 중..."
                     : "통화 연결 중..."
-                  : mode === "joining" || connecting
+                  : mode === "joining"
                     ? "통화 연결 중..."
-                    : "통화 중"}
+                    : activeStatus}
               </Text>
               <Text style={styles.identityLight}>{callIdentityLabel}</Text>
               {showWebCallHint && (
@@ -982,6 +1477,14 @@ function CallManager({ children }: { children: React.ReactNode }) {
             </View>
           )}
           <View style={styles.bottomControls}>
+            {needsAudioGesture && (
+              <CallButton
+                color="#6D35D5"
+                icon="volume-2"
+                label="소리 재생"
+                onPress={handleResumeAudio}
+              />
+            )}
             {isVideoCall && (
               <>
                 <CallButton
@@ -1112,7 +1615,9 @@ const styles = StyleSheet.create({
   },
   bottomControls: {
     flexDirection: "row",
-    gap: 40,
+    flexWrap: "wrap",
+    gap: 24,
+    width: "100%",
     justifyContent: "center",
     paddingBottom: Platform.OS === "ios" ? 48 : 36,
   },

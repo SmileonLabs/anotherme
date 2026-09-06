@@ -1,8 +1,13 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "./logger";
 import type { App } from "firebase-admin/app";
 import type { Messaging } from "firebase-admin/messaging";
+import {
+  rebindExclusiveDevice,
+  removeOwnedDevice,
+} from "./pushOwnershipPolicy";
+import { buildPushFailureLog } from "./pushLogging";
 
 /**
  * Native push (Firebase Cloud Messaging) for the Android app. Web/PWA delivery
@@ -52,7 +57,10 @@ async function getMessaging(): Promise<Messaging | null> {
     messaging = getMsg(app);
     return messaging;
   } catch (err) {
-    logger.error({ err }, "Failed to initialize firebase-admin — native FCM push disabled");
+    logger.error(
+      buildPushFailureLog(err),
+      "Failed to initialize firebase-admin — native FCM push disabled",
+    );
     return null;
   }
 }
@@ -87,17 +95,67 @@ function serializeFcmTokens(tokens: string[]): string | null {
 export async function addFcmToken(userId: string, token: string): Promise<void> {
   if (!token) return;
   await db.transaction(async (tx) => {
+    // Equal-token registrations serialize even when the token is not currently
+    // present in either target row. Sorted row locks then avoid cross-device
+    // deadlocks while preserving concurrent registrations for the same user.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`fcm:${token}`}, 0))`,
+    );
+    const rowsWithIds = await tx
+      .select({ id: usersTable.id, fcmTokens: usersTable.fcmTokens })
+      .from(usersTable)
+      .where(or(eq(usersTable.id, userId), isNotNull(usersTable.fcmTokens)));
+    const affectedIds = Array.from(
+      new Set([
+        userId,
+        ...rowsWithIds
+          .filter((row) => parseFcmTokens(row.fcmTokens).includes(token))
+          .map((row) => row.id),
+      ]),
+    ).sort();
+    const locked = await tx
+      .select({ id: usersTable.id, fcmTokens: usersTable.fcmTokens })
+      .from(usersTable)
+      .where(inArray(usersTable.id, affectedIds))
+      .orderBy(asc(usersTable.id))
+      .for("update");
+    if (!locked.some((row) => row.id === userId)) return;
+    const updates = rebindExclusiveDevice(
+      locked.map((row) => ({ userId: row.id, values: parseFcmTokens(row.fcmTokens) })),
+      userId,
+      token,
+      (value) => value,
+      MAX_TOKENS,
+    );
+    for (const [ownerId, values] of updates) {
+      await tx
+        .update(usersTable)
+        .set({ fcmTokens: serializeFcmTokens(values) })
+        .where(eq(usersTable.id, ownerId));
+    }
+  });
+}
+
+export async function removeFcmToken(userId: string, token: string): Promise<void> {
+  if (!token) return;
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`fcm:${token}`}, 0))`,
+    );
     const [row] = await tx
       .select({ fcmTokens: usersTable.fcmTokens })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .for("update");
     if (!row) return;
-    const existing = parseFcmTokens(row.fcmTokens).filter((t) => t !== token);
-    const next = [...existing, token].slice(-MAX_TOKENS);
+    const remaining = removeOwnedDevice(
+      parseFcmTokens(row.fcmTokens),
+      token,
+      (value) => value,
+    );
     await tx
       .update(usersTable)
-      .set({ fcmTokens: serializeFcmTokens(next) })
+      .set({ fcmTokens: serializeFcmTokens(remaining) })
       .where(eq(usersTable.id, userId));
   });
 }
@@ -120,7 +178,10 @@ async function removeFcmTokens(userId: string, stale: Set<string>): Promise<void
         .where(eq(usersTable.id, userId));
     });
   } catch (err) {
-    logger.error({ err, userId }, "Failed to prune stale FCM tokens");
+    logger.error(
+      { ...buildPushFailureLog(err), userId },
+      "Failed to prune stale FCM tokens",
+    );
   }
 }
 
@@ -174,7 +235,12 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
             // as a fallback. Tradeoff: if the handler can't run (force-stopped /
             // aggressive battery optimization) nothing shows — inherent to the
             // full-screen-call pattern.
-            data: { ...payload.data, title: payload.title, body: payload.body },
+            data: {
+              ...payload.data,
+              recipientUserId: userId,
+              title: payload.title,
+              body: payload.body,
+            },
             android: { priority: "high" },
           });
           sent += 1;
@@ -194,7 +260,10 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
             // caused by a malformed payload rather than a bad token, in which
             // case every device would error and we'd wipe the user's whole token
             // list. Log and keep the token instead.
-            logger.error({ err, userId, code }, "Failed to send FCM to a device");
+            logger.error(
+              { ...buildPushFailureLog(err), userId },
+              "Failed to send FCM to a device",
+            );
           }
         }
       }),
@@ -205,7 +274,10 @@ export async function sendFcmCallToUser(userId: string, payload: FcmCallPayload)
     );
     await removeFcmTokens(userId, stale);
   } catch (err) {
-    logger.error({ err, userId }, "Failed to send FCM");
+    logger.error(
+      { ...buildPushFailureLog(err), userId },
+      "Failed to send FCM",
+    );
   }
 }
 
@@ -264,7 +336,7 @@ export async function sendFcmNotificationToUser(
           await msg.send({
             token,
             notification: { title: payload.title, body: payload.body },
-            data: payload.data ?? {},
+            data: { ...(payload.data ?? {}), recipientUserId: userId },
             android: {
               priority: "high",
               notification: androidNotification,
@@ -283,7 +355,10 @@ export async function sendFcmNotificationToUser(
           ) {
             stale.add(token);
           } else {
-            logger.error({ err, userId, code }, "Failed to send FCM notification to a device");
+            logger.error(
+              { ...buildPushFailureLog(err), userId },
+              "Failed to send FCM notification to a device",
+            );
           }
         }
       }),
@@ -294,6 +369,9 @@ export async function sendFcmNotificationToUser(
     );
     await removeFcmTokens(userId, stale);
   } catch (err) {
-    logger.error({ err, userId }, "Failed to send FCM notification");
+    logger.error(
+      { ...buildPushFailureLog(err), userId },
+      "Failed to send FCM notification",
+    );
   }
 }

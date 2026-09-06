@@ -26,3 +26,9 @@ export async function ensureWebPushIfGranted(
 ): Promise<void> {}
 
 export async function registerPushServiceWorker(): Promise<void> {}
+
+export async function setWebPushOwner(_userId: string | null): Promise<void> {}
+
+export async function getCurrentWebPushSubscriptionToken(): Promise<string | null> {
+  return null;
+}

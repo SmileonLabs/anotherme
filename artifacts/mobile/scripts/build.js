@@ -15,8 +15,20 @@ const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const OUTPUT_DIR = process.env.PWA_OUTPUT_DIR || "web-build";
-if (path.basename(OUTPUT_DIR) !== OUTPUT_DIR) {
-  throw new Error("PWA_OUTPUT_DIR must be a directory name inside the mobile project");
+const outputPath = path.resolve(projectRoot, OUTPUT_DIR);
+const relativeOutputPath = path.relative(projectRoot, outputPath);
+if (
+  !OUTPUT_DIR.trim() ||
+  OUTPUT_DIR === "." ||
+  OUTPUT_DIR === ".." ||
+  path.basename(OUTPUT_DIR) !== OUTPUT_DIR ||
+  !relativeOutputPath ||
+  relativeOutputPath.startsWith(`..${path.sep}`) ||
+  path.isAbsolute(relativeOutputPath)
+) {
+  throw new Error(
+    "PWA_OUTPUT_DIR must be a non-special directory name inside the mobile project",
+  );
 }
 
 function toOrigin(value) {
@@ -136,6 +148,8 @@ function patchExportedHtml(indexHtmlPath, basePath) {
 function copyPwaShellAssets(outPath) {
   const publicDir = path.join(projectRoot, "public");
   const files = [
+    "sw.js",
+    "sw-cache-policy.js",
     "manifest.webmanifest",
     "icon-192.png",
     "icon-512.png",
@@ -166,8 +180,7 @@ function run(cmd, args, env) {
   });
 }
 
-function patchExportedFontUrls(outPath, basePath) {
-  const version = process.env.PWA_ASSET_VERSION || Date.now().toString(36);
+function patchExportedFontUrls(outPath, basePath, version) {
   const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const jsDir = path.join(outPath, "_expo", "static", "js");
   const jsFiles = [];
@@ -227,6 +240,53 @@ function patchExportedFontUrls(outPath, basePath) {
   }
 }
 
+function patchServiceWorker(outPath, basePath, version) {
+  const swPath = path.join(outPath, "sw.js");
+  const indexPath = path.join(outPath, "index.html");
+  const html = fs.readFileSync(indexPath, "utf8");
+  const scopePath = `${basePath || ""}/`;
+  const assets = new Set([
+    scopePath,
+    `${basePath}/sw-cache-policy.js`,
+    `${basePath}/manifest.webmanifest`,
+    `${basePath}/icon-192.png`,
+    `${basePath}/icon-512.png`,
+    `${basePath}/apple-touch-icon.png`,
+  ]);
+  for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+    const value = match[1];
+    if (value.startsWith(`${basePath}/_expo/`) || value.startsWith(`${basePath}/assets/`)) {
+      assets.add(value);
+    }
+  }
+  const staticRoot = path.join(outPath, "_expo", "static");
+  function addStaticFiles(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        addStaticFiles(fullPath);
+      } else if (entry.isFile() && /\.(?:js|css)$/i.test(entry.name)) {
+        const relative = path.relative(outPath, fullPath).split(path.sep).join("/");
+        const url = `${basePath}/${relative}`;
+        const alreadyIncluded = [...assets].some(
+          (asset) => asset.split(/[?#]/, 1)[0] === url,
+        );
+        if (!alreadyIncluded) assets.add(url);
+      }
+    }
+  }
+  addStaticFiles(staticRoot);
+  const safeVersion = String(version).replace(/[^A-Za-z0-9._-]/g, "-");
+  const assetLiteral = [...assets].map((asset) => JSON.stringify(asset)).join(",");
+  const source = fs
+    .readFileSync(swPath, "utf8")
+    .replaceAll("__PWA_CACHE_VERSION__", safeVersion)
+    .replace("/*__PWA_APP_SHELL_ASSETS__*/", assetLiteral);
+  fs.writeFileSync(swPath, source);
+  console.log(`Prepared versioned PWA app-shell cache with ${assets.size} entry points.`);
+}
+
 function runPnpm(args, env) {
   return process.platform === "win32"
     ? run("cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", ...args], env)
@@ -237,9 +297,10 @@ async function main() {
   const origin = getDeploymentOrigin();
   const domain = new URL(origin).host;
   const basePath = getBasePath();
+  const assetVersion = process.env.PWA_ASSET_VERSION || Date.now().toString(36);
   console.log(`Building browser web export (PWA) for ${origin}${basePath || "/"} ...`);
 
-  const outPath = path.join(projectRoot, OUTPUT_DIR);
+  const outPath = outputPath;
   if (fs.existsSync(outPath)) {
     fs.rmSync(outPath, { recursive: true, force: true });
   }
@@ -327,7 +388,8 @@ async function main() {
   //     elements pins the layout to the viewport.
   copyPwaShellAssets(outPath);
   patchExportedHtml(indexHtml, basePath);
-  patchExportedFontUrls(outPath, basePath);
+  patchExportedFontUrls(outPath, basePath, assetVersion);
+  patchServiceWorker(outPath, basePath, assetVersion);
 
   console.log(`Web build complete: ${outPath}`);
   process.exit(0);

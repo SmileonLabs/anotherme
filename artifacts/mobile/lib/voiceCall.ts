@@ -40,13 +40,71 @@ export interface CallJoinResult {
 type Diagnostic = CallDiagnostic | undefined;
 
 let room: Room | null = null;
+let roomGeneration = 0;
+const roomGenerations = new WeakMap<Room, number>();
+const roomDisconnects = new WeakMap<Room, Promise<void>>();
 let audioSessionActive = false;
+let audioSessionGeneration: number | null = null;
+let foregroundServiceGeneration: number | null = null;
+let nativeResourceOperations: Promise<void> = Promise.resolve();
 let audioModeReady = false;
 let cameraFacingMode: "user" | "environment" = "user";
 let videoPreparePromise: Promise<void> | null = null;
 
 let ringbackPlayer: AudioPlayer | null = null;
 let ringtonePlayer: AudioPlayer | null = null;
+
+const ROOM_DISCONNECT_TIMEOUT_MS = 4_000;
+
+function serializeNativeResource<T>(operation: () => Promise<T>): Promise<T> {
+  const result = nativeResourceOperations.then(operation, operation);
+  nativeResourceOperations = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.then(() => true, () => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function stopRoomMediaTracks(r: Room): void {
+  for (const publication of r.localParticipant.trackPublications.values()) {
+    try {
+      publication.track?.mediaStreamTrack?.stop();
+    } catch {}
+  }
+}
+
+async function disconnectRoom(r: Room): Promise<void> {
+  const existing = roomDisconnects.get(r);
+  if (existing) return existing;
+  const operation = (async () => {
+    r.removeAllListeners();
+    let disconnect: Promise<unknown>;
+    try {
+      disconnect = Promise.resolve(r.disconnect()).catch(() => {});
+    } catch {
+      disconnect = Promise.resolve();
+    }
+    await settleWithin(disconnect, ROOM_DISCONNECT_TIMEOUT_MS);
+    stopRoomMediaTracks(r);
+    roomGenerations.delete(r);
+  })();
+  roomDisconnects.set(r, operation);
+  return operation;
+}
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -100,32 +158,88 @@ async function configureNativeAudio(
   media: CallMedia,
   diagnostic: CallDiagnostic,
   phase: string,
+  generation = roomGeneration,
 ): Promise<void> {
-  const preferredOutputList = preferredAudioOutputs(media);
-  try {
-    await AudioSession.configureAudio({
-      android: {
-        preferredOutputList,
-        audioTypeOptions: AndroidAudioTypePresets.communication,
-      },
-      ios: { defaultOutput: media === "video" ? "speaker" : "earpiece" },
-    });
-    diagnostic(phase, { media, preferredOutputList });
-  } catch (err) {
-    diagnostic(`${phase}_failed`, { media, message: errorMessage(err), preferredOutputList });
-  }
+  await serializeNativeResource(async () => {
+    if (generation !== roomGeneration) return;
+    const preferredOutputList = preferredAudioOutputs(media);
+    try {
+      await AudioSession.configureAudio({
+        android: {
+          preferredOutputList,
+          audioTypeOptions: AndroidAudioTypePresets.communication,
+        },
+        ios: { defaultOutput: media === "video" ? "speaker" : "earpiece" },
+      });
+      if (generation === roomGeneration) diagnostic(phase, { media, preferredOutputList });
+    } catch (err) {
+      if (generation === roomGeneration) {
+        diagnostic(`${phase}_failed`, { media, message: errorMessage(err), preferredOutputList });
+      }
+    }
+  });
 }
 
-async function startNativeAudioSession(diagnostic: CallDiagnostic, phase: string): Promise<void> {
-  try {
-    await AudioSession.startAudioSession();
-    audioSessionActive = true;
-    diagnostic(phase, { audioSessionActive });
-  } catch (err) {
-    audioSessionActive = false;
-    diagnostic(`${phase}_failed`, { message: errorMessage(err) });
-    throw err;
-  }
+async function startNativeAudioSession(
+  diagnostic: CallDiagnostic,
+  phase: string,
+  generation = roomGeneration,
+): Promise<boolean> {
+  return serializeNativeResource(async () => {
+    if (generation !== roomGeneration) return false;
+    try {
+      await AudioSession.startAudioSession();
+      if (generation !== roomGeneration) {
+        await AudioSession.stopAudioSession().catch(() => {});
+        if (audioSessionGeneration === generation) {
+          audioSessionActive = false;
+          audioSessionGeneration = null;
+        }
+        return false;
+      }
+      audioSessionActive = true;
+      audioSessionGeneration = generation;
+      diagnostic(phase, { audioSessionActive });
+      return true;
+    } catch (err) {
+      if (audioSessionGeneration === generation || audioSessionGeneration == null) {
+        audioSessionActive = false;
+        audioSessionGeneration = null;
+      }
+      if (generation === roomGeneration) {
+        diagnostic(`${phase}_failed`, { message: errorMessage(err) });
+      }
+      throw err;
+    }
+  });
+}
+
+async function startOwnedForegroundService(media: CallMedia, generation: number): Promise<boolean> {
+  return serializeNativeResource(async () => {
+    if (generation !== roomGeneration) return false;
+    await startCallForegroundService(media);
+    if (generation !== roomGeneration) {
+      await stopCallForegroundService().catch(() => {});
+      if (foregroundServiceGeneration === generation) {
+        foregroundServiceGeneration = null;
+      }
+      return false;
+    }
+    foregroundServiceGeneration = generation;
+    return true;
+  });
+}
+
+async function stopOwnedForegroundService(expectedGeneration?: number): Promise<void> {
+  await serializeNativeResource(async () => {
+    if (
+      expectedGeneration !== undefined &&
+      foregroundServiceGeneration !== expectedGeneration
+    ) return;
+    if (foregroundServiceGeneration == null) return;
+    foregroundServiceGeneration = null;
+    await stopCallForegroundService();
+  });
 }
 
 // Allow the ring/ringback tones to sound even when the phone's hardware silent
@@ -219,8 +333,8 @@ export function prepareVideoCall(): Promise<void> {
   return videoPreparePromise;
 }
 
-async function ensureAndroidCallPermissions(media: CallMedia): Promise<void> {
-  if (Platform.OS !== "android") return;
+async function ensureAndroidCallPermissions(media: CallMedia): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
   const permissions = [
     PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     ...(media === "video" ? [PermissionsAndroid.PERMISSIONS.CAMERA] : []),
@@ -229,145 +343,205 @@ async function ensureAndroidCallPermissions(media: CallMedia): Promise<void> {
   const microphoneGranted =
     result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
   if (!microphoneGranted) throw new Error("microphone_permission_denied");
-  if (
+  return !(
     media === "video" &&
     result[PermissionsAndroid.PERMISSIONS.CAMERA] !== PermissionsAndroid.RESULTS.GRANTED
-  ) {
-    throw new Error("camera_permission_denied");
-  }
+  );
 }
 
-async function enableCameraWithRetry(r: Room): Promise<boolean> {
+async function enableCameraWithRetry(
+  r: Room,
+  generation = roomGeneration,
+): Promise<boolean> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (room !== r || generation !== roomGeneration) return false;
     try {
       await r.localParticipant.setCameraEnabled(true, cameraOptions());
       if (r.localParticipant.getTrackPublication(Track.Source.Camera)?.track) return true;
     } catch {}
     await delay(350 + attempt * 250);
   }
-  return !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+  return (
+    room === r &&
+    generation === roomGeneration &&
+    !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+  );
 }
 
 function hasLocalTrack(r: Room, source: Track.Source): boolean {
   return !!r.localParticipant.getTrackPublication(source)?.track;
 }
 
+async function cleanupCurrentCall(invalidateGeneration: boolean): Promise<void> {
+  if (invalidateGeneration) roomGeneration += 1;
+  const currentRoom = room;
+  const audioOwner = audioSessionGeneration;
+  const foregroundOwner = foregroundServiceGeneration;
+  room = null;
+  await Promise.allSettled([
+    ...(currentRoom ? [disconnectRoom(currentRoom)] : []),
+    ...(audioOwner != null ? [releaseAudioSession(audioOwner)] : []),
+    ...(foregroundOwner != null ? [stopOwnedForegroundService(foregroundOwner)] : []),
+  ]);
+}
+
+async function cleanupJoinAttempt(targetRoom: Room | null, generation: number): Promise<void> {
+  if (targetRoom && room === targetRoom) room = null;
+  await Promise.allSettled([
+    ...(targetRoom ? [disconnectRoom(targetRoom)] : []),
+    releaseAudioSession(generation),
+    stopOwnedForegroundService(generation),
+  ]);
+}
+
 export async function joinCall(
   url: string,
   token: string,
-  options: { media?: CallMedia; onDiagnostic?: CallDiagnostic } = {},
+  options: { media?: CallMedia; cameraEnabled?: boolean; onDiagnostic?: CallDiagnostic } = {},
 ): Promise<CallJoinResult> {
-  await leaveCall();
-  await ensureAudioMode();
+  // Claim the generation before awaiting cleanup. A leave/new join that happens
+  // while cleanup is pending advances the fence, so this attempt can never
+  // resume and adopt the newer call's generation.
+  const generation = ++roomGeneration;
+  await cleanupCurrentCall(false);
+  if (generation !== roomGeneration) throw new Error("stale_join_attempt");
   const media = options.media ?? "audio";
+  const cameraRequested = media === "video" && options.cameraEnabled !== false;
   const diagnostic = options.onDiagnostic ?? (() => {});
   cameraFacingMode = "user";
   diagnostic("native_join_start", { media, platform: Platform.OS });
+  let r: Room | null = null;
   try {
-    await ensureAndroidCallPermissions(media);
-    diagnostic("native_permissions_granted", { media });
-  } catch (err) {
-    diagnostic("native_permissions_failed", { media, message: errorMessage(err) });
-    throw err;
-  }
-
-  // Activate the native audio session (configures the OS audio category for
-  // two-way voice and routing). Remote participant audio is then rendered
-  // automatically by @livekit/react-native — no <audio> elements or Web Audio
-  // gain graph like the web build needs.
-  // Voice calls default to the phone earpiece; video calls default to speaker.
-  // Connected bluetooth/wired headsets still take priority on both paths.
-  await configureNativeAudio(media, diagnostic, "native_audio_configured");
-  try {
-    await startNativeAudioSession(diagnostic, "native_audio_session_started");
-  } catch {
-    throw new Error("audio_session_start_failed");
-  }
-
-  const r = new Room({
-    adaptiveStream: media === "video",
-    dynacast: media === "video",
-    videoCaptureDefaults: {
-      resolution: { width: 640, height: 360, frameRate: 15 },
-    },
-    audioCaptureDefaults: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  });
-
-  // If the room drops for good, release the audio session so the OS earpiece/mic
-  // route is handed back instead of being held open.
-  r.on(RoomEvent.Reconnecting, () => {
-    diagnostic("native_room_reconnecting", { connectionState: r.state });
-  });
-  r.on(RoomEvent.Reconnected, () => {
-    diagnostic("native_room_reconnected", { connectionState: r.state });
-  });
-  r.on(RoomEvent.TrackMuted, (publication, participant) => {
-    diagnostic("native_track_muted", publicationDetails(publication, participant, r));
-  });
-  r.on(RoomEvent.TrackUnmuted, (publication, participant) => {
-    diagnostic("native_track_unmuted", publicationDetails(publication, participant, r));
-  });
-  r.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
-    diagnostic("native_local_track_unpublished", publicationDetails(publication, participant, r));
-  });
-  r.on(RoomEvent.LocalAudioSilenceDetected, (publication) => {
-    diagnostic("native_local_audio_silence_detected", {
-      source: publication.source,
-      trackKind: publication.kind,
-      trackSid: publication.trackSid,
-      ...localMicrophoneDetails(r),
-    });
-  });
-  r.on(RoomEvent.Disconnected, (reason?: unknown) => {
-    diagnostic("native_room_disconnected", {
-      connectionState: r.state,
-      reason: reason == null ? undefined : String(reason),
-    });
-    if (room === r) {
-      void Promise.allSettled([releaseAudioSession(), stopCallForegroundService()]);
-      room = null;
+    await ensureAudioMode();
+    if (generation !== roomGeneration) throw new Error("stale_join_attempt");
+    let cameraPermissionGranted = true;
+    cameraPermissionGranted = await ensureAndroidCallPermissions(cameraRequested ? "video" : "audio");
+    diagnostic("native_permissions_granted", { media, cameraPermissionGranted, cameraRequested });
+    if (cameraRequested && !cameraPermissionGranted) {
+      diagnostic("native_camera_permission_denied_audio_continues", { media });
     }
-  });
+    if (generation !== roomGeneration) throw new Error("stale_join_attempt");
 
-  try {
+    // Activate the process-wide native audio resources in one serialized lane.
+    // This prevents a late stop from call A racing past call B's start.
+    await configureNativeAudio(media, diagnostic, "native_audio_configured", generation);
+    if (generation !== roomGeneration) throw new Error("stale_join_attempt");
+    let audioStarted = false;
+    try {
+      audioStarted = await startNativeAudioSession(
+        diagnostic,
+        "native_audio_session_started",
+        generation,
+      );
+    } catch {
+      throw new Error("audio_session_start_failed");
+    }
+    if (!audioStarted || generation !== roomGeneration) {
+      throw new Error("stale_join_attempt");
+    }
+
+    r = new Room({
+      adaptiveStream: media === "video",
+      dynacast: media === "video",
+      videoCaptureDefaults: {
+        resolution: { width: 640, height: 360, frameRate: 15 },
+      },
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    if (generation !== roomGeneration) throw new Error("stale_join_attempt");
+    room = r;
+    roomGenerations.set(r, generation);
+
+    r.on(RoomEvent.Reconnecting, () => {
+      diagnostic("native_room_reconnecting", { connectionState: r?.state });
+    });
+    r.on(RoomEvent.Reconnected, () => {
+      diagnostic("native_room_reconnected", { connectionState: r?.state });
+    });
+    r.on(RoomEvent.TrackMuted, (publication, participant) => {
+      if (r) diagnostic("native_track_muted", publicationDetails(publication, participant, r));
+    });
+    r.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+      if (r) diagnostic("native_track_unmuted", publicationDetails(publication, participant, r));
+    });
+    r.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+      if (r) diagnostic("native_local_track_unpublished", publicationDetails(publication, participant, r));
+    });
+    r.on(RoomEvent.LocalAudioSilenceDetected, (publication) => {
+      diagnostic("native_local_audio_silence_detected", {
+        source: publication.source,
+        trackKind: publication.kind,
+        trackSid: publication.trackSid,
+        ...localMicrophoneDetails(r),
+      });
+    });
+    r.on(RoomEvent.Disconnected, (reason?: unknown) => {
+      diagnostic("native_room_disconnected", {
+        connectionState: r?.state,
+        reason: reason == null ? undefined : String(reason),
+      });
+    });
+
     diagnostic("native_foreground_service_ready", {
       available: isCallForegroundServiceAvailable(),
       media,
     });
-    await startCallForegroundService(media);
+    let foregroundStarted = false;
+    try {
+      foregroundStarted = await startOwnedForegroundService(media, generation);
+    } catch (err) {
+      diagnostic("native_foreground_service_start_failed", {
+        media,
+        message: errorMessage(err),
+      });
+      throw err;
+    }
+    if (!foregroundStarted || generation !== roomGeneration || room !== r) {
+      throw new Error("stale_join_attempt");
+    }
     diagnostic("native_foreground_service_started", { media });
-  } catch (err) {
-    diagnostic("native_foreground_service_start_failed", { media, message: errorMessage(err) });
-    await releaseAudioSession();
-    throw err;
-  }
-  try {
     await r.connect(url, token);
+    if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
+    diagnostic("native_room_connected", { connectionState: r.state });
+    try {
+      await r.localParticipant.setMicrophoneEnabled(true);
+    } catch (err) {
+      diagnostic("native_microphone_publish_failed", {
+        errorName: err instanceof Error ? err.name : "unknown",
+      });
+      throw err;
+    }
+    if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
+    const microphonePublished = hasLocalTrack(r, Track.Source.Microphone);
+    diagnostic("native_microphone_publish_result", { microphonePublished });
+    let cameraPublished = false;
+    if (cameraRequested && cameraPermissionGranted) {
+      cameraPublished = await enableCameraWithRetry(r, generation);
+      if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
+      diagnostic("native_camera_publish_result", { cameraPublished });
+    }
+    return { room: r, media, microphonePublished, cameraPublished };
   } catch (err) {
-    diagnostic("native_room_connect_failed", { message: errorMessage(err) });
-    await Promise.allSettled([r.disconnect(), releaseAudioSession(), stopCallForegroundService()]);
+    const message = errorMessage(err);
+    if (message === "microphone_permission_denied") {
+      diagnostic("native_permissions_failed", { media, message });
+    } else if (message !== "stale_join_attempt") {
+      diagnostic("native_join_failed", {
+        errorName: err instanceof Error ? err.name : "unknown",
+        generationCurrent: generation === roomGeneration,
+      });
+    }
+    await cleanupJoinAttempt(r, generation);
     throw err;
   }
-  room = r;
-  diagnostic("native_room_connected", { connectionState: r.state });
-  try {
-    await r.localParticipant.setMicrophoneEnabled(true);
-  } catch (err) {
-    diagnostic("native_microphone_publish_failed", { message: errorMessage(err) });
-    throw err;
-  }
-  const microphonePublished = hasLocalTrack(r, Track.Source.Microphone);
-  diagnostic("native_microphone_publish_result", { microphonePublished });
-  let cameraPublished = false;
-  if (media === "video") {
-    cameraPublished = await enableCameraWithRetry(r);
-    diagnostic("native_camera_publish_result", { cameraPublished });
-  }
-  return { room: r, media, microphonePublished, cameraPublished };
+}
+
+export async function resumeCallAudio(): Promise<boolean> {
+  return true;
 }
 
 export async function ensureCallKeepAlive(
@@ -377,14 +551,22 @@ export async function ensureCallKeepAlive(
 ): Promise<void> {
   if (Platform.OS !== "android" || !room) return;
   const r = room;
+  const generation = roomGeneration;
+  const isCurrent = () => room === r && generation === roomGeneration;
   const diagnostic = onDiagnostic ?? (() => {});
   diagnostic("native_keepalive_start", { media, reason, ...localMicrophoneDetails(r) });
   try {
     await ensureAudioMode();
   } catch {}
-  await configureNativeAudio(media, diagnostic, "native_audio_keepalive_configured");
+  if (!isCurrent()) return;
+  await configureNativeAudio(media, diagnostic, "native_audio_keepalive_configured", generation);
+  if (!isCurrent()) return;
   try {
-    await startCallForegroundService(media);
+    const foregroundStarted = await startOwnedForegroundService(media, generation);
+    if (!foregroundStarted || !isCurrent()) {
+      await stopOwnedForegroundService(generation).catch(() => {});
+      return;
+    }
     diagnostic("native_foreground_service_keepalive_started", {
       media,
       reason,
@@ -399,13 +581,26 @@ export async function ensureCallKeepAlive(
     });
   }
   try {
-    await startNativeAudioSession(diagnostic, "native_audio_session_keepalive_started");
+    const audioStarted = await startNativeAudioSession(
+      diagnostic,
+      "native_audio_session_keepalive_started",
+      generation,
+    );
+    if (!audioStarted) return;
   } catch {
+    return;
+  }
+  if (!isCurrent()) {
+    await Promise.allSettled([
+      releaseAudioSession(generation),
+      stopOwnedForegroundService(generation),
+    ]);
     return;
   }
   if (microphoneNeedsRepublish(r)) {
     try {
       await r.localParticipant.setMicrophoneEnabled(false);
+      if (!isCurrent()) return;
       await r.localParticipant.setMicrophoneEnabled(true);
       diagnostic("native_microphone_keepalive_republished", {
         reason,
@@ -430,11 +625,14 @@ export async function setMuted(muted: boolean): Promise<void> {
 
 export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
   if (room) {
+    const r = room;
+    const generation = roomGeneration;
     if (enabled) {
       await prepareVideoCall();
-      return enableCameraWithRetry(room);
+      if (room !== r || generation !== roomGeneration) return false;
+      return enableCameraWithRetry(r, generation);
     } else {
-      await room.localParticipant.setCameraEnabled(false, cameraOptions());
+      await r.localParticipant.setCameraEnabled(false, cameraOptions());
       return true;
     }
   }
@@ -444,33 +642,48 @@ export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
 export async function switchCamera(): Promise<"user" | "environment"> {
   cameraFacingMode = cameraFacingMode === "user" ? "environment" : "user";
   if (room) {
-    const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const r = room;
+    const generation = roomGeneration;
+    const pub = r.localParticipant.getTrackPublication(Track.Source.Camera);
     const track = pub?.track as LocalVideoTrack | undefined;
     if (track) {
       await track.restartTrack(cameraOptions());
     } else {
       await prepareVideoCall();
-      await enableCameraWithRetry(room);
+      if (room === r && generation === roomGeneration) {
+        await enableCameraWithRetry(r, generation);
+      }
     }
   }
   return cameraFacingMode;
 }
 
-async function releaseAudioSession(): Promise<void> {
-  if (!audioSessionActive) return;
-  audioSessionActive = false;
-  try {
-    await AudioSession.stopAudioSession();
-  } catch {}
+async function releaseAudioSession(expectedGeneration?: number): Promise<void> {
+  await serializeNativeResource(async () => {
+    if (
+      expectedGeneration !== undefined &&
+      audioSessionGeneration !== expectedGeneration
+    ) return;
+    if (!audioSessionActive || audioSessionGeneration == null) return;
+    audioSessionActive = false;
+    audioSessionGeneration = null;
+    try {
+      await AudioSession.stopAudioSession();
+    } catch {}
+  });
 }
 
-export async function leaveCall(): Promise<void> {
-  const r = room;
-  room = null;
-  if (r) {
-    try {
-      await r.disconnect();
-    } catch {}
+export async function leaveCall(expectedRoom?: Room): Promise<void> {
+  // A stale Provider continuation must dispose only the Room it produced. If a
+  // newer call already owns the module globals, never invalidate or stop it.
+  if (expectedRoom && room !== expectedRoom) {
+    const generation = roomGenerations.get(expectedRoom);
+    await Promise.allSettled([
+      disconnectRoom(expectedRoom),
+      ...(generation != null ? [releaseAudioSession(generation)] : []),
+      ...(generation != null ? [stopOwnedForegroundService(generation)] : []),
+    ]);
+    return;
   }
-  await Promise.allSettled([releaseAudioSession(), stopCallForegroundService()]);
+  await cleanupCurrentCall(true);
 }

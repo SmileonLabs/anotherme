@@ -1,8 +1,18 @@
 import webpush, { type PushSubscription } from "web-push";
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "./logger";
-import { addFcmToken, sendFcmCallToUser, sendFcmNotificationToUser } from "./fcm";
+import {
+  addFcmToken,
+  removeFcmToken,
+  sendFcmCallToUser,
+  sendFcmNotificationToUser,
+} from "./fcm";
+import {
+  rebindExclusiveDevice,
+  removeOwnedDevice,
+} from "./pushOwnershipPolicy";
+import { buildPushFailureLog } from "./pushLogging";
 
 const publicKey = process.env.VAPID_PUBLIC_KEY;
 const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -106,19 +116,84 @@ export async function addSubscription(userId: string, rawToken: string): Promise
   }
   const sub = incoming;
   await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`web-push:${sub.endpoint}`}, 0))`,
+    );
+    const candidateRows = await tx
+      .select({ id: usersTable.id, pushToken: usersTable.pushToken })
+      .from(usersTable)
+      .where(or(eq(usersTable.id, userId), isNotNull(usersTable.pushToken)));
+    const affectedIds = Array.from(
+      new Set([
+        userId,
+        ...candidateRows
+          .filter((row) =>
+            parseSubscriptions(row.pushToken).some(
+              (candidate) => candidate.endpoint === sub.endpoint,
+            ),
+          )
+          .map((row) => row.id),
+      ]),
+    ).sort();
+    const locked = await tx
+      .select({ id: usersTable.id, pushToken: usersTable.pushToken })
+      .from(usersTable)
+      .where(inArray(usersTable.id, affectedIds))
+      .orderBy(asc(usersTable.id))
+      .for("update");
+    if (!locked.some((row) => row.id === userId)) return;
+    const updates = rebindExclusiveDevice(
+      locked.map((row) => ({
+        userId: row.id,
+        values: parseSubscriptions(row.pushToken),
+      })),
+      userId,
+      sub,
+      (value) => value.endpoint,
+      MAX_DEVICES,
+    );
+    for (const [ownerId, subscriptions] of updates) {
+      await tx
+        .update(usersTable)
+        .set({ pushToken: serializeSubscriptions(subscriptions) })
+        .where(eq(usersTable.id, ownerId));
+    }
+  });
+}
+
+/** Remove one device credential from only the authenticated owner. */
+export async function removeSubscription(userId: string, rawToken: string): Promise<void> {
+  let incoming: PushSubscription | null = null;
+  try {
+    const parsed = JSON.parse(rawToken);
+    if (isValidSubscription(parsed)) incoming = parsed;
+  } catch {
+    incoming = null;
+  }
+  if (!incoming) {
+    await removeFcmToken(userId, rawToken);
+    return;
+  }
+
+  const endpoint = incoming.endpoint;
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`web-push:${endpoint}`}, 0))`,
+    );
     const [row] = await tx
       .select({ pushToken: usersTable.pushToken })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .for("update");
     if (!row) return;
-    const existing = parseSubscriptions(row.pushToken).filter(
-      (s) => s.endpoint !== sub.endpoint,
+    const remaining = removeOwnedDevice(
+      parseSubscriptions(row.pushToken),
+      endpoint,
+      (value) => value.endpoint,
     );
-    const next = [...existing, sub].slice(-MAX_DEVICES);
     await tx
       .update(usersTable)
-      .set({ pushToken: serializeSubscriptions(next) })
+      .set({ pushToken: serializeSubscriptions(remaining) })
       .where(eq(usersTable.id, userId));
   });
 }
@@ -146,7 +221,10 @@ async function removeEndpoints(userId: string, staleEndpoints: Set<string>): Pro
         .where(eq(usersTable.id, userId));
     });
   } catch (err) {
-    logger.error({ err, userId }, "Failed to prune stale push subscriptions");
+    logger.error(
+      { ...buildPushFailureLog(err), userId },
+      "Failed to prune stale push subscriptions",
+    );
   }
 }
 
@@ -186,7 +264,10 @@ export async function sendPushToUser(
     const subscriptions = parseSubscriptions(user.pushToken ?? null);
     if (subscriptions.length === 0) return;
 
-    const body = JSON.stringify(payload);
+    // The service worker validates this server-owned recipient against the
+    // locally active account before displaying anything. Never trust a caller
+    // supplied value for this ownership fence.
+    const body = JSON.stringify({ ...payload, recipientUserId: userId });
     const stale = new Set<string>();
     await Promise.allSettled(
       subscriptions.map(async (sub) => {
@@ -197,14 +278,20 @@ export async function sendPushToUser(
           if (statusCode === 404 || statusCode === 410) {
             stale.add(sub.endpoint);
           } else {
-            logger.error({ err, userId }, "Failed to send web push to a device");
+            logger.error(
+              { ...buildPushFailureLog(err), userId },
+              "Failed to send web push to a device",
+            );
           }
         }
       }),
     );
     await removeEndpoints(userId, stale);
   } catch (err) {
-    logger.error({ err, userId }, "Failed to send push");
+    logger.error(
+      { ...buildPushFailureLog(err), userId },
+      "Failed to send push",
+    );
   }
 }
 

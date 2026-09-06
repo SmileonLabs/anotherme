@@ -22,7 +22,7 @@ import {
   getActiveCharacterIdentityMap,
   resolveCharacterProfileActor,
 } from "../lib/characterProfiles";
-import { addSubscription } from "../lib/push";
+import { addSubscription, removeSubscription } from "../lib/push";
 import { toPublicUser } from "../lib/publicUser";
 import { rateLimit } from "../lib/rateLimit";
 import { listPublicStarFeedPostsByAuthor } from "../lib/starFeed";
@@ -409,33 +409,53 @@ router.delete("/users/me", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.post("/users/me/push-token", requireAuth, async (req, res): Promise<void> => {
-  const user = req.dbUser!;
-  const parsed = pushTokenSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid token" });
-    return;
-  }
-  const { token } = parsed.data;
-  await addSubscription(user.id, token);
-  const [updated] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.id, user.id));
+router.post(
+  "/users/me/push-token",
+  requireAuth,
+  rateLimit({ name: "push-token-register", limit: 20, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
+    const user = req.dbUser!;
+    const parsed = pushTokenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid token" });
+      return;
+    }
+    const { token } = parsed.data;
+    await addSubscription(user.id, token);
+    const [updated] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id));
 
-  res.json({
-    id: updated.id,
-    clerkId: updated.clerkId,
-    email: updated.email,
-    nickname: updated.nickname,
-    profileImageUrl: null,
-    statusMessage: updated.statusMessage ?? null,
-    pushToken: updated.pushToken ?? null,
-    notificationEnabled: updated.notificationEnabled,
-    talkAnalysisEnabled: updated.talkAnalysisEnabled,
-    createdAt: updated.createdAt.toISOString(),
-  });
-});
+    res.json({
+      id: updated.id,
+      clerkId: updated.clerkId,
+      email: updated.email,
+      nickname: updated.nickname,
+      profileImageUrl: null,
+      statusMessage: updated.statusMessage ?? null,
+      pushToken: updated.pushToken ?? null,
+      notificationEnabled: updated.notificationEnabled,
+      talkAnalysisEnabled: updated.talkAnalysisEnabled,
+      createdAt: updated.createdAt.toISOString(),
+    });
+  },
+);
+
+router.delete(
+  "/users/me/push-token",
+  requireAuth,
+  rateLimit({ name: "push-token-revoke", limit: 20, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
+    const parsed = pushTokenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid token" });
+      return;
+    }
+    await removeSubscription(req.dbUser!.id, parsed.data.token);
+    res.sendStatus(204);
+  },
+);
 
 router.get("/users/search", requireAuth, rateLimit({ name: "user-search", limit: 20, windowSeconds: 60 }), async (req, res): Promise<void> => {
   const parsed = userSearchSchema.safeParse(req.query);

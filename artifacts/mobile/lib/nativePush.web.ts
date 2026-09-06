@@ -19,6 +19,10 @@ export async function registerForPushTokenAsync(): Promise<string | null> {
   return null;
 }
 
+export async function getExistingNativePushToken(): Promise<string | null> {
+  return null;
+}
+
 export async function getNativePushState(): Promise<NativePushState> {
   return { supported: false, permission: "default", tokenAvailable: false };
 }

@@ -36,9 +36,27 @@ describe("chat message policy", () => {
   });
 
   it("uses a bounded positive roomSeq cursor", () => {
-    expect(parseMessagePage({})).toEqual({ ok: true, limit: 50, beforeSeq: null });
-    expect(parseMessagePage({ beforeSeq: "45", limit: "25" })).toEqual({ ok: true, limit: 25, beforeSeq: 45 });
+    expect(parseMessagePage({})).toEqual({
+      ok: true,
+      limit: 50,
+      beforeSeq: null,
+      afterSeq: null,
+    });
+    expect(parseMessagePage({ beforeSeq: "45", limit: "25" })).toEqual({
+      ok: true,
+      limit: 25,
+      beforeSeq: 45,
+      afterSeq: null,
+    });
+    expect(parseMessagePage({ afterSeq: "0", limit: "100" })).toEqual({
+      ok: true,
+      limit: 100,
+      beforeSeq: null,
+      afterSeq: 0,
+    });
     expect(parseMessagePage({ beforeSeq: "0" })).toMatchObject({ ok: false });
+    expect(parseMessagePage({ afterSeq: "-1" })).toMatchObject({ ok: false });
+    expect(parseMessagePage({ beforeSeq: "45", afterSeq: "10" })).toMatchObject({ ok: false });
     expect(parseMessagePage({ limit: "101" })).toMatchObject({ ok: false });
   });
 

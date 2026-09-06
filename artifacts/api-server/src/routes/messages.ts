@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   chatRoomMembersTable,
@@ -14,6 +14,8 @@ import {
 import { requireAuth } from "../lib/auth";
 import { publicAccountKind } from "../lib/publicUser";
 import { scheduleLinkPreview } from "../lib/linkPreview";
+import { safeLinkPreviewImageUrl } from "../lib/linkPreviewImagePolicy";
+import { buildLinkPreviewRoomFailureLog } from "../lib/linkPreviewLogging";
 import { sendPushToUsers } from "../lib/push";
 import { getTypingUserIds, markTyping } from "../lib/typing";
 import { runDungeonTurn } from "../lib/dungeon";
@@ -308,7 +310,10 @@ async function serializeMessages(
                 domain: link.domain ?? null,
                 title: link.title ?? null,
                 description: link.description ?? null,
-                imageUrl: link.imageUrl ?? null,
+                // Historical rows may contain publisher-controlled OG image
+                // URLs. Never expose them to recipients until a same-origin,
+                // authenticated image proxy exists.
+                imageUrl: safeLinkPreviewImageUrl(link.imageUrl),
               }
             : null,
       };
@@ -477,6 +482,9 @@ router.get(
           page.beforeSeq === null
             ? undefined
             : lt(messagesTable.roomSeq, page.beforeSeq),
+          page.afterSeq === null
+            ? undefined
+            : gt(messagesTable.roomSeq, page.afterSeq),
           sql`NOT EXISTS (
           SELECT 1
           FROM message_deletions AS md
@@ -485,17 +493,28 @@ router.get(
         )`,
         ),
       )
-      .orderBy(
-        desc(messagesTable.roomSeq),
-        desc(messagesTable.createdAt),
-        desc(messagesTable.id),
-      )
+      .orderBy(...(
+        page.afterSeq === null
+          ? [
+              desc(messagesTable.roomSeq),
+              desc(messagesTable.createdAt),
+              desc(messagesTable.id),
+            ]
+          : [
+              asc(messagesTable.roomSeq),
+              asc(messagesTable.createdAt),
+              asc(messagesTable.id),
+            ]
+      ))
       .limit(page.limit);
 
     const memberReadSeqs = await getRoomMemberReadSeqs(raw);
     const result = await serializeMessages(messages, userId, memberReadSeqs);
 
-    res.json(result.reverse());
+    // Latest/history pages are selected newest-first and reversed for display.
+    // Catch-up pages are selected oldest-first so the client can advance the
+    // roomSeq cursor without skipping a gap larger than one page.
+    res.json(page.afterSeq === null ? result.reverse() : result);
   },
 );
 
@@ -693,7 +712,7 @@ router.post(
         req.log,
       ).catch((err) =>
         req.log.error(
-          { err, roomId: raw, messageId: message.id },
+          buildLinkPreviewRoomFailureLog(err, raw, message.id),
           "Failed to schedule link preview",
         ),
       );
@@ -1148,7 +1167,7 @@ router.post(
         req.log,
       ).catch((err) =>
         req.log.error(
-          { err, roomId: targetRoomId, messageId: message.id },
+          buildLinkPreviewRoomFailureLog(err, targetRoomId, message.id),
           "Failed to schedule forwarded link preview",
         ),
       );
@@ -1304,11 +1323,22 @@ router.post(
     // Typing is only a presence/UX signal. Do not advance read receipts here:
     // an AI/persona reply or background composer heartbeat must never make the
     // other side look like they read messages they did not actually open.
-    void publishRoomRealtimeEvent(raw, userId, "typing.updated").catch((err) =>
-      req.log.error(
-        { err, roomId: raw },
-        "Failed to publish typing realtime event",
-      ),
+    // Do not echo typing back to the actor. The old echo caused the sender to
+    // invalidate and GET the same typing list on every heartbeat, even though
+    // that endpoint deliberately excludes the current user.
+    void (async () => {
+      const recipients = await getRoomDeliveryRecipients(raw, userId);
+      const userIds = recipients.realtimeUserIds.filter((id) => id !== userId);
+      if (userIds.length === 0) return;
+      await publishRealtimeEvent({
+        type: "typing.updated",
+        roomId: raw,
+        actorUserId: userId,
+        userIds,
+        data: { expiresAt: new Date(Date.now() + 5_000).toISOString() },
+      });
+    })().catch((err) =>
+      req.log.error({ err, roomId: raw }, "Failed to publish typing realtime event"),
     );
     res.sendStatus(204);
   },

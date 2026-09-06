@@ -17,6 +17,7 @@ import {
 } from "@/lib/callNotifications";
 import {
   getInitialNotificationUrl,
+  getExistingNativePushToken,
   nativePushSupported,
   registerForPushTokenAsync,
   setupNotificationHandler,
@@ -24,6 +25,13 @@ import {
   subscribeNotificationOpen,
   subscribePushTokenRefresh,
 } from "@/lib/nativePush";
+import {
+  clearCurrentNativePushOwner,
+  NATIVE_PUSH_OWNER_REFRESH_INTERVAL_MS,
+  setCurrentNativePushOwner,
+} from "@/lib/nativePushOwner";
+import { revokePushRegistrationWithBearer } from "@/lib/pushOwnership";
+import { pushRegistrationCoordinator } from "@/lib/pushRegistrationCoordinator";
 
 /**
  * Native-only counterpart to PushRegistrar. Registers the device push token,
@@ -31,9 +39,27 @@ import {
  * messages, and routes accept/decline taps into the call flow.
  */
 export function NativePushRegistrar() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, getToken, userId: clerkUserId } = useAuth();
   const router = useRouter();
   const { data: me } = useGetMe();
+  // A profile switch temporarily evicts /users/me from React Query. Preserve
+  // the backend owner through that same-Clerk-account gap, but discard it
+  // immediately when the Clerk account itself changes.
+  const ownerIdentityRef = useRef<{
+    clerkUserId: string | null;
+    ownerId: string | null;
+  }>({ clerkUserId: null, ownerId: null });
+  if (!isSignedIn || !clerkUserId) {
+    ownerIdentityRef.current = { clerkUserId: null, ownerId: null };
+  } else {
+    if (ownerIdentityRef.current.clerkUserId !== clerkUserId) {
+      ownerIdentityRef.current = { clerkUserId, ownerId: null };
+    }
+    if (me?.id) ownerIdentityRef.current.ownerId = me.id;
+  }
+  const ownerId = ownerIdentityRef.current.ownerId;
+  const ownerTokenRef = useRef(pushRegistrationCoordinator.setOwner(ownerId));
+  ownerTokenRef.current = pushRegistrationCoordinator.setOwner(ownerId);
   const registerPushToken = useRegisterPushToken();
   const { joinFromCard, declineFromCard } = useCall();
 
@@ -48,7 +74,7 @@ export function NativePushRegistrar() {
   const routerRef = useRef(router);
   routerRef.current = router;
   const done = useRef(false);
-  const registrationInFlight = useRef(false);
+  const registrationOwnerRef = useRef<string | null>(null);
   const lastRegistrationAt = useRef(0);
   const initialNotificationHandled = useRef(false);
 
@@ -59,24 +85,71 @@ export function NativePushRegistrar() {
     void setupCallNotifications();
   }, []);
 
+  // Persist the signed-in owner for headless FCM handlers. Cleanup uses the
+  // old account's captured bearer and only revokes that old server binding.
+  useEffect(() => {
+    if (!nativePushSupported) return;
+    if (!ownerId) {
+      void setCurrentNativePushOwner(null);
+      void cancelIncomingCallNotification();
+      return;
+    }
+    const effectOwnerToken = ownerTokenRef.current;
+    if (!effectOwnerToken || effectOwnerToken.ownerId !== ownerId) return;
+    const capturedBearer = getToken().catch(() => null);
+    const refreshOwnerLease = () => void setCurrentNativePushOwner(ownerId);
+    refreshOwnerLease();
+    const ownerLeaseTimer = setInterval(
+      refreshOwnerLease,
+      NATIVE_PUSH_OWNER_REFRESH_INTERVAL_MS,
+    );
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshOwnerLease();
+    });
+    return () => {
+      clearInterval(ownerLeaseTimer);
+      appStateSubscription.remove();
+      pushRegistrationCoordinator.clearIfCurrent(effectOwnerToken);
+      // A late cleanup must not erase a lease already rebound to account B.
+      void clearCurrentNativePushOwner(ownerId);
+      void cancelIncomingCallNotification();
+      void pushRegistrationCoordinator
+        .enqueueCleanup(async () => {
+          const [bearer, token] = await Promise.all([
+            capturedBearer,
+            getExistingNativePushToken(),
+          ]);
+          await revokePushRegistrationWithBearer(token, bearer);
+        })
+        .catch(() => undefined);
+    };
+  }, [getToken, ownerId]);
+
   // Reset the registration guard so a later sign-in / re-enable re-registers.
   useEffect(() => {
-    if (!isSignedIn || me?.notificationEnabled === false) {
+    if (
+      registrationOwnerRef.current !== ownerId ||
+      me?.notificationEnabled === false
+    ) {
+      registrationOwnerRef.current = ownerId;
       done.current = false;
       lastRegistrationAt.current = 0;
     }
-  }, [isSignedIn, me?.notificationEnabled]);
+  }, [me?.notificationEnabled, ownerId]);
 
   // Register once at sign-in and retry after a denied/transient token lookup.
   // Refresh on foreground at a bounded interval so an APK whose initial
   // registration failed does not remain permanently unreachable for calls.
   useEffect(() => {
     if (!nativePushSupported) return;
-    if (!isSignedIn || !me?.notificationEnabled) return;
+    if (!ownerId || !me?.notificationEnabled) return;
     let mounted = true;
+    let registrationInFlight = false;
+    const effectOwnerToken = ownerTokenRef.current;
+    if (!effectOwnerToken || effectOwnerToken.ownerId !== ownerId) return;
     const registerDevice = async (force = false) => {
       const sixHours = 6 * 60 * 60 * 1000;
-      if (registrationInFlight.current) return;
+      if (registrationInFlight) return;
       if (
         !force &&
         done.current &&
@@ -84,21 +157,24 @@ export function NativePushRegistrar() {
       ) {
         return;
       }
-      registrationInFlight.current = true;
+      registrationInFlight = true;
       try {
         const token = await registerForPushTokenAsync();
         if (!token || !mounted) {
           done.current = false;
           return;
         }
-        await registerRef.current({ data: { token } });
-        if (!mounted) return;
+        const registered = await pushRegistrationCoordinator.enqueue(
+          effectOwnerToken,
+          () => registerRef.current({ data: { token } }),
+        );
+        if (!mounted || !registered) return;
         done.current = true;
         lastRegistrationAt.current = Date.now();
       } catch {
         done.current = false;
       } finally {
-        registrationInFlight.current = false;
+        registrationInFlight = false;
       }
     };
 
@@ -110,17 +186,20 @@ export function NativePushRegistrar() {
       mounted = false;
       subscription.remove();
     };
-  }, [isSignedIn, me?.notificationEnabled]);
+  }, [me?.notificationEnabled, ownerId]);
 
   // FCM can rotate device tokens. Keep the server-side token list fresh instead
   // of waiting until the old token starts failing during sends.
   useEffect(() => {
     if (!nativePushSupported) return;
-    if (!isSignedIn || !me?.notificationEnabled) return;
+    if (!ownerId || !me?.notificationEnabled) return;
     return subscribePushTokenRefresh((token) => {
-      void registerRef
-        .current({ data: { token } })
-        .then(() => {
+      const ownerToken = ownerTokenRef.current;
+      if (!ownerToken || ownerToken.ownerId !== ownerId) return;
+      void pushRegistrationCoordinator
+        .enqueue(ownerToken, () => registerRef.current({ data: { token } }))
+        .then((registered) => {
+          if (!registered) return;
           done.current = true;
           lastRegistrationAt.current = Date.now();
         })
@@ -128,12 +207,12 @@ export function NativePushRegistrar() {
           done.current = false;
         });
     });
-  }, [isSignedIn, me?.notificationEnabled]);
+  }, [me?.notificationEnabled, ownerId]);
 
   // Route regular FCM notification taps. Incoming-call action taps stay on the
   // notifee path below because they need accept/decline semantics, not navigation.
   useEffect(() => {
-    if (!nativePushSupported || !isSignedIn || !me?.id) return;
+    if (!nativePushSupported || !ownerId) return;
 
     const navigate = (url: string) => {
       routerRef.current.navigate(url as any);
@@ -148,11 +227,11 @@ export function NativePushRegistrar() {
       })();
     }
     return unsubscribe;
-  }, [isSignedIn]);
+  }, [ownerId]);
 
   // Wire incoming-call notifications and their accept/decline actions.
   useEffect(() => {
-    if (!nativePushSupported || !isSignedIn || !me?.id) return;
+    if (!nativePushSupported || !ownerId) return;
 
     const isStillRinging = async (intent: IncomingCallIntent) => {
       try {
@@ -234,7 +313,7 @@ export function NativePushRegistrar() {
       unsubIncoming();
       appStateSubscription.remove();
     };
-  }, [isSignedIn, me?.id]);
+  }, [ownerId]);
 
   return null;
 }

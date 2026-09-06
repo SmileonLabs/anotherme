@@ -1,0 +1,10 @@
+[Unit]
+Description=Another Me production disk capacity monitor
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/anotherme/disk-monitor.env
+ExecStart=/usr/local/sbin/anotherme-disk-monitor
+
+[Install]
+WantedBy=multi-user.target

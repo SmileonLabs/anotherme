@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod/v4";
-import { and, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { AccessToken, RoomServiceClient, WebhookReceiver } from "livekit-server-sdk";
 import {
   db,
   callsTable,
+  callControlOperationsTable,
   callUserLocksTable,
   usersTable,
   messagesTable,
@@ -26,12 +27,32 @@ import {
   CALL_TOKEN_TTL_SECONDS,
   callTokenGrant,
   callDurationSec,
-  isLiveCallStatus,
   isTerminalCallStatus,
   terminalCallStatuses,
   type CallMedia,
   type TerminalCallStatus,
 } from "../lib/callLifecycle";
+import {
+  applyCallControlOperation,
+  CallControlAccessError,
+  CallAttemptConflictError,
+  CallOperationConflictError,
+  callAttemptMatches,
+  transitionCallToTerminal,
+  type CallControlAction,
+} from "../lib/callControl";
+import {
+  classifyLiveKitRoomLookupError,
+  decideCallPresence,
+  DEFAULT_CALL_PRESENCE_POLICY,
+  type CallPresencePolicy,
+} from "../lib/callReconciliation";
+import {
+  callDiagnosticPhaseSchema,
+  callDiagnosticPlatformSchema,
+  callDiagnosticRoleSchema,
+  sanitizeCallDiagnosticDetails,
+} from "../lib/callDiagnostics";
 import { ensureCharacterProfileState, resolveCharacterProfileActor } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
@@ -41,10 +62,20 @@ const createCallSchema = z.object({
   media: z.enum(["audio", "video"]).optional(),
 }).strict();
 const callDiagnosticSchema = z.object({
-  phase: z.string().trim().min(1).max(100),
-  platform: z.string().trim().max(50).optional(),
-  role: z.string().trim().max(50).optional(),
+  phase: callDiagnosticPhaseSchema,
+  platform: callDiagnosticPlatformSchema.optional(),
+  role: callDiagnosticRoleSchema.optional(),
   details: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+const queuedCallDiagnosticSchema = z.object({
+  eventId: z.uuid(),
+  attemptId: z.uuid(),
+  callId: z.uuid().optional(),
+  phase: callDiagnosticPhaseSchema,
+  platform: callDiagnosticPlatformSchema.optional(),
+  role: callDiagnosticRoleSchema.optional(),
+  occurredAt: z.iso.datetime({ offset: true }),
+  details: z.record(z.string().trim().min(1).max(50), z.unknown()).optional(),
 }).strict();
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
@@ -54,6 +85,37 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 const RING_TIMEOUT_MS = 45_000;
 const ROOM_TERMINATION_RETRY_MS = 30_000;
 const DEFAULT_CALL_WORKER_BATCH_SIZE = 25;
+const DEFAULT_RECONCILIATION_POLL_MS = 15_000;
+const DEFAULT_RECONCILIATION_LEASE_MS = 60_000;
+const DEFAULT_LIVEKIT_ADMIN_TIMEOUT_SECONDS = 8;
+const DEFAULT_CALL_OPERATION_RETENTION_DAYS = 30;
+const DEFAULT_CALL_OPERATION_CLEANUP_BATCH_SIZE = 250;
+const CALL_IDEMPOTENCY_HEADER = "x-idempotency-key";
+const CALL_ATTEMPT_HEADER = "x-call-attempt-id";
+const callControlRateLimit = rateLimit({ name: "call-control", limit: 120, windowSeconds: 60 });
+const callDiagnosticRateLimit = rateLimit({ name: "call-diagnostics", limit: 240, windowSeconds: 60 });
+
+function configuredAttemptHeaderCutoff(): Date | null {
+  const raw = process.env.CALL_ATTEMPT_HEADER_ENFORCE_AFTER?.trim();
+  if (!raw) {
+    logger.warn(
+      "CALL_ATTEMPT_HEADER_ENFORCE_AFTER is unset; missing call attempt headers remain temporarily compatible",
+    );
+    return null;
+  }
+  const parsed = z.iso.datetime({ offset: true }).safeParse(raw);
+  if (!parsed.success) {
+    logger.error(
+      "CALL_ATTEMPT_HEADER_ENFORCE_AFTER is invalid; missing call attempt headers remain temporarily compatible",
+    );
+    return null;
+  }
+  return new Date(parsed.data);
+}
+
+// This is intentionally an operator-selected release cutoff, not a hard-coded
+// calendar date. Existing legacy rows (attempt_id IS NULL) always remain usable.
+const CALL_ATTEMPT_HEADER_ENFORCE_AFTER = configuredAttemptHeaderCutoff();
 
 function livekitConfigured(): boolean {
   if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) return false;
@@ -81,7 +143,14 @@ function livekitServiceUrl(): string {
 }
 
 function livekitRoomService(): RoomServiceClient {
-  return new RoomServiceClient(livekitServiceUrl(), LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!);
+  return new RoomServiceClient(livekitServiceUrl(), LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!, {
+    requestTimeout: envNumberInRange(
+      "LIVEKIT_ADMIN_REQUEST_TIMEOUT_SECONDS",
+      DEFAULT_LIVEKIT_ADMIN_TIMEOUT_SECONDS,
+      2,
+      30,
+    ),
+  });
 }
 
 function isNotFoundError(err: unknown): boolean {
@@ -98,11 +167,39 @@ function envPositiveNumber(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function terminalUpdate(status: TerminalCallStatus, now: Date) {
-  if (status === "declined") return { status, declinedAt: now, endedAt: now };
-  if (status === "missed") return { status, missedAt: now, endedAt: now };
-  if (status === "cancelled") return { status, cancelledAt: now, endedAt: now };
-  return { status, endedAt: now };
+function envNumberInRange(name: string, fallback: number, min: number, max: number): number {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function optionalUuidHeader(req: Request, name: string): string | undefined | null {
+  const value = req.get(name)?.trim();
+  if (!value) return undefined;
+  return z.uuid().safeParse(value).success ? value : null;
+}
+
+function callPresencePolicy(): CallPresencePolicy {
+  return {
+    initialConnectionGraceMs: envNumberInRange(
+      "CALL_INITIAL_CONNECTION_GRACE_MS",
+      DEFAULT_CALL_PRESENCE_POLICY.initialConnectionGraceMs,
+      30_000,
+      300_000,
+    ),
+    emptyRoomGraceMs: envNumberInRange(
+      "CALL_EMPTY_ROOM_GRACE_MS",
+      DEFAULT_CALL_PRESENCE_POLICY.emptyRoomGraceMs,
+      30_000,
+      600_000,
+    ),
+    singleParticipantGraceMs: envNumberInRange(
+      "CALL_SINGLE_PARTICIPANT_GRACE_MS",
+      DEFAULT_CALL_PRESENCE_POLICY.singleParticipantGraceMs,
+      60_000,
+      900_000,
+    ),
+  };
 }
 
 async function findCall(id: string): Promise<Call | undefined> {
@@ -110,28 +207,8 @@ async function findCall(id: string): Promise<Call | undefined> {
   return call;
 }
 
-// This guarded update is the only path to a terminal state. Deleting both
-// participant locks in the same transaction makes the user immediately eligible
-// for another call without allowing concurrent ringing calls.
-async function transitionToTerminal(
-  callId: string,
-  fromStatuses: readonly ("ringing" | "active")[],
-  status: TerminalCallStatus,
-): Promise<Call | undefined> {
-  return db.transaction(async (tx) => {
-    const now = new Date();
-    const [updated] = await tx
-      .update(callsTable)
-      .set(terminalUpdate(status, now))
-      .where(and(eq(callsTable.id, callId), inArray(callsTable.status, [...fromStatuses])))
-      .returning();
-    if (updated) {
-      await tx.delete(callUserLocksTable).where(eq(callUserLocksTable.callId, callId));
-    }
-    return updated;
-  });
-}
-
+// Acceptance is a ringing-only compare-and-set. Terminal transitions and their
+// call-specific lock release live in callControl.ts.
 async function activateCall(callId: string): Promise<Call | undefined> {
   const [updated] = await db
     .update(callsTable)
@@ -164,19 +241,27 @@ async function activeCallSession(callId: string, userId: string, name: string): 
   return db.transaction(async (tx) => {
     // Serialize token issuance with terminal updates. A transition cannot delete
     // the participant lock until this active-state check and signature complete.
-    const [row] = await tx
-      .select({ call: callsTable })
+    const [call] = await tx
+      .select()
       .from(callsTable)
-      .innerJoin(
-        callUserLocksTable,
-        and(eq(callUserLocksTable.callId, callsTable.id), eq(callUserLocksTable.userId, userId)),
+      .where(
+        and(
+          eq(callsTable.id, callId),
+          eq(callsTable.status, "active"),
+          or(eq(callsTable.callerId, userId), eq(callsTable.calleeId, userId)),
+        ),
       )
-      .where(and(eq(callsTable.id, callId), eq(callsTable.status, "active")))
       .for("update");
-    if (!row) return null;
+    if (!call) return null;
+    const locks = await tx
+      .select({ userId: callUserLocksTable.userId })
+      .from(callUserLocksTable)
+      .where(eq(callUserLocksTable.callId, call.id));
+    const lockedUsers = new Set(locks.map((lock) => lock.userId));
+    if (!lockedUsers.has(call.callerId) || !lockedUsers.has(call.calleeId)) return null;
     return {
-      call: row.call,
-      token: await createToken(row.call.roomName, userId, name, mediaFromCall(row.call), true),
+      call,
+      token: await createToken(call.roomName, userId, name, mediaFromCall(call), true),
     };
   });
 }
@@ -238,7 +323,9 @@ async function settleTerminalCall(
       call.status === "ended" ? callDurationSec(call.acceptedAt, call.endedAt) : undefined,
       media,
     ),
-    terminateLiveKitRoom(call, log, true),
+    terminateLiveKitRoom(call, log, true).then((completed) => {
+      if (!completed) throw new Error("LiveKit room termination deferred");
+    }),
     sendCallTerminalPush([call.callerId, call.calleeId], {
       callId: call.id,
       status: call.status as TerminalCallStatus,
@@ -258,13 +345,240 @@ async function settleTerminalCall(
   publishCallRealtimeEvent(call, "call.updated", actorUserId, media);
 }
 
+async function listExpectedLiveKitParticipants(call: Call): Promise<number> {
+  try {
+    const participants = await livekitRoomService().listParticipants(call.roomName);
+    const expected = new Set([call.callerId, call.calleeId]);
+    return new Set(participants.map((participant) => participant.identity).filter((id) => expected.has(id))).size;
+  } catch (err) {
+    // A missing room is an authoritative zero-participant observation. Network,
+    // auth and rate-limit errors are not evidence that a live call ended.
+    if (classifyLiveKitRoomLookupError(err) === "missing") return 0;
+    throw err;
+  }
+}
+
+export async function recordParticipantObservation(
+  call: Call,
+  participantCount: number,
+  observedAt: Date,
+): Promise<{ decision: ReturnType<typeof decideCallPresence>; call: Call } | null> {
+  const claim = call.livekitReconciliationClaimedAt;
+  if (!claim) return null;
+  const decision = decideCallPresence({
+    acceptedAt: call.acceptedAt ?? call.createdAt,
+    observedAt,
+    expectedParticipantCount: participantCount,
+    previousParticipantCount: call.livekitParticipantCount,
+    previousDeficitSince: call.livekitParticipantDeficitAt,
+    policy: callPresencePolicy(),
+  });
+  const [updated] = await db
+    .update(callsTable)
+    .set({
+      livekitParticipantCount: decision.participantCount,
+      livekitParticipantDeficitAt: decision.deficitSince,
+      livekitLastObservedAt: observedAt,
+      ...(participantCount > 0 ? { livekitLastParticipantAt: observedAt } : {}),
+    })
+    .where(
+      and(
+        eq(callsTable.id, call.id),
+        eq(callsTable.status, "active"),
+        eq(callsTable.livekitReconciliationClaimedAt, claim),
+      ),
+    )
+    .returning();
+  return updated ? { decision, call: updated } : null;
+}
+
+async function claimActiveCallForReconciliation(
+  callId: string,
+  options: { observationCutoff?: Date; claimCutoff?: Date } = {},
+): Promise<Call | undefined> {
+  const claimedAt = new Date();
+  const claimCutoff = options.claimCutoff ?? new Date(
+    claimedAt.getTime() - envNumberInRange(
+      "CALL_RECONCILIATION_LEASE_MS",
+      DEFAULT_RECONCILIATION_LEASE_MS,
+      15_000,
+      300_000,
+    ),
+  );
+  const [claimed] = await db
+    .update(callsTable)
+    .set({ livekitReconciliationClaimedAt: claimedAt })
+    .where(
+      and(
+        eq(callsTable.id, callId),
+        eq(callsTable.status, "active"),
+        ...(options.observationCutoff
+          ? [
+              or(
+                isNull(callsTable.livekitLastObservedAt),
+                lt(callsTable.livekitLastObservedAt, options.observationCutoff),
+              ),
+            ]
+          : []),
+        or(
+          isNull(callsTable.livekitReconciliationClaimedAt),
+          lt(callsTable.livekitReconciliationClaimedAt, claimCutoff),
+        ),
+      ),
+    )
+    .returning();
+  return claimed;
+}
+
+async function releaseReconciliationClaim(call: Call): Promise<void> {
+  if (!call.livekitReconciliationClaimedAt) return;
+  await db
+    .update(callsTable)
+    .set({ livekitReconciliationClaimedAt: null })
+    .where(
+      and(
+        eq(callsTable.id, call.id),
+        eq(callsTable.status, "active"),
+        eq(callsTable.livekitReconciliationClaimedAt, call.livekitReconciliationClaimedAt),
+      ),
+    );
+}
+
+async function reconcileActiveCall(call: Call, log = logger): Promise<"observed" | "terminated" | "skipped"> {
+  if (
+    call.status !== "active" ||
+    !call.livekitReconciliationClaimedAt ||
+    !livekitConfigured()
+  ) return "skipped";
+  try {
+    const locks = await db
+      .select({ userId: callUserLocksTable.userId })
+      .from(callUserLocksTable)
+      .where(eq(callUserLocksTable.callId, call.id));
+    const lockedUsers = new Set(locks.map((lock) => lock.userId));
+    if (!lockedUsers.has(call.callerId) || !lockedUsers.has(call.calleeId) || lockedUsers.size !== 2) {
+      // Missing participant locks can allow overlapping calls. Fail this exact
+      // generation rather than trying to steal a lock that may belong to a newer
+      // call. The claim token prevents an expired worker from acting later.
+      const updated = await transitionCallToTerminal(call.id, ["active"], "failed", {
+        reconciliationClaimedAt: call.livekitReconciliationClaimedAt,
+      });
+      if (!updated) return "skipped";
+      log.error({ callId: call.id, lockCount: lockedUsers.size }, "Recovered call with inconsistent locks");
+      await settleTerminalCall(updated, undefined, log);
+      return "terminated";
+    }
+    const observedAt = new Date();
+    const participantCount = await listExpectedLiveKitParticipants(call);
+    const recorded = await recordParticipantObservation(call, participantCount, observedAt);
+    if (!recorded) return "skipped";
+    const { decision } = recorded;
+    log.debug(
+      {
+        callId: call.id,
+        attemptId: call.attemptId,
+        participantCount,
+        reconciliationReason: decision.reason,
+        deficitSince: decision.deficitSince?.toISOString() ?? null,
+      },
+      "Call room reconciled",
+    );
+    if (!decision.shouldTerminate) return "observed";
+
+    // Fence the terminal transition with a second authoritative observation.
+    // The same claim token must still own the row, so a newer healthy observation
+    // can never be overwritten by this older reconciliation generation.
+    const confirmedCount = await listExpectedLiveKitParticipants(recorded.call);
+    if (confirmedCount !== participantCount) {
+      return (await recordParticipantObservation(recorded.call, confirmedCount, new Date()))
+        ? "observed"
+        : "skipped";
+    }
+
+    const updated = await transitionCallToTerminal(call.id, ["active"], "ended", {
+      reconciliationClaimedAt: call.livekitReconciliationClaimedAt,
+    });
+    if (!updated) return "skipped";
+    log.warn(
+      {
+        callId: updated.id,
+        attemptId: updated.attemptId,
+        participantCount,
+        reconciliationReason: "persistent-livekit-participant-deficit",
+      },
+      "Recovered stale active call",
+    );
+    await settleTerminalCall(updated, undefined, log);
+    return "terminated";
+  } finally {
+    await releaseReconciliationClaim(call);
+  }
+}
+
+let webhookReceiver: WebhookReceiver | undefined;
+
+/** Raw-body endpoint mounted before express.json() in app.ts. */
+export async function handleLiveKitWebhook(req: Request, res: Response): Promise<void> {
+  if (!livekitConfigured()) {
+    res.status(503).json({ error: "LiveKit is not configured" });
+    return;
+  }
+  if (!Buffer.isBuffer(req.body)) {
+    res.status(400).json({ error: "Raw webhook body is required" });
+    return;
+  }
+  webhookReceiver ??= new WebhookReceiver(LIVEKIT_API_KEY!, LIVEKIT_API_SECRET!);
+  let event: Awaited<ReturnType<WebhookReceiver["receive"]>>;
+  try {
+    event = await webhookReceiver.receive(req.body.toString("utf8"), req.get("Authorization"));
+  } catch (err) {
+    req.log.warn(
+      { errorName: err instanceof Error ? err.name : "unknown" },
+      "Rejected LiveKit webhook signature",
+    );
+    res.status(401).json({ error: "Invalid LiveKit webhook" });
+    return;
+  }
+  try {
+    const roomName = event.room?.name;
+    if (!roomName) {
+      res.status(204).end();
+      return;
+    }
+    const [call] = await db.select().from(callsTable).where(eq(callsTable.roomName, roomName));
+    if (!call || call.status !== "active") {
+      res.status(204).end();
+      return;
+    }
+    // Webhooks reduce detection latency but never directly terminate a call.
+    // The same authoritative room listing and persisted grace policy used by
+    // the periodic worker remains the source of truth if webhooks are lost,
+    // duplicated or delivered late.
+    if (
+      event.event === "room_finished" ||
+      event.event === "participant_joined" ||
+      event.event === "participant_left" ||
+      event.event === "participant_connection_aborted"
+    ) {
+      // Webhook and periodic observations share the same fenced lease. Duplicate
+      // or concurrent events therefore cannot overwrite a newer healthy sample.
+      const claimed = await claimActiveCallForReconciliation(call.id);
+      if (claimed) await reconcileActiveCall(claimed, req.log);
+    }
+    res.status(204).end();
+  } catch (err) {
+    req.log.warn({ err }, "LiveKit webhook processing failed");
+    res.status(503).json({ error: "LiveKit webhook processing failed" });
+  }
+}
+
 // Reads may still expire a call promptly, but the worker below performs this
 // transition even when neither participant polls the API.
 async function maybeExpire(call: Call): Promise<Call> {
   if (call.status !== "ringing" || Date.now() - call.createdAt.getTime() <= RING_TIMEOUT_MS) {
     return call;
   }
-  const updated = await transitionToTerminal(call.id, ["ringing"], "missed");
+  const updated = await transitionCallToTerminal(call.id, ["ringing"], "missed");
   if (updated) {
     await settleTerminalCall(updated);
     return updated;
@@ -297,32 +611,80 @@ async function isBlockedBetween(a: string, b: string): Promise<boolean> {
 // can join the call straight from the conversation. The content carries the
 // callId + status so the card can render a "통화 참여" button and later flip to
 // "ended". Its foreign key binds the card to this exact call row.
-async function postCallMessage(
-  roomId: string,
-  callerId: string,
-  callerProfileId: string,
-  callId: string,
-  media: CallMedia,
-): Promise<void> {
-  const content = JSON.stringify({ callId, status: "ringing", media });
-  await db.transaction(async (tx) => {
-    const roomSeq = await allocateRoomMessageSeq(tx, roomId);
+export async function ensureCallMessage(call: Call): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    // Serialize create-path delivery and worker repair on this exact call. The
+    // unique messages.call_id index is the final duplicate guard.
+    const [current] = await tx
+      .select()
+      .from(callsTable)
+      .where(eq(callsTable.id, call.id))
+      .for("update");
+    if (!current?.chatRoomId) return false;
+    const [existing] = await tx
+      .select({ createdAt: messagesTable.createdAt })
+      .from(messagesTable)
+      .where(eq(messagesTable.callId, current.id));
+    if (existing) {
+      await tx
+        .update(callsTable)
+        .set({ callMessageCreatedAt: existing.createdAt })
+        .where(eq(callsTable.id, current.id));
+      return false;
+    }
+
+    const media = mediaFromCall(current);
+    const terminal = isTerminalCallStatus(current.status);
+    const payload: { callId: string; status: string; media: CallMedia; durationSec?: number } = {
+      callId: current.id,
+      // Keep the original joinable card contract for ringing/active calls. A
+      // delayed repair after termination is born in the correct final state.
+      status: terminal ? current.status : "ringing",
+      media,
+    };
+    if (current.status === "ended") {
+      const durationSec = callDurationSec(current.acceptedAt, current.endedAt);
+      if (typeof durationSec === "number") payload.durationSec = durationSec;
+    }
+    const content = JSON.stringify(payload);
+    const roomSeq = await allocateRoomMessageSeq(tx, current.chatRoomId);
     const [message] = await tx
       .insert(messagesTable)
-      .values({ roomId, senderId: callerId, senderProfileId: callerProfileId, type: "call", content, callId, roomSeq })
+      .values({
+        roomId: current.chatRoomId,
+        senderId: current.callerId,
+        senderProfileId: current.callerProfileId,
+        type: "call",
+        content,
+        callId: current.id,
+        roomSeq,
+      })
       .returning();
     await tx
       .update(chatRoomsTable)
       .set({ lastMessage: media === "video" ? "📹 영상통화" : "📞 보이스톡", lastMessageAt: new Date() })
-      .where(eq(chatRoomsTable.id, roomId));
-    // A new call resurfaces the room for anyone who previously hid (left) it.
-    await tx
-      .update(chatRoomMembersTable)
-      .set({ hiddenAt: null })
-      .where(eq(chatRoomMembersTable.roomId, roomId));
+      .where(
+        and(
+          eq(chatRoomsTable.id, current.chatRoomId),
+          or(isNull(chatRoomsTable.lastMessageAt), lt(chatRoomsTable.lastMessageAt, current.createdAt)),
+        ),
+      );
+    if (!terminal) {
+      // A live call resurfaces the room for anyone who previously hid it. A
+      // delayed repair for an already-finished call must not reopen the room.
+      await tx
+        .update(chatRoomMembersTable)
+        .set({ hiddenAt: null })
+        .where(eq(chatRoomMembersTable.roomId, current.chatRoomId));
+    }
     // The caller has implicitly read their own call card so it never counts as
     // unread for them.
-    await setMemberReadSeq(tx, roomId, callerId, { id: message.id, roomSeq });
+    await setMemberReadSeq(tx, current.chatRoomId, current.callerId, { id: message.id, roomSeq });
+    await tx
+      .update(callsTable)
+      .set({ callMessageCreatedAt: message.createdAt })
+      .where(eq(callsTable.id, current.id));
+    return true;
   });
 }
 
@@ -342,15 +704,22 @@ async function endCallMessage(
     media: media ?? "audio",
   };
   if (typeof durationSec === "number") payload.durationSec = durationSec;
-  await db
-    .update(messagesTable)
-    .set({ content: JSON.stringify(payload) })
-    .where(and(eq(messagesTable.type, "call"), eq(messagesTable.callId, callId)));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(messagesTable)
+      .set({ content: JSON.stringify(payload) })
+      .where(and(eq(messagesTable.type, "call"), eq(messagesTable.callId, callId)));
+    await tx
+      .update(callsTable)
+      .set({ terminalMessageFinalizedAt: new Date() })
+      .where(and(eq(callsTable.id, callId), inArray(callsTable.status, terminalCallStatuses)));
+  });
 }
 
 function serializeCall(c: Call, media: CallMedia = "audio") {
   return {
     id: c.id,
+    attemptId: c.attemptId ?? null,
     roomName: c.roomName,
     callerId: c.callerId,
     callerProfileId: c.callerProfileId ?? null,
@@ -389,7 +758,55 @@ function publishCallRealtimeEvent(
   }).catch((err) => logger.error({ err, callId: call.id, type }, "Failed to publish call realtime event"));
 }
 
+async function respondToCreateReplay(args: {
+  req: Request;
+  res: Response;
+  call: Call;
+  callerName: string;
+  requestedCalleeId: string;
+  requestedMedia: CallMedia;
+}): Promise<void> {
+  const { req, res, call, callerName, requestedCalleeId, requestedMedia } = args;
+  if (call.calleeId !== requestedCalleeId || mediaFromCall(call) !== requestedMedia) {
+    res.status(409).json({ error: "Call attempt identifier already used with different parameters" });
+    return;
+  }
+  if (isTerminalCallStatus(call.status)) {
+    res.status(409).json({ error: "이미 종료된 통화입니다", call: serializeCall(call, requestedMedia) });
+    return;
+  }
+  const session = call.status === "active"
+    ? await activeCallSession(call.id, call.callerId, callerName)
+    : {
+        call,
+        token: await createToken(call.roomName, call.callerId, callerName, requestedMedia, false),
+      };
+  if (!session) {
+    res.status(409).json({ error: "이미 종료된 통화입니다" });
+    return;
+  }
+  req.log.info(
+    { callId: call.id, attemptId: call.attemptId, phase: "call_create_replayed", media: requestedMedia },
+    "Call create attempt replayed",
+  );
+  if (call.attemptId) res.set(CALL_ATTEMPT_HEADER, call.attemptId);
+  res.json({ call: serializeCall(session.call, requestedMedia), token: session.token, url: LIVEKIT_URL });
+}
+
 router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, windowSeconds: 60 }), async (req, res): Promise<void> => {
+  const attemptId = optionalUuidHeader(req, CALL_ATTEMPT_HEADER);
+  if (attemptId === null) {
+    res.status(400).json({ error: "Invalid call attempt identifier" });
+    return;
+  }
+  if (
+    !attemptId &&
+    CALL_ATTEMPT_HEADER_ENFORCE_AFTER &&
+    new Date() >= CALL_ATTEMPT_HEADER_ENFORCE_AFTER
+  ) {
+    res.status(400).json({ error: "Call attempt identifier is required" });
+    return;
+  }
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
     return;
@@ -403,6 +820,24 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
   const { calleeId, roomId } = parsed.data;
   const media = parsed.data.media ?? "audio";
   const callerProfile = await resolveCharacterProfileActor(userId, req.header("x-character-profile-id"));
+
+  if (attemptId) {
+    const [existing] = await db
+      .select()
+      .from(callsTable)
+      .where(and(eq(callsTable.callerId, userId), eq(callsTable.attemptId, attemptId)));
+    if (existing) {
+      await respondToCreateReplay({
+        req,
+        res,
+        call: existing,
+        callerName: callerProfile.displayName,
+        requestedCalleeId: calleeId,
+        requestedMedia: media,
+      });
+      return;
+    }
+  }
 
   const [callee] = await db.select().from(usersTable).where(eq(usersTable.id, calleeId));
   if (!callee) {
@@ -451,12 +886,14 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
       const [created] = await tx
         .insert(callsTable)
         .values({
+          attemptId,
           roomName,
           callerId: userId,
           callerProfileId: callerProfile.id,
           calleeId,
           calleeProfileId: calleeProfile.id,
           chatRoomId: validRoomId,
+          callMessageRepairEligibleAt: validRoomId ? new Date() : null,
           media,
           status: "ringing",
         })
@@ -471,6 +908,28 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
     const cause = err as { cause?: { constraint?: unknown; code?: unknown }; constraint?: unknown; code?: unknown };
     const constraint = cause.constraint ?? cause.cause?.constraint;
     const code = cause.code ?? cause.cause?.code;
+    if (
+      code === "23505" &&
+      attemptId &&
+      typeof constraint === "string" &&
+      constraint.includes("calls_caller_attempt")
+    ) {
+      const [existing] = await db
+        .select()
+        .from(callsTable)
+        .where(and(eq(callsTable.callerId, userId), eq(callsTable.attemptId, attemptId)));
+      if (existing) {
+        await respondToCreateReplay({
+          req,
+          res,
+          call: existing,
+          callerName: callerProfile.displayName,
+          requestedCalleeId: calleeId,
+          requestedMedia: media,
+        });
+        return;
+      }
+    }
     if (code === "23505" && typeof constraint === "string" && constraint.includes("call_user_locks")) {
       res.status(409).json({ error: "통화 중인 사용자가 있어 전화를 걸 수 없습니다" });
       return;
@@ -481,7 +940,7 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
   // Post the in-chat call card so both parties can join from the conversation.
   if (validRoomId) {
     try {
-      await postCallMessage(validRoomId, userId, callerProfile.id, call.id, media);
+      await ensureCallMessage(call);
     } catch (err) {
       req.log.error({ err, roomId: validRoomId, callId: call.id }, "Failed to post call message");
     }
@@ -510,6 +969,8 @@ router.post("/calls", requireAuth, rateLimit({ name: "create-call", limit: 10, w
   // The initial session remains subscribe-only while ringing. The caller gets
   // media publish permission only through the active-only join endpoint.
   const token = await createToken(roomName, userId, callerProfile.displayName, media, false);
+  if (attemptId) res.set(CALL_ATTEMPT_HEADER, attemptId);
+  req.log.info({ callId: call.id, attemptId, phase: "call_created", media }, "Call attempt created");
   publishCallRealtimeEvent(call, "call.created", userId, media);
   res.status(201).json({ call: serializeCall(call, media), token, url: LIVEKIT_URL });
 });
@@ -574,6 +1035,11 @@ router.get("/calls/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> => {
+  const attemptId = optionalUuidHeader(req, CALL_ATTEMPT_HEADER);
+  if (attemptId === null) {
+    res.status(400).json({ error: "Invalid call attempt identifier" });
+    return;
+  }
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
     return;
@@ -583,6 +1049,10 @@ router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> =>
   const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
   if (!call || call.calleeId !== userId) {
     res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  if (!callAttemptMatches(call, attemptId, CALL_ATTEMPT_HEADER_ENFORCE_AFTER)) {
+    res.status(409).json({ error: "Call attempt identifier does not match this call" });
     return;
   }
   const fresh = await maybeExpire(call);
@@ -618,103 +1088,142 @@ router.post("/calls/:id/accept", requireAuth, async (req, res): Promise<void> =>
     return;
   }
   const media = mediaFromCall(updated);
+  req.log.info({ callId: raw, attemptId, phase: "call_accepted", media }, "Call attempt accepted");
   publishCallRealtimeEvent(updated, "call.updated", userId, media);
   res.json({ call: serializeCall(updated, media), token: session.token, url: LIVEKIT_URL });
 });
 
-router.post("/calls/:id/decline", requireAuth, async (req, res): Promise<void> => {
+async function handleCallControl(
+  req: Request,
+  res: Response,
+  action: CallControlAction,
+): Promise<void> {
   const userId = req.dbUser!.id;
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-  if (!call || call.calleeId !== userId) {
-    res.status(404).json({ error: "Call not found" });
+  const callId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const operationId = optionalUuidHeader(req, CALL_IDEMPOTENCY_HEADER);
+  const attemptId = optionalUuidHeader(req, CALL_ATTEMPT_HEADER);
+  if (operationId === null || attemptId === null) {
+    res.status(400).json({ error: "Invalid call operation identifier" });
     return;
   }
-  const updated = await transitionToTerminal(raw, ["ringing"], "declined");
-  if (updated) {
-    await settleTerminalCall(updated, userId, req.log);
+  try {
+    const result = await applyCallControlOperation({
+      callId,
+      actorUserId: userId,
+      action,
+      operationId,
+      attemptId,
+      enforceAttemptHeaderAfter: CALL_ATTEMPT_HEADER_ENFORCE_AFTER,
+    });
+    req.log.info(
+      {
+        callId,
+        attemptId,
+        operationId,
+        action,
+        replayed: result.replayed,
+        transitioned: result.transitioned,
+        resultStatus: result.call.status,
+      },
+      "Call control operation",
+    );
+    if (result.transitioned) {
+      await settleTerminalCall(result.call, userId, req.log);
+    }
+    res.json(await serializeCallWithMedia(result.call));
+  } catch (err) {
+    if (err instanceof CallControlAccessError) {
+      res.status(404).json({ error: "Call not found" });
+      return;
+    }
+    if (err instanceof CallAttemptConflictError) {
+      res.status(409).json({ error: "Call attempt identifier does not match this call" });
+      return;
+    }
+    if (err instanceof CallOperationConflictError) {
+      res.status(409).json({ error: "Idempotency key already used for another operation" });
+      return;
+    }
+    throw err;
   }
-  // If another transition won the race, return its current state rather than
-  // overwriting it or returning the stale pre-transition read.
-  res.json(await serializeCallWithMedia(updated ?? (await findCall(raw)) ?? call));
+}
+
+router.post("/calls/:id/decline", requireAuth, callControlRateLimit, async (req, res): Promise<void> => {
+  await handleCallControl(req, res, "decline");
 });
 
 // Cancel an outgoing call before it is answered. Caller-only; only a still-
 // ringing call can be cancelled (once accepted, use /end instead).
-router.post("/calls/:id/cancel", requireAuth, async (req, res): Promise<void> => {
-  const userId = req.dbUser!.id;
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-  if (!call || call.callerId !== userId) {
-    res.status(404).json({ error: "Call not found" });
-    return;
-  }
-  const updated = await transitionToTerminal(raw, ["ringing"], "cancelled");
-  if (updated) {
-    await settleTerminalCall(updated, userId, req.log);
-  }
-  // If the callee answered/declined in the race, return the current state so the
-  // caller's UI converges instead of forcing a cancelled card over a live call.
-  res.json(await serializeCallWithMedia(updated ?? (await findCall(raw)) ?? call));
+router.post("/calls/:id/cancel", requireAuth, callControlRateLimit, async (req, res): Promise<void> => {
+  await handleCallControl(req, res, "cancel");
 });
 
-router.post("/calls/:id/end", requireAuth, async (req, res): Promise<void> => {
+router.post("/calls/:id/end", requireAuth, callControlRateLimit, async (req, res): Promise<void> => {
+  await handleCallControl(req, res, "end");
+});
+
+router.post("/calls/:id/failed", requireAuth, callControlRateLimit, async (req, res): Promise<void> => {
+  await handleCallControl(req, res, "failed");
+});
+
+router.post(
+  "/calls/diagnostics",
+  requireAuth,
+  callDiagnosticRateLimit,
+  async (req, res): Promise<void> => {
+    const parsed = queuedCallDiagnosticSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid call diagnostic" });
+      return;
+    }
+    const userId = req.dbUser!.id;
+    const body = parsed.data;
+    let call: Call | undefined;
+    if (body.callId) {
+      call = await findCall(body.callId);
+      if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
+        res.status(404).json({ error: "Call not found" });
+        return;
+      }
+      if (!callAttemptMatches(call, body.attemptId, CALL_ATTEMPT_HEADER_ENFORCE_AFTER)) {
+        res.status(409).json({ error: "Call attempt identifier does not match this call" });
+        return;
+      }
+    }
+    req.log.info(
+      {
+        eventId: body.eventId,
+        attemptId: body.attemptId,
+        callId: body.callId ?? null,
+        media: call ? mediaFromCall(call) : undefined,
+        callStatus: call?.status,
+        phase: body.phase,
+        platform: body.platform,
+        role: body.role,
+        occurredAt: body.occurredAt,
+        details: sanitizeCallDiagnosticDetails(body.details),
+      },
+      "Call diagnostic",
+    );
+    res.status(204).end();
+  },
+);
+
+router.post("/calls/:id/diagnostics", requireAuth, callDiagnosticRateLimit, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
+  const attemptId = optionalUuidHeader(req, CALL_ATTEMPT_HEADER);
+  if (attemptId === null) {
+    res.status(400).json({ error: "Invalid call attempt identifier" });
+    return;
+  }
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
   if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  if (isTerminalCallStatus(call.status)) {
-    res.json(await serializeCallWithMedia(call));
-    return;
-  }
-  // A caller hanging up a still-ringing call (callee never answered) is a cancel,
-  // not an "ended" call — render it as cancelled so it isn't mistaken for a real
-  // (0s) conversation.
-  const terminalStatus: TerminalCallStatus =
-    call.status === "ringing" && call.callerId === userId ? "cancelled" : "ended";
-  const updated = isLiveCallStatus(call.status)
-    ? await transitionToTerminal(raw, [call.status], terminalStatus)
-    : undefined;
-  if (!updated) {
-    res.json(await serializeCallWithMedia((await findCall(raw)) ?? call));
-    return;
-  }
-  const media = mediaFromCall(updated);
-  await settleTerminalCall(updated, userId, req.log);
-  res.json(serializeCall(updated, media));
-});
-
-router.post("/calls/:id/failed", requireAuth, async (req, res): Promise<void> => {
-  const userId = req.dbUser!.id;
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-  if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
-    res.status(404).json({ error: "Call not found" });
-    return;
-  }
-  if (isTerminalCallStatus(call.status)) {
-    res.json(await serializeCallWithMedia(call));
-    return;
-  }
-  const updated = isLiveCallStatus(call.status)
-    ? await transitionToTerminal(raw, [call.status], "failed")
-    : undefined;
-  const current = updated ?? (await findCall(raw)) ?? call;
-  if (updated) {
-    await settleTerminalCall(updated, userId, req.log);
-  }
-  res.json(await serializeCallWithMedia(current));
-});
-
-router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<void> => {
-  const userId = req.dbUser!.id;
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const [call] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
-  if (!call || (call.callerId !== userId && call.calleeId !== userId)) {
-    res.status(404).json({ error: "Call not found" });
+  if (!callAttemptMatches(call, attemptId, CALL_ATTEMPT_HEADER_ENFORCE_AFTER)) {
+    res.status(409).json({ error: "Call attempt identifier does not match this call" });
     return;
   }
   const parsed = callDiagnosticSchema.safeParse(req.body);
@@ -726,13 +1235,13 @@ router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<voi
   req.log.info(
     {
       callId: raw,
-      userId,
       media: mediaFromCall(call),
       callStatus: call.status,
       phase: body.phase,
       platform: body.platform,
       role: body.role,
-      details: body.details,
+      attemptId,
+      details: sanitizeCallDiagnosticDetails(body.details),
     },
     "Call diagnostic",
   );
@@ -742,6 +1251,11 @@ router.post("/calls/:id/diagnostics", requireAuth, async (req, res): Promise<voi
 // Join an active call from its in-chat card. A callee can accept by joining a
 // ringing call; callers cannot obtain a media token until that transition wins.
 router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
+  const attemptId = optionalUuidHeader(req, CALL_ATTEMPT_HEADER);
+  if (attemptId === null) {
+    res.status(400).json({ error: "Invalid call attempt identifier" });
+    return;
+  }
   if (!livekitConfigured()) {
     res.status(503).json({ error: "음성 통화 서버가 설정되지 않았습니다" });
     return;
@@ -751,6 +1265,10 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
   const [found] = await db.select().from(callsTable).where(eq(callsTable.id, raw));
   if (!found || (found.callerId !== userId && found.calleeId !== userId)) {
     res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  if (!callAttemptMatches(found, attemptId, CALL_ATTEMPT_HEADER_ENFORCE_AFTER)) {
+    res.status(409).json({ error: "Call attempt identifier does not match this call" });
     return;
   }
   // Lazily expire a long-unanswered ringing call so a stale card can't be joined.
@@ -789,8 +1307,40 @@ router.post("/calls/:id/join", requireAuth, async (req, res): Promise<void> => {
     res.status(409).json({ error: "이미 종료된 통화입니다" });
     return;
   }
+  req.log.info(
+    { callId: raw, attemptId, phase: "call_join_token_issued", media: mediaFromCall(session.call) },
+    "Call join token issued",
+  );
   res.json({ call: await serializeCallWithMedia(session.call), token: session.token, url: LIVEKIT_URL });
 });
+
+export async function pruneExpiredCallControlOperations(now = new Date()): Promise<number> {
+  const retentionDays = envNumberInRange(
+    "CALL_OPERATION_RETENTION_DAYS",
+    DEFAULT_CALL_OPERATION_RETENTION_DAYS,
+    1,
+    365,
+  );
+  const batchSize = Math.trunc(envNumberInRange(
+    "CALL_OPERATION_CLEANUP_BATCH_SIZE",
+    DEFAULT_CALL_OPERATION_CLEANUP_BATCH_SIZE,
+    10,
+    2_000,
+  ));
+  const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1_000);
+  const expired = await db
+    .select({ operationId: callControlOperationsTable.operationId })
+    .from(callControlOperationsTable)
+    .where(lt(callControlOperationsTable.createdAt, cutoff))
+    .orderBy(asc(callControlOperationsTable.createdAt))
+    .limit(batchSize);
+  if (expired.length === 0) return 0;
+  const removed = await db
+    .delete(callControlOperationsTable)
+    .where(inArray(callControlOperationsTable.operationId, expired.map((row) => row.operationId)))
+    .returning({ operationId: callControlOperationsTable.operationId });
+  return removed.length;
+}
 
 export async function processCallLifecycleBatch(log = logger): Promise<number> {
   const batchSize = envPositiveNumber("CALL_LIFECYCLE_WORKER_BATCH_SIZE", DEFAULT_CALL_WORKER_BATCH_SIZE);
@@ -804,10 +1354,126 @@ export async function processCallLifecycleBatch(log = logger): Promise<number> {
 
   let processed = 0;
   for (const call of expired) {
-    const updated = await transitionToTerminal(call.id, ["ringing"], "missed");
+    const updated = await transitionCallToTerminal(call.id, ["ringing"], "missed");
     if (!updated) continue;
     processed += 1;
     await settleTerminalCall(updated, undefined, log);
+  }
+
+  // Repair historical/manual inconsistencies as well. This never deletes by
+  // user id, so a lock belonging to a newer call generation is untouchable.
+  const staleLockCalls = await db
+    .selectDistinct({ callId: callUserLocksTable.callId })
+    .from(callUserLocksTable)
+    .innerJoin(callsTable, eq(callsTable.id, callUserLocksTable.callId))
+    .where(inArray(callsTable.status, terminalCallStatuses))
+    .limit(batchSize);
+  for (const { callId } of staleLockCalls) {
+    const removed = await db
+      .delete(callUserLocksTable)
+      .where(eq(callUserLocksTable.callId, callId))
+      .returning({ userId: callUserLocksTable.userId });
+    if (removed.length > 0) {
+      processed += 1;
+      log.warn({ callId, lockCount: removed.length }, "Removed stale terminal call locks");
+    }
+  }
+
+  if (livekitConfigured()) {
+    const now = Date.now();
+    const observationCutoff = new Date(
+      now - envNumberInRange("CALL_RECONCILIATION_POLL_MS", DEFAULT_RECONCILIATION_POLL_MS, 5_000, 60_000),
+    );
+    const claimCutoff = new Date(
+      now - envNumberInRange("CALL_RECONCILIATION_LEASE_MS", DEFAULT_RECONCILIATION_LEASE_MS, 15_000, 300_000),
+    );
+    const active = await db
+      .select()
+      .from(callsTable)
+      .where(
+        and(
+          eq(callsTable.status, "active"),
+          or(
+            isNull(callsTable.livekitLastObservedAt),
+            lt(callsTable.livekitLastObservedAt, observationCutoff),
+          ),
+          or(
+            isNull(callsTable.livekitReconciliationClaimedAt),
+            lt(callsTable.livekitReconciliationClaimedAt, claimCutoff),
+          ),
+        ),
+      )
+      .orderBy(asc(callsTable.livekitLastObservedAt), asc(callsTable.acceptedAt))
+      .limit(batchSize);
+    for (const call of active) {
+      try {
+        // Both API replicas run this worker. Atomically lease one call so only
+        // one replica spends a LiveKit admin request on the same generation.
+        const claimed = await claimActiveCallForReconciliation(call.id, {
+          observationCutoff,
+          claimCutoff,
+        });
+        if (!claimed) continue;
+        const result = await reconcileActiveCall(claimed, log);
+        if (result !== "skipped") processed += 1;
+      } catch (err) {
+        // An unavailable LiveKit admin API must never be interpreted as an empty
+        // room or release a call lock. Continue reconciling other calls.
+        log.warn({ err, callId: call.id }, "Call room reconciliation failed");
+      }
+    }
+  }
+
+  // Creating the durable call row and delivering its in-chat card cannot be a
+  // single transaction. Repair the bounded, idempotent side effect after a
+  // process crash or response loss; messages.call_id prevents duplicates.
+  const pendingCallMessages = await db
+    .select()
+    .from(callsTable)
+    .where(
+      and(
+        isNotNull(callsTable.callMessageRepairEligibleAt),
+        isNotNull(callsTable.chatRoomId),
+        isNull(callsTable.callMessageCreatedAt),
+      ),
+    )
+    .orderBy(asc(callsTable.callMessageRepairEligibleAt))
+    .limit(batchSize);
+  for (const call of pendingCallMessages) {
+    try {
+      if (await ensureCallMessage(call)) processed += 1;
+    } catch (err) {
+      log.warn({ err, callId: call.id }, "Call message creation retry failed");
+    }
+  }
+
+  // The state transition commits before external side effects. If the process
+  // exits in that gap, repair the durable in-chat call card after restart. The
+  // update is idempotent and scoped by call_id.
+  const pendingMessageFinalization = await db
+    .select()
+    .from(callsTable)
+    .where(
+      and(
+        inArray(callsTable.status, terminalCallStatuses),
+        isNotNull(callsTable.terminalMessageRepairEligibleAt),
+        isNull(callsTable.terminalMessageFinalizedAt),
+      ),
+    )
+    .orderBy(asc(callsTable.terminalMessageRepairEligibleAt))
+    .limit(batchSize);
+  for (const call of pendingMessageFinalization) {
+    try {
+      await endCallMessage(
+        call.id,
+        call.status as TerminalCallStatus,
+        call.status === "ended" ? callDurationSec(call.acceptedAt, call.endedAt) : undefined,
+        mediaFromCall(call),
+      );
+      processed += 1;
+    } catch (err) {
+      log.warn({ err, callId: call.id }, "Call message finalization retry failed");
+    }
   }
 
   const retryCutoff = new Date(Date.now() - ROOM_TERMINATION_RETRY_MS);
@@ -828,6 +1494,12 @@ export async function processCallLifecycleBatch(log = logger): Promise<number> {
     .limit(batchSize);
   for (const call of pendingTermination) {
     if (await terminateLiveKitRoom(call, log)) processed += 1;
+  }
+  try {
+    processed += await pruneExpiredCallControlOperations();
+  } catch (err) {
+    // Retention is maintenance, never a reason to interrupt call recovery.
+    log.warn({ err }, "Call operation retention cleanup failed");
   }
   return processed;
 }

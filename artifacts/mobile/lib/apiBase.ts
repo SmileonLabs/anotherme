@@ -4,14 +4,11 @@
  * same-origin so a relative path is enough.
  */
 export function getApiBase(): string {
-  // A production PWA bundle is also used for local visual/acceptance testing.
-  // Keep those requests same-origin so the preview server can proxy them
-  // without adding loopback addresses to the production API CORS allowlist.
+  // The PWA is served behind the same Caddy origin that proxies /api. Keeping
+  // browser requests same-origin removes a second DNS/TLS/CORS failure surface.
+  // Native builds have no window and continue to use the explicit API host.
   if (typeof window !== "undefined") {
-    const hostname = window.location.hostname.toLowerCase();
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
-      return window.location.origin;
-    }
+    return window.location.origin;
   }
 
   const explicit = process.env.EXPO_PUBLIC_API_BASE_URL;

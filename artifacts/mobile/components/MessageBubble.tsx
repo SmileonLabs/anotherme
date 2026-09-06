@@ -19,6 +19,11 @@ import { StickerImage } from "./StickerImage";
 import { useColors } from "@/hooks/useColors";
 import { resolveMediaUri, useMediaUri } from "@/hooks/useMediaUri";
 import { parseFileContent, formatFileSize } from "@/lib/fileMessage";
+import {
+  chatDiagnosticVariantEnabled,
+  noteChatRender,
+} from "@/lib/chatPerformanceDiagnostics";
+import { linkPreviewThumbnailUri } from "@/lib/linkPreviewThumbnailPolicy";
 
 const IMAGE_WIDTH = 220;
 const IMAGE_MAX_HEIGHT = 300;
@@ -53,6 +58,8 @@ interface MessageBubbleProps {
   stickerBadges?: MessageStickerBadge[];
   linkPreview?: MessageLinkPreview | null;
   onPressReply?: (messageId: string) => void;
+  retryClientMessageId?: string | null;
+  onRetryMessage?: (clientMessageId: string) => void;
 }
 
 // A "call" message carries { callId, status, media, durationSec? } JSON so the
@@ -116,12 +123,21 @@ function MessageBubbleComponent({
   stickerBadges = [],
   linkPreview,
   onPressReply,
+  retryClientMessageId,
+  onRetryMessage,
 }: MessageBubbleProps) {
+  noteChatRender("bubbleRenders");
   const colors = useColors();
   const authorizedImageUri = useMediaUri(imageUri);
+  const safeLinkPreviewThumbnail = linkPreviewThumbnailUri(linkPreview?.imageUrl);
   const isDeleted = !!deletedAt;
   const isImage = !isDeleted && type === "image" && !!imageUri;
   const isSticker = !isDeleted && type === "sticker";
+  const simpleAvatars = chatDiagnosticVariantEnabled("simpleAvatars");
+  const staticStickers = chatDiagnosticVariantEnabled("staticStickers");
+  if (!isMe) noteChatRender("avatarRenders");
+  if (isSticker) noteChatRender("stickerRenders");
+  if (isImage) noteChatRender("imageRenders");
   const fileMeta =
     !isDeleted && type === "file" ? parseFileContent(content) : null;
   const [aspect, setAspect] = useState(1);
@@ -129,6 +145,9 @@ function MessageBubbleComponent({
     onLongPress?.(messageId);
   }, [messageId, onLongPress]);
   const longPressHandler = onLongPress ? handleLongPress : undefined;
+  const handleRetry = React.useCallback(() => {
+    if (retryClientMessageId) onRetryMessage?.(retryClientMessageId);
+  }, [onRetryMessage, retryClientMessageId]);
 
   // System lines (dungeon state changes) read as small centered notices, not
   // chat bubbles.
@@ -305,9 +324,20 @@ function MessageBubbleComponent({
       style={[styles.metaSide, isMe ? styles.metaSideMe : styles.metaSideOther]}
     >
       {isMe && readLabel ? (
-        <Text style={[styles.read, { color: colors.primary }]}>
-          {readLabel}
-        </Text>
+        retryClientMessageId && onRetryMessage ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="메시지 다시 보내기"
+            hitSlop={8}
+            onPress={handleRetry}
+          >
+            <Text style={[styles.read, { color: colors.destructive }]}>다시 시도</Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.read, { color: colors.primary }]}>
+            {readLabel}
+          </Text>
+        )
       ) : null}
       <Text style={[styles.time, { color: colors.mutedForeground }]}>
         {time}
@@ -362,9 +392,9 @@ function MessageBubbleComponent({
         },
       ]}
     >
-      {linkPreview.imageUrl ? (
+      {safeLinkPreviewThumbnail ? (
         <Image
-          source={{ uri: linkPreview.imageUrl }}
+          source={{ uri: safeLinkPreviewThumbnail }}
           style={styles.linkThumb}
           resizeMode="cover"
         />
@@ -414,7 +444,11 @@ function MessageBubbleComponent({
     <View
       style={[styles.sticker, isMe ? styles.stickerMe : styles.stickerOther]}
     >
-      <StickerImage code={content} size={STICKER_SIZE} />
+      {staticStickers ? (
+        <Text style={{ fontSize: STICKER_SIZE * 0.6 }}>🙂</Text>
+      ) : (
+        <StickerImage code={content} size={STICKER_SIZE} />
+      )}
     </View>
   ) : isImage ? (
     <Pressable
@@ -543,7 +577,11 @@ function MessageBubbleComponent({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <StickerImage code={badge.code} size={22} />
+            {staticStickers ? (
+              <Text style={{ fontSize: 15 }}>🙂</Text>
+            ) : (
+              <StickerImage code={badge.code} size={22} />
+            )}
           </View>
         ))}
       </View>
@@ -561,13 +599,24 @@ function MessageBubbleComponent({
       ]}
     >
       {!isMe && (
-        <Avatar
-          uri={senderAvatar}
-          name={senderName ?? "?"}
-          size={32}
-          crop="face"
-          characterType={senderCharacterType}
-        />
+        simpleAvatars ? (
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: colors.muted,
+            }}
+          />
+        ) : (
+          <Avatar
+            uri={senderAvatar}
+            name={senderName ?? "?"}
+            size={32}
+            crop="face"
+            characterType={senderCharacterType}
+          />
+        )
       )}
       <View style={[styles.bubbleWrap, isMe && styles.bubbleWrapMe]}>
         {!isMe && showSender && senderName ? (

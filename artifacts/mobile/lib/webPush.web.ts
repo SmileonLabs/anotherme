@@ -95,6 +95,42 @@ async function getReadyRegistration(): Promise<ServiceWorkerRegistration | null>
   }
 }
 
+let pushOwnerUpdateQueue: Promise<void> = Promise.resolve();
+
+async function postPushOwnerUpdate(userId: string | null): Promise<void> {
+  const registration = await getReadyRegistration();
+  const worker = registration?.active ?? navigator.serviceWorker.controller;
+  if (!worker) return;
+  await new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    const timeout = setTimeout(resolve, 2_000);
+    channel.port1.onmessage = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    worker.postMessage({ type: "push-owner-changed", userId }, [channel.port2]);
+  });
+}
+
+/** Serialised so an old owner's async cleanup cannot clear a newer owner. */
+export function setWebPushOwner(userId: string | null): Promise<void> {
+  pushOwnerUpdateQueue = pushOwnerUpdateQueue
+    .catch(() => undefined)
+    .then(() => postPushOwnerUpdate(userId));
+  return pushOwnerUpdateQueue;
+}
+
+export async function getCurrentWebPushSubscriptionToken(): Promise<string | null> {
+  const registration = await getReadyRegistration();
+  if (!registration) return null;
+  try {
+    const subscription = await registration.pushManager.getSubscription();
+    return subscription ? JSON.stringify(subscription) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getOrCreateSubscription(): Promise<PushSubscription | null> {
   if (!webPushSupported || !VAPID_PUBLIC_KEY) return null;
   const reg = await getReadyRegistration();

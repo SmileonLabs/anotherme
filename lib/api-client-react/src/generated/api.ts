@@ -48,6 +48,7 @@ import type {
   BlockInput,
   BlockSearchTrendingTermBody,
   Call,
+  CallDiagnostic,
   CallSession,
   CallWithCaller,
   CancelBattle200,
@@ -166,8 +167,10 @@ import type {
   PvtTransaction,
   PvtWallet,
   Quest,
+  QueuedCallDiagnostic,
   ReadInput,
   RealtimeTicket,
+  ReceiveLiveKitWebhookBody,
   RedeemInviteInput,
   ResolveStarFeedReportBody,
   RewardClaimError,
@@ -1276,6 +1279,77 @@ export const useRegisterPushToken = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRegisterPushTokenMutationOptions(options));
+    }
+
+export const getRevokePushTokenUrl = () => {
+
+
+
+
+  return `/api/users/me/push-token`
+}
+
+/**
+ * @summary Revoke a push token owned by the authenticated user
+ */
+export const revokePushToken = async (pushTokenInput: PushTokenInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRevokePushTokenUrl(),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pushTokenInput,)
+  }
+);}
+
+
+
+
+export const getRevokePushTokenMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePushToken>>, TError,{data: BodyType<PushTokenInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePushToken>>, TError,{data: BodyType<PushTokenInput>}, TContext> => {
+
+const mutationKey = ['revokePushToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePushToken>>, {data: BodyType<PushTokenInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  revokePushToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePushTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokePushToken>>>
+    export type RevokePushTokenMutationBody = BodyType<PushTokenInput>
+    export type RevokePushTokenMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Revoke a push token owned by the authenticated user
+ */
+export const useRevokePushToken = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePushToken>>, TError,{data: BodyType<PushTokenInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokePushToken>>,
+        TError,
+        {data: BodyType<PushTokenInput>},
+        TContext
+      > => {
+      return useMutation(getRevokePushTokenMutationOptions(options));
     }
 
 export const getGetMyPersonaUrl = () => {
@@ -5456,6 +5530,220 @@ export const useEndCall = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getEndCallMutationOptions(options));
+    }
+
+export const getReportQueuedCallDiagnosticUrl = () => {
+
+
+
+
+  return `/api/calls/diagnostics`
+}
+
+/**
+ * @summary Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+ */
+export const reportQueuedCallDiagnostic = async (queuedCallDiagnostic: QueuedCallDiagnostic, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReportQueuedCallDiagnosticUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      queuedCallDiagnostic,)
+  }
+);}
+
+
+
+
+export const getReportQueuedCallDiagnosticMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>, TError,{data: BodyType<QueuedCallDiagnostic>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>, TError,{data: BodyType<QueuedCallDiagnostic>}, TContext> => {
+
+const mutationKey = ['reportQueuedCallDiagnostic'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>, {data: BodyType<QueuedCallDiagnostic>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  reportQueuedCallDiagnostic(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportQueuedCallDiagnosticMutationResult = NonNullable<Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>>
+    export type ReportQueuedCallDiagnosticMutationBody = BodyType<QueuedCallDiagnostic>
+    export type ReportQueuedCallDiagnosticMutationError = ErrorType<void>
+
+    /**
+ * @summary Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+ */
+export const useReportQueuedCallDiagnostic = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>, TError,{data: BodyType<QueuedCallDiagnostic>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportQueuedCallDiagnostic>>,
+        TError,
+        {data: BodyType<QueuedCallDiagnostic>},
+        TContext
+      > => {
+      return useMutation(getReportQueuedCallDiagnosticMutationOptions(options));
+    }
+
+export const getReportCallDiagnosticUrl = (id: string,) => {
+
+
+
+
+  return `/api/calls/${id}/diagnostics`
+}
+
+/**
+ * @summary Report a diagnostic for a known call
+ */
+export const reportCallDiagnostic = async (id: string,
+    callDiagnostic: CallDiagnostic, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReportCallDiagnosticUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      callDiagnostic,)
+  }
+);}
+
+
+
+
+export const getReportCallDiagnosticMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportCallDiagnostic>>, TError,{id: string;data: BodyType<CallDiagnostic>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportCallDiagnostic>>, TError,{id: string;data: BodyType<CallDiagnostic>}, TContext> => {
+
+const mutationKey = ['reportCallDiagnostic'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportCallDiagnostic>>, {id: string;data: BodyType<CallDiagnostic>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reportCallDiagnostic(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportCallDiagnosticMutationResult = NonNullable<Awaited<ReturnType<typeof reportCallDiagnostic>>>
+    export type ReportCallDiagnosticMutationBody = BodyType<CallDiagnostic>
+    export type ReportCallDiagnosticMutationError = ErrorType<void>
+
+    /**
+ * @summary Report a diagnostic for a known call
+ */
+export const useReportCallDiagnostic = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportCallDiagnostic>>, TError,{id: string;data: BodyType<CallDiagnostic>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportCallDiagnostic>>,
+        TError,
+        {id: string;data: BodyType<CallDiagnostic>},
+        TContext
+      > => {
+      return useMutation(getReportCallDiagnosticMutationOptions(options));
+    }
+
+export const getReceiveLiveKitWebhookUrl = () => {
+
+
+
+
+  return `/api/webhooks/livekit`
+}
+
+/**
+ * @summary Receive a signature-verified LiveKit lifecycle webhook
+ */
+export const receiveLiveKitWebhook = async (receiveLiveKitWebhookBody: ReceiveLiveKitWebhookBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReceiveLiveKitWebhookUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/webhook+json', ...options?.headers },
+    body: JSON.stringify(
+      receiveLiveKitWebhookBody,)
+  }
+);}
+
+
+
+
+export const getReceiveLiveKitWebhookMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof receiveLiveKitWebhook>>, TError,{data: BodyType<ReceiveLiveKitWebhookBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof receiveLiveKitWebhook>>, TError,{data: BodyType<ReceiveLiveKitWebhookBody>}, TContext> => {
+
+const mutationKey = ['receiveLiveKitWebhook'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof receiveLiveKitWebhook>>, {data: BodyType<ReceiveLiveKitWebhookBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  receiveLiveKitWebhook(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReceiveLiveKitWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof receiveLiveKitWebhook>>>
+    export type ReceiveLiveKitWebhookMutationBody = BodyType<ReceiveLiveKitWebhookBody>
+    export type ReceiveLiveKitWebhookMutationError = ErrorType<void>
+
+    /**
+ * @summary Receive a signature-verified LiveKit lifecycle webhook
+ */
+export const useReceiveLiveKitWebhook = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof receiveLiveKitWebhook>>, TError,{data: BodyType<ReceiveLiveKitWebhookBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof receiveLiveKitWebhook>>,
+        TError,
+        {data: BodyType<ReceiveLiveKitWebhookBody>},
+        TContext
+      > => {
+      return useMutation(getReceiveLiveKitWebhookMutationOptions(options));
     }
 
 export const getRequestUploadUrlUrl = () => {

@@ -17,14 +17,169 @@
  * APNs) is the production-grade solution. This SW is the web fallback.
  */
 
-self.addEventListener("install", () => {
-  // Activate immediately so a freshly registered SW controls the page without a
-  // reload — important for the very first push subscription.
-  self.skipWaiting();
+importScripts("./sw-cache-policy.js");
+importScripts("./sw-push-owner-policy.js");
+
+const APP_SHELL_CACHE_PREFIX = "anotherme-app-shell-";
+const APP_SHELL_STAGING_PREFIX = "anotherme-app-shell-staging-";
+const APP_SHELL_CACHE = `${APP_SHELL_CACHE_PREFIX}__PWA_CACHE_VERSION__`;
+const APP_SHELL_STAGING_CACHE = `${APP_SHELL_STAGING_PREFIX}__PWA_CACHE_VERSION__`;
+const APP_SHELL_RETAIN_PREVIOUS = 2;
+const APP_SHELL_ASSETS = [/*__PWA_APP_SHELL_ASSETS__*/];
+const { cacheAllRequired, planAppShellCaches } = self.AnotherMePwaCachePolicy;
+const { createOwnerRecord, parseOwnerRecord, shouldDisplayForOwner } =
+  self.AnotherMePushOwnerPolicy;
+const PUSH_OWNER_CACHE = "anotherme-push-owner-v1";
+
+function pushOwnerRequest() {
+  return new Request(new URL("__push-owner__", self.registration.scope).toString());
+}
+
+async function readPushOwner() {
+  const cache = await caches.open(PUSH_OWNER_CACHE);
+  const response = await cache.match(pushOwnerRequest());
+  if (!response) return null;
+  try {
+    const parsed = parseOwnerRecord(await response.json(), Date.now());
+    if (!parsed) await cache.delete(pushOwnerRequest());
+    return parsed;
+  } catch {
+    await cache.delete(pushOwnerRequest());
+    return null;
+  }
+}
+
+async function writePushOwner(userId) {
+  const cache = await caches.open(PUSH_OWNER_CACHE);
+  const request = pushOwnerRequest();
+  const previous = await readPushOwner();
+  const next = createOwnerRecord(userId, Date.now());
+  if (!next) await cache.delete(request);
+  else {
+    await cache.put(
+      request,
+      new Response(JSON.stringify(next), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }),
+    );
+  }
+  if (previous?.userId !== next?.userId) {
+    const notifications = await self.registration.getNotifications();
+    for (const notification of notifications) notification.close();
+  }
+}
+
+function appShellUrl() {
+  return new URL("./", self.registration.scope).toString();
+}
+
+function isCacheableAsset(url) {
+  const scope = new URL(self.registration.scope);
+  if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return false;
+  return (
+    url.pathname.includes("/_expo/static/") ||
+    url.pathname.includes("/assets/") ||
+    /\.(?:js|css|png|jpe?g|gif|svg|webp|woff2?|ttf|otf|ico|webmanifest)$/i.test(url.pathname)
+  );
+}
+
+async function networkFirstNavigation(request) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } catch {
+    const cached = await matchRetainedAppShell(appShellUrl());
+    if (cached) return cached;
+    return new Response("네트워크 연결을 확인한 뒤 다시 시도해 주세요.", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function cacheFirstAsset(request) {
+  const cached = await matchRetainedAppShell(request, { ignoreSearch: true });
+  if (cached) return cached;
+  // Versioned app-shell caches are immutable after promotion. Writing a newly
+  // deployed response into an older worker's cache can mix HTML/chunks from two
+  // releases and make the offline fallback unrecoverable.
+  return fetch(request);
+}
+
+function cachePlan(cacheNames) {
+  return planAppShellCaches(cacheNames, APP_SHELL_CACHE, {
+    cachePrefix: APP_SHELL_CACHE_PREFIX,
+    stagingPrefix: APP_SHELL_STAGING_PREFIX,
+    retainPrevious: APP_SHELL_RETAIN_PREVIOUS,
+  });
+}
+
+async function matchRetainedAppShell(request, options) {
+  const names = await caches.keys();
+  for (const name of cachePlan(names).lookup) {
+    if (!names.includes(name)) continue;
+    const cached = await (await caches.open(name)).match(request, options);
+    if (cached) return cached;
+  }
+  return undefined;
+}
+
+async function installAppShell() {
+  const requiredAssets = APP_SHELL_ASSETS.length > 0 ? APP_SHELL_ASSETS : [appShellUrl()];
+  const existingNames = await caches.keys();
+  const finalCacheAlreadyExisted = existingNames.includes(APP_SHELL_CACHE);
+  await caches.delete(APP_SHELL_STAGING_CACHE);
+  const staging = await caches.open(APP_SHELL_STAGING_CACHE);
+
+  try {
+    await cacheAllRequired(staging, requiredAssets);
+    const target = await caches.open(APP_SHELL_CACHE);
+    for (const url of requiredAssets) {
+      const response = await staging.match(url);
+      if (!response) throw new Error(`Required PWA app-shell asset disappeared: ${url}`);
+      await target.put(url, response);
+    }
+    await caches.delete(APP_SHELL_STAGING_CACHE);
+    // A failed install never reaches this point, so the currently active worker
+    // and its known-good cache remain in control.
+    await self.skipWaiting();
+  } catch (error) {
+    await caches.delete(APP_SHELL_STAGING_CACHE);
+    if (!finalCacheAlreadyExisted) await caches.delete(APP_SHELL_CACHE);
+    throw error;
+  }
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(installAppShell());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      const names = await caches.keys();
+      await Promise.all(cachePlan(names).remove.map((name) => caches.delete(name)));
+      await self.clients.claim();
+    })(),
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  const scope = new URL(self.registration.scope);
+  if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
+  // Authentication/API responses and uploads must never enter the service-worker cache.
+  if (url.pathname.includes("/api/") || request.headers.has("authorization")) return;
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirstNavigation(request));
+  } else if (isCacheableAsset(url)) {
+    event.respondWith(cacheFirstAsset(request));
+  }
 });
 
 function parsePush(event) {
@@ -101,10 +256,17 @@ self.addEventListener("push", (event) => {
     tag: payload.tag,
     // renotify so a fresh call push re-alerts even if a tag-matched one exists.
     renotify: !!payload.tag,
-    data: { url, openUrl: toAppUrl(url), ...data },
+    data: {
+      url,
+      openUrl: toAppUrl(url),
+      ...data,
+      recipientUserId: payload.recipientUserId,
+    },
   };
   event.waitUntil(
     (async () => {
+      const owner = await readPushOwner();
+      if (!shouldDisplayForOwner(owner, payload.recipientUserId, Date.now())) return;
       // Wake open tabs so in-app lists/badges refresh alongside the OS banner.
       await broadcast({ type: "data-changed", roomId: roomIdFromUrl(url) });
       await self.registration.showNotification(title, options);
@@ -119,6 +281,8 @@ self.addEventListener("notificationclick", (event) => {
   const openUrl = typeof data.openUrl === "string" ? data.openUrl : toAppUrl(url);
   event.waitUntil(
     (async () => {
+      const owner = await readPushOwner();
+      if (!shouldDisplayForOwner(owner, data.recipientUserId, Date.now())) return;
       const clients = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
@@ -141,6 +305,13 @@ self.addEventListener("notificationclick", (event) => {
 
 self.addEventListener("message", (event) => {
   const data = event.data || {};
+  if (data.type === "push-owner-changed") {
+    const update = writePushOwner(
+      typeof data.userId === "string" ? data.userId : null,
+    ).finally(() => event.ports?.[0]?.postMessage({ ok: true }));
+    event.waitUntil(update);
+    return;
+  }
   if (data.type === "clear-room-notifications") {
     const tag = typeof data.tag === "string" ? data.tag : roomTagFromId(data.roomId);
     event.waitUntil(closeNotificationsByTag(tag));

@@ -4,6 +4,11 @@ import { useAuth } from "@clerk/expo";
 import { usePathname } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
+import { EphemeralRequestGate } from "@/lib/ephemeralRequestGate";
+import {
+  noteChatPending,
+  noteChatResource,
+} from "@/lib/chatPerformanceDiagnostics";
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
@@ -33,10 +38,14 @@ function getPlatformLabel(): string {
   return standalone ? "pwa" : "web";
 }
 
-async function sendPresenceHeartbeat(roomId: string | null): Promise<void> {
+async function sendPresenceHeartbeat(
+  roomId: string | null,
+  signal: AbortSignal,
+): Promise<void> {
   await customFetch("/api/presence/heartbeat", {
     method: "POST",
     body: JSON.stringify({ roomId, platform: getPlatformLabel() }),
+    signal,
   });
 }
 
@@ -50,13 +59,25 @@ export function usePresenceHeartbeat(): void {
     if (!isSignedIn) return;
 
     let stopped = false;
+    let appActive = true;
+    const gate = new EphemeralRequestGate({
+      minIntervalMs: 10_000,
+      timeoutMs: 6_000,
+      onPendingChange: (pending) => noteChatPending("presence", pending ? 1 : -1),
+    });
     const beat = () => {
       if (stopped) return;
-      void sendPresenceHeartbeat(roomIdRef.current).catch(() => {});
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        if (document.visibilityState !== "visible" || navigator.onLine === false) return;
+      } else if (!appActive) {
+        return;
+      }
+      gate.tryRun((signal) => sendPresenceHeartbeat(roomIdRef.current, signal));
     };
 
     beat();
     const timer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
+    noteChatResource("timers", 1);
 
     if (Platform.OS === "web" && typeof document !== "undefined") {
       const onVisible = () => {
@@ -64,21 +85,30 @@ export function usePresenceHeartbeat(): void {
       };
       document.addEventListener("visibilitychange", onVisible);
       window.addEventListener("pageshow", beat);
+      noteChatResource("listeners", 2);
       return () => {
         stopped = true;
+        gate.dispose();
         clearInterval(timer);
         document.removeEventListener("visibilitychange", onVisible);
         window.removeEventListener("pageshow", beat);
+        noteChatResource("timers", -1);
+        noteChatResource("listeners", -2);
       };
     }
 
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") beat();
+      appActive = state === "active";
+      if (appActive) beat();
     });
+    noteChatResource("listeners", 1);
     return () => {
       stopped = true;
+      gate.dispose();
       clearInterval(timer);
       sub.remove();
+      noteChatResource("timers", -1);
+      noteChatResource("listeners", -1);
     };
   }, [isSignedIn]);
 }

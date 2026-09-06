@@ -2338,6 +2338,40 @@ export interface CreateCallInput {
   media?: CallMedia;
 }
 
+export type CallDiagnosticDetails = { [key: string]: unknown };
+
+export interface CallDiagnostic {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  phase: string;
+  /** @maxLength 50 */
+  platform?: string;
+  /** @maxLength 50 */
+  role?: string;
+  details?: CallDiagnosticDetails;
+}
+
+export type QueuedCallDiagnosticDetails = { [key: string]: unknown };
+
+export interface QueuedCallDiagnostic {
+  eventId: string;
+  attemptId: string;
+  callId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  phase: string;
+  /** @maxLength 50 */
+  platform?: string;
+  /** @maxLength 50 */
+  role?: string;
+  occurredAt: string;
+  details?: QueuedCallDiagnosticDetails;
+}
+
 export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
 
 
@@ -2353,6 +2387,8 @@ export const CallStatus = {
 
 export interface Call {
   id: string;
+  /** @nullable */
+  attemptId?: string | null;
   roomName: string;
   callerId: string;
   calleeId: string;
@@ -2377,6 +2413,8 @@ export interface Call {
 
 export interface CallWithCaller {
   id: string;
+  /** @nullable */
+  attemptId?: string | null;
   roomName: string;
   callerId: string;
   calleeId: string;
@@ -2830,6 +2868,16 @@ export interface PublicProfile {
   followedStarIds?: string[];
 }
 
+/**
+ * UUID shared by every stage of one client call attempt.
+ */
+export type CallAttemptIdParameter = string;
+
+/**
+ * UUID that makes a terminal call-control operation replay-safe.
+ */
+export type CallOperationIdParameter = string;
+
 export type GlobalSearchParams = {
 /**
  * @minLength 2
@@ -3050,12 +3098,19 @@ export type FetchRoomMessagesParams = {
  */
 beforeSeq?: number;
 /**
+ * Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.
+ * @minimum 0
+ */
+afterSeq?: number;
+/**
  * Page size, from 1 through 100 (defaults to 50).
  * @minimum 1
  * @maximum 100
  */
 limit?: number;
 };
+
+export type ReceiveLiveKitWebhookBody = { [key: string]: unknown };
 
 export type CancelBattle200 = {
   ok: boolean;

@@ -14,10 +14,12 @@ import {
   displayIncomingCallNotification,
   terminalCallIdFromData,
 } from "./callNotifications";
+import { nativePushMatchesCurrentOwner } from "./nativePushOwner";
 
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   const data = remoteMessage.data;
   if (!data) return;
+  if (!(await nativePushMatchesCurrentOwner(data.recipientUserId))) return;
   // The current backend only emits incoming_call here. If an existing FCM call
   // lifecycle payload reaches a device later, clear only that call's notification.
   const terminalCallId = terminalCallIdFromData(data);
