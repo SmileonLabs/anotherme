@@ -14,7 +14,22 @@ const fs = require("fs");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const OUTPUT_DIR = "web-build";
+const OUTPUT_DIR = process.env.PWA_OUTPUT_DIR || "web-build";
+const outputPath = path.resolve(projectRoot, OUTPUT_DIR);
+const relativeOutputPath = path.relative(projectRoot, outputPath);
+if (
+  !OUTPUT_DIR.trim() ||
+  OUTPUT_DIR === "." ||
+  OUTPUT_DIR === ".." ||
+  path.basename(OUTPUT_DIR) !== OUTPUT_DIR ||
+  !relativeOutputPath ||
+  relativeOutputPath.startsWith(`..${path.sep}`) ||
+  path.isAbsolute(relativeOutputPath)
+) {
+  throw new Error(
+    "PWA_OUTPUT_DIR must be a non-special directory name inside the mobile project",
+  );
+}
 
 function toOrigin(value) {
   let urlString = value.trim();
@@ -48,31 +63,105 @@ function getBasePath() {
   return raw === "/" ? "" : raw.replace(/\/+$/, "");
 }
 
-function patchExportedHtml(indexHtmlPath) {
+function patchExportedHtml(indexHtmlPath, basePath) {
   // Best-effort: a patch failure must never block the deploy — the app still
   // works (just without the standalone layout clamp), like the rest of build.js.
   try {
     let html = fs.readFileSync(indexHtmlPath, "utf8");
 
-    // Inject the root overflow clamp once, just before </head>. This stops the
-    // iOS standalone (home-screen) PWA from getting stuck scrolled to the right
-    // when any element is a few px wider than the viewport.
-    //
-    // NOTE: we intentionally do NOT add `viewport-fit=cover`. With cover, iOS
-    // stops auto-insetting the layout within the safe area, so the bottom tab
-    // bar + message composer slide under the home indicator and get clipped.
-    // The default viewport (no cover) keeps content inside the safe area, which
-    // is what we want here.
+    // Keep browser chrome and the standalone iOS PWA on the same dark surface.
+    // Expo's generated head varies by SDK version, so normalize the viewport
+    // and inject the iOS-specific metadata at build time rather than relying on
+    // each screen to compensate independently.
+    const viewport =
+      '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">';
+    html = html.replace(/<meta\s+name=["']viewport["'][^>]*>/i, viewport);
+    if (!html.includes('name="viewport"')) html = html.replace("</head>", `    ${viewport}\n  </head>`);
+
+    const headMeta = [
+      '<meta name="theme-color" content="#05040D">',
+      '<meta name="apple-mobile-web-app-capable" content="yes">',
+      '<meta name="apple-mobile-web-app-status-bar-style" content="black">',
+      '<meta name="mobile-web-app-capable" content="yes">',
+    ];
+    for (const meta of headMeta) {
+      const name = meta.match(/name="([^"]+)"/)?.[1];
+      if (name && !new RegExp(`<meta\\s+name=["']${name}["']`, "i").test(html)) {
+        html = html.replace("</head>", `    ${meta}\n  </head>`);
+      }
+    }
+
+    const assetBase = basePath || "";
+    const headLinks = [
+      `<link rel="manifest" href="${assetBase}/manifest.webmanifest?v=20260726">`,
+      `<link rel="apple-touch-icon" sizes="180x180" href="${assetBase}/apple-touch-icon.png?v=20260726">`,
+    ];
+    for (const link of headLinks) {
+      const rel = link.match(/rel="([^"]+)"/)?.[1];
+      if (rel && !new RegExp(`<link\\s+rel=["']${rel}["']`, "i").test(html)) {
+        html = html.replace("</head>", `    ${link}\n  </head>`);
+      }
+    }
+
+    // Prevent the document itself from rubber-band scrolling. Individual
+    // ScrollView/FlatList screens remain scrollable inside this fixed shell.
     const MARKER = "anotherme-pwa-layout-fix";
     if (!html.includes(MARKER) && html.includes("</head>")) {
-      const style = `    <style id="${MARKER}">\n      html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }\n      body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }\n    </style>\n  </head>`;
+      const style = `    <style id="${MARKER}">\n      :root { background: #05040D; color-scheme: dark; }\n      html, body { width: 100%; max-width: 100%; height: 100%; min-height: 100dvh; margin: 0; overflow: hidden; }\n      body { background: #05040D; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior: none; }\n      #root { width: 100%; height: 100%; min-height: 100dvh; overflow: auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }\n    </style>\n  </head>`;
       html = html.replace("</head>", style);
+    }
+
+    // The native splash is configured in app.json. Mirror it in the exported
+    // PWA so launching from a browser home screen never flashes an empty page
+    // while the JavaScript bundle and authentication provider initialize.
+    const SPLASH_MARKER = "anotherme-boot-splash";
+    if (!html.includes(`id="${SPLASH_MARKER}"`) && /<body[^>]*>/i.test(html)) {
+      const splash = `<div id="${SPLASH_MARKER}" aria-hidden="true"><img src="${assetBase}/icon-512.png" alt=""></div>
+    <style>
+      #${SPLASH_MARKER} { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; background: #05040D; }
+      #${SPLASH_MARKER} img { width: min(44vw, 224px); height: auto; display: block; }
+    </style>
+    <script>
+      (() => {
+        const removeSplash = () => document.getElementById("${SPLASH_MARKER}")?.remove();
+        const observer = new MutationObserver(() => {
+          const root = document.getElementById("root");
+          if (root && root.childNodes.length > 0) {
+            observer.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(removeSplash));
+          }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        window.setTimeout(removeSplash, 8000);
+      })();
+    </script>`;
+      html = html.replace(/<body([^>]*)>/i, `<body$1>\n    ${splash}`);
     }
 
     fs.writeFileSync(indexHtmlPath, html);
     console.log("Patched index.html for iOS standalone-PWA layout.");
   } catch (err) {
     console.warn(`WARN: could not patch index.html layout: ${err.message}`);
+  }
+}
+
+function copyPwaShellAssets(outPath) {
+  const publicDir = path.join(projectRoot, "public");
+  const files = [
+    "sw.js",
+    "sw-cache-policy.js",
+    "manifest.webmanifest",
+    "icon-192.png",
+    "icon-512.png",
+    "apple-touch-icon.png",
+  ];
+
+  for (const file of files) {
+    const source = path.join(publicDir, file);
+    if (!fs.existsSync(source)) {
+      throw new Error(`Missing required PWA shell asset: public/${file}`);
+    }
+    fs.copyFileSync(source, path.join(outPath, file));
   }
 }
 
@@ -91,8 +180,7 @@ function run(cmd, args, env) {
   });
 }
 
-function patchExportedFontUrls(outPath, basePath) {
-  const version = process.env.PWA_ASSET_VERSION || Date.now().toString(36);
+function patchExportedFontUrls(outPath, basePath, version) {
   const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const jsDir = path.join(outPath, "_expo", "static", "js");
   const jsFiles = [];
@@ -107,12 +195,32 @@ function patchExportedFontUrls(outPath, basePath) {
   }
 
   collectJsFiles(jsDir);
+  const sourceAssets = path.join(outPath, "assets", "__node_modules");
+  const publicFontDir = path.join(outPath, "assets", "fonts");
+  fs.mkdirSync(publicFontDir, { recursive: true });
+  const publicFonts = new Set();
+  function collectFonts(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectFonts(fullPath);
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith(".ttf")) {
+        const safeName = entry.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        if (!publicFonts.has(safeName)) {
+          fs.copyFileSync(fullPath, path.join(publicFontDir, safeName));
+          publicFonts.add(safeName);
+        }
+      }
+    }
+  }
+  collectFonts(sourceAssets);
   for (const jsFile of jsFiles) {
     const original = fs.readFileSync(jsFile, "utf8");
-    const patched = original.replace(
+    let patched = original.replace(
       new RegExp(`(${escapedBasePath}/assets/[^"'\\s)]+\\.ttf)(?!\\?)`, "g"),
       `$1?v=${version}`,
     );
+    patched = patched.replace(new RegExp(`${escapedBasePath}/assets/__node_modules/(?:[^"'\\s)]+/)*([^/"'\\s)]+\\.ttf)(?:\\?[^"'\\s)]*)?`, "g"), `${basePath}/assets/fonts/$1?v=${version}`);
     if (patched !== original) {
       fs.writeFileSync(jsFile, patched);
       console.log(`Patched font asset URLs in ${path.relative(outPath, jsFile)}.`);
@@ -132,6 +240,53 @@ function patchExportedFontUrls(outPath, basePath) {
   }
 }
 
+function patchServiceWorker(outPath, basePath, version) {
+  const swPath = path.join(outPath, "sw.js");
+  const indexPath = path.join(outPath, "index.html");
+  const html = fs.readFileSync(indexPath, "utf8");
+  const scopePath = `${basePath || ""}/`;
+  const assets = new Set([
+    scopePath,
+    `${basePath}/sw-cache-policy.js`,
+    `${basePath}/manifest.webmanifest`,
+    `${basePath}/icon-192.png`,
+    `${basePath}/icon-512.png`,
+    `${basePath}/apple-touch-icon.png`,
+  ]);
+  for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+    const value = match[1];
+    if (value.startsWith(`${basePath}/_expo/`) || value.startsWith(`${basePath}/assets/`)) {
+      assets.add(value);
+    }
+  }
+  const staticRoot = path.join(outPath, "_expo", "static");
+  function addStaticFiles(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        addStaticFiles(fullPath);
+      } else if (entry.isFile() && /\.(?:js|css)$/i.test(entry.name)) {
+        const relative = path.relative(outPath, fullPath).split(path.sep).join("/");
+        const url = `${basePath}/${relative}`;
+        const alreadyIncluded = [...assets].some(
+          (asset) => asset.split(/[?#]/, 1)[0] === url,
+        );
+        if (!alreadyIncluded) assets.add(url);
+      }
+    }
+  }
+  addStaticFiles(staticRoot);
+  const safeVersion = String(version).replace(/[^A-Za-z0-9._-]/g, "-");
+  const assetLiteral = [...assets].map((asset) => JSON.stringify(asset)).join(",");
+  const source = fs
+    .readFileSync(swPath, "utf8")
+    .replaceAll("__PWA_CACHE_VERSION__", safeVersion)
+    .replace("/*__PWA_APP_SHELL_ASSETS__*/", assetLiteral);
+  fs.writeFileSync(swPath, source);
+  console.log(`Prepared versioned PWA app-shell cache with ${assets.size} entry points.`);
+}
+
 function runPnpm(args, env) {
   return process.platform === "win32"
     ? run("cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", ...args], env)
@@ -142,9 +297,10 @@ async function main() {
   const origin = getDeploymentOrigin();
   const domain = new URL(origin).host;
   const basePath = getBasePath();
+  const assetVersion = process.env.PWA_ASSET_VERSION || Date.now().toString(36);
   console.log(`Building browser web export (PWA) for ${origin}${basePath || "/"} ...`);
 
-  const outPath = path.join(projectRoot, OUTPUT_DIR);
+  const outPath = outputPath;
   if (fs.existsSync(outPath)) {
     fs.rmSync(outPath, { recursive: true, force: true });
   }
@@ -230,8 +386,10 @@ async function main() {
   //     viewport leaves the whole app stuck scrolled to the right on EVERY
   //     screen (there's no browser chrome to snap it back). Clamping the root
   //     elements pins the layout to the viewport.
-  patchExportedHtml(indexHtml);
-  patchExportedFontUrls(outPath, basePath);
+  copyPwaShellAssets(outPath);
+  patchExportedHtml(indexHtml, basePath);
+  patchExportedFontUrls(outPath, basePath, assetVersion);
+  patchServiceWorker(outPath, basePath, assetVersion);
 
   console.log(`Web build complete: ${outPath}`);
   process.exit(0);

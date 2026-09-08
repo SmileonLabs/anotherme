@@ -4,6 +4,16 @@
  * same-origin so a relative path is enough.
  */
 export function getApiBase(): string {
+  // The PWA is served behind the same Caddy origin that proxies /api. Keeping
+  // browser requests same-origin removes a second DNS/TLS/CORS failure surface.
+  // Native builds have no window and continue to use the explicit API host.
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  const explicit = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   return domain ? `https://${domain}` : "";
 }

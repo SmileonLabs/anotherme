@@ -8,13 +8,23 @@ import {
   refreshWalletNft,
   verifyWalletChallenge,
 } from "../lib/walletVerification";
-import { StarProfileError, equipStarNft, getEquippedStarProfile } from "../lib/starProfiles";
+import {
+  StarProfileError,
+  activateStarProfile,
+  equipStarNft,
+  getEquippedStarProfile,
+  listStarProfiles,
+  revalidateStarProfiles,
+} from "../lib/starProfiles";
 import { ensurePlayModeState } from "../lib/fanStar";
+import { rateLimit } from "../lib/rateLimit";
+import { listWalletNftInventory } from "../lib/nftInventory";
 
 const router: IRouter = Router();
 
 const challengeBodySchema = z.object({
   walletAddress: z.string().trim().min(1).max(120),
+  chainId: z.number().int().positive().max(2_147_483_647).optional(),
 });
 
 const verifyBodySchema = z.object({
@@ -25,7 +35,9 @@ const verifyBodySchema = z.object({
 
 const equipBodySchema = z.object({
   tokenId: z.string().trim().min(1).max(80),
+  collectionId: z.string().uuid().optional(),
 });
+const starProfileParamsSchema = z.object({ starProfileId: z.string().uuid() });
 
 function handleWalletError(res: import("express").Response, err: unknown): boolean {
   if (!(err instanceof WalletVerificationError)) return false;
@@ -46,6 +58,8 @@ function handleStarProfileError(res: import("express").Response, err: unknown): 
   const status =
     err.code === "wallet_required"
       ? 409
+      : err.code === "star_not_owned"
+        ? 404
       : err.code === "config_missing"
         ? 503
         : err.code === "token_not_owned"
@@ -61,7 +75,11 @@ router.get("/users/me/wallet", requireAuth, async (req, res): Promise<void> => {
   res.json(await getWalletStatus(req.dbUser!.id));
 });
 
-router.post("/users/me/wallet/challenge", requireAuth, async (req, res): Promise<void> => {
+router.post(
+  "/users/me/wallet/challenge",
+  requireAuth,
+  rateLimit({ name: "wallet-challenge", limit: 10, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
   const parsed = challengeBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "지갑 주소를 입력해 주세요." });
@@ -73,15 +91,21 @@ router.post("/users/me/wallet/challenge", requireAuth, async (req, res): Promise
       await createWalletChallenge({
         userId: req.dbUser!.id,
         walletAddress: parsed.data.walletAddress,
+        chainId: parsed.data.chainId,
       }),
     );
   } catch (err) {
     if (handleWalletError(res, err)) return;
     throw err;
   }
-});
+  },
+);
 
-router.post("/users/me/wallet/verify", requireAuth, async (req, res): Promise<void> => {
+router.post(
+  "/users/me/wallet/verify",
+  requireAuth,
+  rateLimit({ name: "wallet-verify", limit: 10, windowSeconds: 60 }),
+  async (req, res): Promise<void> => {
   const parsed = verifyBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid", message: "서명 정보를 확인해 주세요." });
@@ -101,7 +125,8 @@ router.post("/users/me/wallet/verify", requireAuth, async (req, res): Promise<vo
     if (handleWalletError(res, err)) return;
     throw err;
   }
-});
+  },
+);
 
 router.post("/users/me/wallet/refresh", requireAuth, async (req, res): Promise<void> => {
   try {
@@ -112,8 +137,46 @@ router.post("/users/me/wallet/refresh", requireAuth, async (req, res): Promise<v
   }
 });
 
+router.get("/users/me/wallet/nfts", requireAuth, async (req, res): Promise<void> => {
+  try {
+    res.json(await listWalletNftInventory(req.dbUser!.id));
+  } catch (err) {
+    if (err instanceof Error && err.message === "wallet_required") {
+      res.status(409).json({ error: "wallet_required", message: "먼저 지갑을 인증해 주세요." });
+      return;
+    }
+    res.status(502).json({ error: "nft_check_failed", message: "NFT 목록을 불러오지 못했어요." });
+  }
+});
+
 router.get("/users/me/star-profile", requireAuth, async (req, res): Promise<void> => {
   res.json({ equippedStar: await getEquippedStarProfile(req.dbUser!.id) });
+});
+
+router.get("/users/me/star-profiles", requireAuth, async (req, res): Promise<void> => {
+  res.json({ starProfiles: await listStarProfiles(req.dbUser!.id) });
+});
+
+router.post("/users/me/star-profiles/revalidate", requireAuth, async (req, res): Promise<void> => {
+  res.json({ starProfiles: await revalidateStarProfiles(req.dbUser!.id) });
+});
+
+router.post("/users/me/star-profiles/:starProfileId/activate", requireAuth, async (req, res): Promise<void> => {
+  const parsed = starProfileParamsSchema.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid", message: "잘못된 STAR 프로필입니다." });
+    return;
+  }
+  try {
+    const equippedStar = await activateStarProfile({
+      userId: req.dbUser!.id,
+      starProfileId: parsed.data.starProfileId,
+    });
+    res.json({ equippedStar, state: await ensurePlayModeState(req.dbUser!.id) });
+  } catch (err) {
+    if (handleStarProfileError(res, err)) return;
+    throw err;
+  }
 });
 
 router.post("/users/me/star-nft/equip", requireAuth, async (req, res): Promise<void> => {
@@ -124,7 +187,7 @@ router.post("/users/me/star-nft/equip", requireAuth, async (req, res): Promise<v
   }
 
   try {
-    const equippedStar = await equipStarNft({ userId: req.dbUser!.id, tokenId: parsed.data.tokenId });
+    const equippedStar = await equipStarNft({ userId: req.dbUser!.id, tokenId: parsed.data.tokenId, collectionId: parsed.data.collectionId });
     res.json({ equippedStar, state: await ensurePlayModeState(req.dbUser!.id) });
   } catch (err) {
     if (handleStarProfileError(res, err)) return;

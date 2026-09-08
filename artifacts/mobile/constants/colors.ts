@@ -37,37 +37,37 @@ const colors = {
     online: "#34C759",
   },
   dark: {
-    text: "#ECECF1",
-    tint: "#8A97FF",
+    text: "#F7F5FF",
+    tint: "#B76CFF",
 
-    background: "#15151D",
-    foreground: "#ECECF1",
+    background: "#04040B",
+    foreground: "#F7F5FF",
 
-    card: "#1C1C27",
-    cardForeground: "#ECECF1",
+    card: "#0F0F1B",
+    cardForeground: "#F7F5FF",
 
-    primary: "#6E7CF0",
+    primary: "#9D63FF",
     primaryForeground: "#FFFFFF",
 
-    secondary: "#23232F",
-    secondaryForeground: "#ECECF1",
+    secondary: "#171126",
+    secondaryForeground: "#F7F5FF",
 
-    muted: "#0E0E14",
-    mutedForeground: "#9A9AA7",
+    muted: "#080812",
+    mutedForeground: "#A9A3BA",
 
-    accent: "#23253A",
-    accentForeground: "#9AA6FF",
+    accent: "#211236",
+    accentForeground: "#C892FF",
 
     destructive: "#FF453A",
     destructiveForeground: "#FFFFFF",
 
-    border: "#2C2C38",
-    input: "#20202B",
+    border: "#392354",
+    input: "#11101D",
 
-    myBubble: "#5B6EE8",
+    myBubble: "#7137D8",
     myBubbleText: "#FFFFFF",
-    otherBubble: "#23232F",
-    otherBubbleText: "#ECECF1",
+    otherBubble: "#151320",
+    otherBubbleText: "#F7F5FF",
 
     destructiveMuted: "#3A1F1F",
 
@@ -86,9 +86,25 @@ export const gradients = {
 
 /** Dark-mode counterparts of {@link gradients}. */
 export const gradientsDark = {
-  cta: ["#6E7CF0", "#5B6EE8"] as const,
+  cta: ["#B357FF", "#5226E8"] as const,
   /** Deep lavender surface for highlighted cards (dark mode). */
-  soft: ["#23253A", "#2A2440"] as const,
+  soft: ["#171126", "#10152A"] as const,
 };
+
+/** Neon surfaces shared by the mockup-inspired mobile and PWA UI. */
+export const neon = {
+  background: "#04040B",
+  panel: "rgba(15, 15, 27, 0.94)",
+  panelSoft: "rgba(17, 16, 31, 0.86)",
+  line: "rgba(157, 99, 255, 0.42)",
+  glow: "rgba(136, 74, 255, 0.42)",
+  purple: "#9D63FF",
+  magenta: "#F04CCB",
+  cyan: "#35E6E0",
+  blue: "#526DFF",
+  gold: "#FFD84D",
+  text: "#F7F5FF",
+  muted: "#A9A3BA",
+} as const;
 
 export default colors;

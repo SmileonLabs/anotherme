@@ -21,11 +21,11 @@ import { upsertClaim, upsertEntity, upsertSource } from "../lib/knowledgeGraph/c
 import { queueAiCampaignDelivery } from "../lib/campaignEngine";
 import { CHAT_KNOWLEDGE_ITEM_TYPE } from "../lib/chatKnowledge";
 import { enqueueUserAiMemoryOntologySyncSafe } from "../lib/ontologySync";
+import { rateLimit } from "../lib/rateLimit";
 import {
   confidenceValue,
   GOOGLE_SEARCH_ENDPOINT,
   GOOGLE_SEARCH_MAX_RESULTS,
-  isKnowledgeAdmin,
   normalizeGoogleSearchItem,
   parsePositiveInt,
   requireGoogleSearchConfig,
@@ -35,6 +35,7 @@ import {
   validateImportUrl,
   type GoogleSearchResult,
 } from "../lib/knowledge/validation";
+import { hasAdminAccess } from "../lib/adminRbac";
 import {
   checksum,
   extractCandidateSentences,
@@ -43,8 +44,8 @@ import {
 } from "../lib/knowledge/sourceText";
 
 const router: IRouter = Router();
-function requireKnowledgeAdmin(req: Request, res: Response): boolean {
-  if (!req.dbUser || !isKnowledgeAdmin(req.dbUser)) {
+async function requireKnowledgeAdmin(req: Request, res: Response): Promise<boolean> {
+  if (!req.dbUser || !(await hasAdminAccess(req.dbUser))) {
     res.status(403).json({ error: "Knowledge admin access required" });
     return false;
   }
@@ -385,12 +386,12 @@ async function approveReviewItem(item: KnowledgeReviewItem, log: Logger): Promis
   if (payload?.claim) await upsertClaim(payload.claim, Array.isArray(payload.sourceIds) ? payload.sourceIds : []);
 }
 
-router.get("/knowledge/admin/me", requireAuth, (req, res): void => {
-  res.json({ isAdmin: !!req.dbUser && isKnowledgeAdmin(req.dbUser) });
+router.get("/knowledge/admin/me", requireAuth, async (req, res): Promise<void> => {
+  res.json({ isAdmin: !!req.dbUser && (await hasAdminAccess(req.dbUser)) });
 });
 
 router.get("/knowledge/admin/sources", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const result = await db.execute(sql`
     SELECT
       s.id,
@@ -423,13 +424,13 @@ router.get("/knowledge/admin/sources", requireAuth, async (req, res): Promise<vo
 });
 
 router.get("/knowledge/admin/ontology-preview", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const tenantId = textValue(req.query.tenantId, BIBI_GRAPH_TENANT_ID);
   res.json(await getKnowledgePreview(tenantId));
 });
 
-router.post("/knowledge/admin/google-search", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+router.post("/knowledge/admin/google-search", requireAuth, rateLimit({ name: "knowledge-google-search", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const config = requireGoogleSearchConfig();
   if (!config) {
     res.status(503).json({
@@ -479,8 +480,8 @@ router.post("/knowledge/admin/google-search", requireAuth, async (req, res): Pro
   });
 });
 
-router.post("/knowledge/admin/google-search/import", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+router.post("/knowledge/admin/google-search/import", requireAuth, rateLimit({ name: "knowledge-google-import", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const title = textValue(req.body?.title).slice(0, 200);
   const url = validateImportUrl(textValue(req.body?.url));
   if (!title || !url) {
@@ -519,7 +520,7 @@ router.post("/knowledge/admin/google-search/import", requireAuth, async (req, re
 });
 
 router.post("/knowledge/admin/sources", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const body = req.body ?? {};
   const title = textValue(body.title);
   const url = textValue(body.url) || null;
@@ -541,7 +542,7 @@ router.post("/knowledge/admin/sources", requireAuth, async (req, res): Promise<v
 });
 
 router.delete("/knowledge/admin/sources/:sourceId", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const sourceId = routeParam(req.params.sourceId);
   const archivedAt = new Date();
 
@@ -571,8 +572,8 @@ router.delete("/knowledge/admin/sources/:sourceId", requireAuth, async (req, res
   res.json(updated);
 });
 
-router.post("/knowledge/admin/sources/:sourceId/extract", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+router.post("/knowledge/admin/sources/:sourceId/extract", requireAuth, rateLimit({ name: "knowledge-extract", limit: 10, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const sourceId = routeParam(req.params.sourceId);
   const [source] = await db.select().from(knowledgeSourcesTable).where(eq(knowledgeSourcesTable.id, sourceId)).limit(1);
   if (!source) {
@@ -642,7 +643,7 @@ router.post("/knowledge/admin/sources/:sourceId/extract", requireAuth, async (re
 });
 
 router.get("/knowledge/admin/review-items", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const status = textValue(req.query.status, "draft");
   const result = await db.execute(sql`
     SELECT
@@ -670,7 +671,7 @@ router.get("/knowledge/admin/review-items", requireAuth, async (req, res): Promi
 });
 
 router.get("/knowledge/admin/chat-candidates", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const status = textValue(req.query.status, "all");
   const result = await db.execute(sql`
     SELECT
@@ -703,7 +704,7 @@ router.get("/knowledge/admin/chat-candidates", requireAuth, async (req, res): Pr
 });
 
 router.post("/knowledge/admin/review-items/:id/approve", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const reviewItemId = routeParam(req.params.id);
   const [item] = await db.select().from(knowledgeReviewItemsTable).where(eq(knowledgeReviewItemsTable.id, reviewItemId)).limit(1);
   if (!item) {
@@ -721,7 +722,7 @@ router.post("/knowledge/admin/review-items/:id/approve", requireAuth, async (req
 });
 
 router.post("/knowledge/admin/review-items/:id/reject", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const reviewItemId = routeParam(req.params.id);
   const [updated] = await db.update(knowledgeReviewItemsTable).set({ status: "rejected", reviewedByUserId: req.dbUser!.id, reviewedAt: new Date() }).where(eq(knowledgeReviewItemsTable.id, reviewItemId)).returning();
   if (!updated) {
@@ -733,13 +734,13 @@ router.post("/knowledge/admin/review-items/:id/reject", requireAuth, async (req,
 });
 
 router.get("/knowledge/admin/campaigns", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const rows = await db.select().from(aiCampaignsTable).orderBy(desc(aiCampaignsTable.createdAt)).limit(50);
   res.json(rows);
 });
 
 router.post("/knowledge/admin/campaigns", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const title = textValue(req.body?.title);
   const messageTemplate = textValue(req.body?.messageTemplate);
   if (!title || !messageTemplate) {
@@ -762,7 +763,7 @@ router.post("/knowledge/admin/campaigns", requireAuth, async (req, res): Promise
 });
 
 router.post("/knowledge/admin/campaigns/:id/test-delivery", requireAuth, async (req, res): Promise<void> => {
-  if (!requireKnowledgeAdmin(req, res)) return;
+  if (!(await requireKnowledgeAdmin(req, res))) return;
   const targetUserId = textValue(req.body?.targetUserId);
   if (!targetUserId) {
     res.status(400).json({ error: "targetUserId required" });

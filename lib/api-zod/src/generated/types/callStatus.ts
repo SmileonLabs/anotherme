@@ -12,7 +12,6 @@ export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
 export const CallStatus = {
   ringing: 'ringing',
   active: 'active',
-  accepted: 'accepted',
   declined: 'declined',
   missed: 'missed',
   cancelled: 'cancelled',

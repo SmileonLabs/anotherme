@@ -68,7 +68,7 @@ export default function BattleScreen() {
         }
       >
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-          AI 심판이 두 사람의 말을 듣고 점수를 매겨요. 이길수록 말빨이 자라요.
+          AI 심판이 3라운드 토론을 판정해요. 결과는 FAN 성장과 자아 프로필에 반영돼요.
         </Text>
 
         {/* Stat strip */}
@@ -106,8 +106,8 @@ export default function BattleScreen() {
             <Feather name="award" size={24} color="#00B488" />
           </View>
           <View style={styles.actionBody}>
-            <Text style={[styles.actionTitle, { color: colors.foreground }]}>중2병 AI와 배틀</Text>
-            <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>아무 때나 혼자 연습하기</Text>
+            <Text style={[styles.actionTitle, { color: colors.foreground }]}>AI 캐릭터와 배틀</Text>
+            <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>AI 심판과 함께 3라운드 토론</Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
@@ -124,7 +124,7 @@ export default function BattleScreen() {
           </View>
           <View style={styles.actionBody}>
             <Text style={[styles.actionTitle, { color: colors.foreground }]}>친구와 배틀</Text>
-            <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>친구를 불러 진짜 승부</Text>
+            <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>친구와 3라운드 찬반 토론</Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
@@ -136,7 +136,7 @@ export default function BattleScreen() {
             <EmptyState
               icon="mic"
               title="아직 배틀 기록이 없어요"
-              subtitle="첫 배틀에서 말빨을 증명해보세요."
+              subtitle="첫 배틀에서 말로 증명해보세요."
               actionLabel="AI와 배틀 시작"
               onAction={() => router.push({ pathname: "/battle/create", params: { mode: "ai" } })}
             />

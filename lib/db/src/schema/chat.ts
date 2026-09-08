@@ -1,10 +1,13 @@
 import { sql } from "drizzle-orm";
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { characterProfilesTable } from "./characterProfiles";
 
 export const chatRoomsTable = pgTable("chat_rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   type: text("type").notNull(),
+  category: text("category").notNull().default("casual"),
+  visibility: text("visibility").notNull().default("private"),
   name: text("name"),
   ownerId: uuid("owner_id").references(() => usersTable.id),
   lastMessage: text("last_message"),
@@ -13,7 +16,9 @@ export const chatRoomsTable = pgTable("chat_rooms", {
   pinnedMessageId: uuid("pinned_message_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (t) => [
+  index("chat_rooms_type_category_updated_at_idx").on(t.type, t.category, t.updatedAt),
+]);
 
 export const chatRoomMembersTable = pgTable(
   "chat_room_members",
@@ -21,6 +26,7 @@ export const chatRoomMembersTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     roomId: uuid("room_id").notNull().references(() => chatRoomsTable.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
     lastReadMessageId: uuid("last_read_message_id"),
     lastReadSeq: integer("last_read_seq").notNull().default(0),
@@ -35,6 +41,7 @@ export const chatRoomMembersTable = pgTable(
     // on every room/message request filter by room_id.
     index("chat_room_members_user_id_idx").on(t.userId),
     index("chat_room_members_room_id_idx").on(t.roomId),
+    index("chat_room_members_profile_id_idx").on(t.profileId),
     index("chat_room_members_room_id_last_read_seq_idx").on(t.roomId, t.lastReadSeq),
   ],
 );
@@ -45,12 +52,17 @@ export const messagesTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     roomId: uuid("room_id").notNull().references(() => chatRoomsTable.id, { onDelete: "cascade" }),
     senderId: uuid("sender_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    senderProfileId: uuid("sender_profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     authorKind: text("author_kind").notNull().default("user"),
     type: text("type").notNull().default("text"),
     content: text("content").notNull(),
     replyToMessageId: uuid("reply_to_message_id"),
     anotherMeSessionId: uuid("another_me_session_id"),
+    // Call cards are server-created messages. The FK is added in the forward
+    // migration because the calls schema already depends on chat rooms.
+    callId: uuid("call_id"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    clientMessageId: text("client_message_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     roomSeq: integer("room_seq").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -60,9 +72,16 @@ export const messagesTable = pgTable(
     // room_id and orders by created_at — the hottest query under 3s polling.
     index("messages_room_id_created_at_idx").on(t.roomId, t.createdAt),
     index("messages_room_id_room_seq_idx").on(t.roomId, t.roomSeq),
+    index("messages_sender_profile_id_idx").on(t.senderProfileId),
     uniqueIndex("messages_room_id_room_seq_unique_idx")
       .on(t.roomId, t.roomSeq)
       .where(sql`${t.roomSeq} > 0`),
+    uniqueIndex("messages_room_id_sender_id_client_message_id_unique_idx")
+      .on(t.roomId, t.senderId, t.clientMessageId)
+      .where(sql`${t.clientMessageId} IS NOT NULL`),
+    uniqueIndex("messages_call_id_unique_idx")
+      .on(t.callId)
+      .where(sql`${t.callId} IS NOT NULL`),
   ],
 );
 
@@ -72,6 +91,7 @@ export const messageDeletionsTable = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     messageId: uuid("message_id").notNull().references(() => messagesTable.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id").references(() => characterProfilesTable.id, { onDelete: "set null" }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

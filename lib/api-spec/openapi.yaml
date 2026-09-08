@@ -28,6 +28,8 @@ tags:
     description: Realtime connection setup
   - name: quests
     description: Daily/weekly quests & achievements
+  - name: nft
+    description: Published NFT collection and ownership operations
 paths:
   /healthz:
     get:
@@ -83,6 +85,148 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PublicUser"
+
+  /search:
+    get:
+      operationId: globalSearch
+      tags: [users]
+      summary: Search public profiles, STAR/FAN identities, public feed posts, and missions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 80 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [all, users, stars, fans, posts, missions], default: all }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 30, default: 20 }
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalSearchResponse"
+        "400": { description: Invalid search query }
+        "401": { description: Unauthorized }
+
+  /search/recommendations:
+    get:
+      operationId: getSearchRecommendations
+      tags: [users]
+      summary: Get recommended public STAR and FAN character profiles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 4, maximum: 30, default: 12 }
+      responses:
+        "200":
+          description: Recommended profiles for the active character profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SearchRecommendation"
+        "400": { description: Invalid recommendation request }
+        "401": { description: Unauthorized }
+
+  /search/trending:
+    get:
+      operationId: getTrendingSearches
+      tags: [users]
+      summary: Get cached popular search terms
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10, default: 5 }
+      responses:
+        "200":
+          description: Popular search terms
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, generatedAt]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [term, rank, change, resultCount]
+                      properties:
+                        term: { type: string }
+                        rank: { type: integer }
+                        change: { type: integer }
+                        resultCount: { type: integer }
+                  generatedAt: { type: string, format: date-time }
+        "401": { description: Unauthorized }
+
+  /search/admin/blocks:
+    get:
+      operationId: listSearchTrendingBlocks
+      tags: [users]
+      summary: List hidden trending search terms
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Hidden terms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [normalizedTerm, reason, createdAt]
+                  properties:
+                    normalizedTerm: { type: string }
+                    reason: { type: string }
+                    createdBy: { type: [string, "null"], format: uuid }
+                    createdAt: { type: string, format: date-time }
+        "403": { description: Admin required }
+    post:
+      operationId: blockSearchTrendingTerm
+      tags: [users]
+      summary: Hide a term from trending search results
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [term]
+              properties:
+                term: { type: string, minLength: 2, maxLength: 80 }
+                reason: { type: string, maxLength: 200 }
+      responses:
+        "201": { description: Term blocked }
+        "400": { description: Invalid term }
+        "403": { description: Admin required }
+
+  /search/admin/blocks/{term}:
+    delete:
+      operationId: unblockSearchTrendingTerm
+      tags: [users]
+      summary: Remove a term from the trending block list
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: term
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Term unblocked }
+        "403": { description: Admin required }
 
   /users/me:
     get:
@@ -161,6 +305,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserProfile"
+
+    delete:
+      operationId: revokePushToken
+      tags: [users]
+      summary: Revoke a push token owned by the authenticated user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenInput"
+      responses:
+        "204":
+          description: Token revoked or already absent
 
   /users/me/persona:
     get:
@@ -354,6 +513,13 @@ paths:
           schema:
             type: integer
             default: 30
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [recommended, following]
+            default: recommended
             minimum: 1
             maximum: 100
       responses:
@@ -812,7 +978,7 @@ paths:
     get:
       operationId: searchUsers
       tags: [users]
-      summary: Search users by email
+      summary: Find a user by exact email address
       security: [{ bearerAuth: [] }]
       parameters:
         - name: email
@@ -1132,7 +1298,7 @@ paths:
     get:
       operationId: fetchRoomMessages
       tags: [messages]
-      summary: List messages in a room (last 50)
+      summary: List messages in a room using a room sequence cursor
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1140,6 +1306,25 @@ paths:
           required: true
           schema:
             type: string
+        - name: beforeSeq
+          in: query
+          description: Return messages with roomSeq lower than this cursor.
+          schema:
+            type: integer
+            minimum: 1
+        - name: afterSeq
+          in: query
+          description: Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          description: Page size, from 1 through 100 (defaults to 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         "200":
           description: Messages
@@ -1441,6 +1626,8 @@ paths:
       tags: [calls]
       summary: Start a voice or video call
       security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CallAttemptId"
       requestBody:
         required: true
         content:
@@ -1483,6 +1670,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Call
@@ -1503,6 +1691,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Call accepted
@@ -1523,6 +1712,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
       responses:
         "200":
           description: Joined
@@ -1543,6 +1733,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call declined
@@ -1563,6 +1755,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call cancelled
@@ -1583,6 +1777,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Call ended
@@ -1590,6 +1786,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Call"
+
+  /calls/diagnostics:
+    post:
+      operationId: reportQueuedCallDiagnostic
+      tags: [calls]
+      summary: Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueuedCallDiagnostic"
+      responses:
+        "204":
+          description: Diagnostic accepted
+        "400":
+          description: Invalid or oversized diagnostic
+        "404":
+          description: Call ID is not visible to the authenticated participant
+
+  /calls/{id}/diagnostics:
+    post:
+      operationId: reportCallDiagnostic
+      tags: [calls]
+      summary: Report a diagnostic for a known call
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CallAttemptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallDiagnostic"
+      responses:
+        "204":
+          description: Diagnostic accepted
+        "400":
+          description: Invalid diagnostic
+        "404":
+          description: Call not found or caller is not a participant
+
+  /webhooks/livekit:
+    post:
+      operationId: receiveLiveKitWebhook
+      tags: [calls]
+      summary: Receive a signature-verified LiveKit lifecycle webhook
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/webhook+json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Webhook accepted or irrelevant to an active call
+        "401":
+          description: Invalid LiveKit signature
 
   /storage/uploads/request-url:
     post:
@@ -1622,11 +1887,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/media-url:
+    post:
+      tags: [Storage]
+      operationId: requestMediaUrl
+      summary: Issue a short-lived authorized URL for a private object
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaUrlRequest"
+      responses:
+        "200":
+          description: Short-lived media URL issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaUrlResponse"
+        "400": { description: Invalid request. }
+        "401": { description: Authentication required. }
+        "404": { description: Object not found or inaccessible. }
+        "429": { description: Too many requests. }
+        "503": { description: Media access is temporarily unavailable. }
+
   /storage/objects/{path}:
     get:
       tags: [Storage]
       operationId: getStorageObject
       summary: Serve an object entity from PRIVATE_OBJECT_DIR
+      description: Requires a valid short-lived media ticket in the `ticket` query parameter.
       parameters:
         - name: path
           in: path
@@ -3140,16 +3431,27 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
-            default: 30
+            default: 20
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [recommended, following]
+            default: recommended
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: Visible STAR feed posts, newest first
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/StarFeedPost"
+                $ref: "#/components/schemas/StarFeedPage"
         "400":
           description: Invalid limit
           content:
@@ -3173,7 +3475,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StarFeedPost"
+                $ref: "#/components/schemas/StarFeedCreateResult"
         "400":
           description: Invalid post body
           content:
@@ -3186,6 +3488,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
+        "404":
+          description: Target STAR profile was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "409":
           description: A STAR NFT must be equipped before posting as a STAR
           content:
@@ -3193,6 +3501,72 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
 
+  /star-feed/posts/{id}:
+    get:
+      operationId: getStarFeedPost
+      tags: [star-feed]
+      summary: Get one STAR feed post visible to me
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: STAR feed post detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarFeedPost"
+        "400":
+          description: Invalid post id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Post was not found or is not visible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /star-feed/star-profiles/{id}/follow:
+    post:
+      operationId: followStarProfile
+      tags: [star-feed]
+      summary: Follow a public STAR profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Follow state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarProfileFollowState" }
+        "404":
+          description: STAR profile not found
+    delete:
+      operationId: unfollowStarProfile
+      tags: [star-feed]
+      summary: Unfollow a STAR profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Follow state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarProfileFollowState" }
   /star-feed/posts/{id}/reactions:
     post:
       operationId: cheerStarFeedPost
@@ -3218,6 +3592,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: uncheerStarFeedPost
+      tags: [star-feed]
+      summary: Remove my active profile reaction from a STAR feed post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: STAR feed post after removing the reaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+        "404":
+          description: Post not found or not visible to the caller
 
   /star-feed/posts/{id}/comments:
     post:
@@ -3256,6 +3648,174 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /star-feed/posts/{id}/repost:
+    post:
+      operationId: repostStarFeedPost
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Reposted feed post
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+        "404": { description: Source post not found }
+
+  /star-feed/posts/{id}/reports:
+    post:
+      operationId: reportStarFeedPost
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StarFeedReportInput" }
+      responses:
+        "201": { description: Report accepted }
+
+  /star-feed/discover:
+    get:
+      operationId: discoverStarFeedByHashtag
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: tag
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Public posts matching hashtag
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarFeedPost" }
+
+  /star-feed/result-drafts:
+    get:
+      operationId: listStarResultDrafts
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Result drafts owned by the caller
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarResultDraft" }
+
+  /star-feed/result-drafts/{id}/approve:
+    post:
+      operationId: approveStarResultDraft
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Published result card
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StarFeedPost" }
+
+  /star-feed/result-drafts/{id}/discard:
+    post:
+      operationId: discardStarResultDraft
+      tags: [star-feed]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Draft discarded }
+
+  /fan-communities:
+    get:
+      operationId: listFanCommunities
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Active fan communities }
+    post:
+      operationId: createFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/FanCommunityInput" } }
+      responses:
+        "201": { description: Community created }
+
+  /fan-communities/{id}/join:
+    post:
+      operationId: joinFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Joined } }
+    delete:
+      operationId: leaveFanCommunity
+      tags: [fan-community]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Left } }
+
+  /star-feed/admin/reports:
+    get:
+      operationId: listStarFeedReports
+      tags: [star-feed-admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Open reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StarFeedReport" }
+        "403": { description: Admin access required }
+
+  /star-feed/admin/reports/{id}/resolve:
+    post:
+      operationId: resolveStarFeedReport
+      tags: [star-feed-admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [keep, remove] }
+      responses:
+        "200": { description: Report resolved }
+        "403": { description: Admin access required }
 
   /storage/uploads/object:
     post:
@@ -3386,6 +3946,408 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayModeError"
 
+  /users/me/profiles:
+    get:
+      operationId: getMyCharacterProfiles
+      tags: [users]
+      summary: List the account's activity profiles and active profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Character profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+
+  /users/me/profile-context:
+    get:
+      operationId: getMyCharacterProfileContext
+      tags: [users]
+      summary: Resolve and verify the request's active character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: header
+          name: X-Character-Profile-Id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Verified request actor
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfile" } } }
+        "403": { description: Profile is not owned by the account }
+        "409": { description: Profile is locked or unavailable }
+
+  /users/me/fan-profiles:
+    post:
+      operationId: createMyFanCharacterProfile
+      tags: [users]
+      summary: Customize the initial FAN or create an unlocked additional FAN
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, customization]
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 30 }
+                handle: { type: string, minLength: 3, maxLength: 24 }
+                profileImageUrl: { type: [string, "null"], maxLength: 1024 }
+                customizeDefault:
+                  type: boolean
+                  default: false
+                  description: >
+                    Onboarding-only flag. When true, an uncustomized default FAN
+                    is completed in place. Ordinary FAN-add flows must omit it so
+                    an existing profile is never overwritten.
+                customization:
+                  type: object
+                  properties:
+                    ageStyle: { type: string }
+                    hairStyle: { type: string }
+                    skinTone: { type: string }
+                    genderExpression: { type: string }
+                    gender: { type: string, enum: [man, woman] }
+                    baseKey: { type: string }
+                    headKey: { type: string }
+                    wearKey: { type: string }
+      responses:
+        "201":
+          description: Created and activated FAN
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileState" } } }
+        "409": { description: FAN expansion is not unlocked or handle is taken }
+
+  /users/me/active-profile:
+    patch:
+      operationId: updateMyActiveCharacterProfile
+      tags: [users]
+      summary: Select the activity profile used by feed and chat
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profileId]
+              properties:
+                profileId:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Updated character profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+        "404":
+          description: Profile not owned by the account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Profile is locked or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/profiles/{profileId}:
+    patch:
+      operationId: updateMyCharacterProfile
+      tags: [users]
+      summary: Update one owned activity profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 30
+                profileImageUrl:
+                  type: ["string", "null"]
+                  maxLength: 1024
+                statusMessage:
+                  type: ["string", "null"]
+                  maxLength: 100
+      responses:
+        "200":
+          description: Updated profile state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharacterProfileState"
+        "400":
+          description: Invalid profile update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Profile not owned by the account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: archiveMyCharacterProfile
+      tags: [users]
+      summary: Soft-delete an owned profile while preserving historical content
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Remaining profile state
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileState" } } }
+        "409": { description: The final profile cannot be archived }
+
+  /users/me/profiles/{profileId}/inventory:
+    get:
+      operationId: getMyCharacterProfileInventory
+      tags: [users]
+      summary: List inventory items owned by one character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Profile inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profileId, items]
+                properties:
+                  profileId: { type: string, format: uuid }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CharacterProfileInventoryItem" }
+        "403": { description: Profile is not owned by the account }
+
+  /users/me/profiles/{profileId}/avatar:
+    get:
+      operationId: getMyCharacterAvatar
+      tags: [users]
+      summary: Get the current avatar appearance and compatible item catalog
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Avatar appearance and catalog
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "403": { description: Profile is not owned by the account }
+        "404": { description: Avatar is not available for this profile }
+
+  /users/me/profiles/{profileId}/avatar/purchase:
+    post:
+      operationId: purchaseMyCharacterAvatarItem
+      tags: [users]
+      summary: Purchase an avatar item with STAR Point
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemKey]
+              properties:
+                itemKey: { type: string }
+      responses:
+        "200":
+          description: Updated avatar catalog and appearance
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "409": { description: "Insufficient STAR Point or item is unavailable" }
+
+  /users/me/profiles/{profileId}/avatar/equipment:
+    patch:
+      operationId: equipMyCharacterAvatarItem
+      tags: [users]
+      summary: Equip one owned avatar item in its slot
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemKey]
+              properties:
+                itemKey: { type: string }
+      responses:
+        "200":
+          description: Updated avatar catalog and appearance
+          content: { application/json: { schema: { $ref: "#/components/schemas/AvatarCatalogResponse" } } }
+        "409": { description: "Item is not owned, compatible or unlocked" }
+
+  /users/me/profile-notifications:
+    get:
+      operationId: getMyCharacterProfileNotifications
+      tags: [users]
+      summary: List notifications for the selected character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: header
+          name: X-Character-Profile-Id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Profile notification list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profileId, items]
+                properties:
+                  profileId: { type: string, format: uuid }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CharacterProfileNotification" }
+
+  /users/me/profile-notifications/{notificationId}/read:
+    patch:
+      operationId: markMyCharacterProfileNotificationRead
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Read notification
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileNotification" } } }
+        "404": { description: Notification not found for selected profile }
+
+  /users/me/profile-social:
+    get:
+      operationId: getMyCharacterProfileSocial
+      tags: [users]
+      summary: List followers or following profiles for the selected character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          schema:
+            type: string
+            enum: [followers, following]
+            default: followers
+        - in: header
+          name: X-Character-Profile-Id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Character profile social list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CharacterProfileSocialResponse" }
+        "400": { description: Invalid social scope }
+
+  /nft/collections:
+    get:
+      operationId: listPublishedNftCollections
+      tags: [nft]
+      summary: List published NFT collections available for STAR summon
+      responses:
+        "200":
+          description: Published collections with public metadata only
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicNftCollection"
+
+  /nft/collections/{id}/evolution:
+    get:
+      operationId: listPublishedNftEvolutionStages
+      tags: [nft]
+      summary: List published avatar evolution stages for a collection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Published evolution stages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NftEvolutionStage"
+        "404":
+          description: Collection is not fully reviewed and published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /nft/collections/{id}/rpg-content:
+    get:
+      operationId: getPublishedNftRpgContent
+      tags: [nft]
+      summary: Get reviewed RPG mission content for a published collection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Collection RPG content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NftRpgContent"
+        "404":
+          description: Collection is not published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /users/me/wallet:
     get:
       operationId: getMyWalletStatus
@@ -3509,6 +4471,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EquippedStarProfileResponse"
+
+  /users/me/star-profiles:
+    get:
+      operationId: listMyStarProfiles
+      tags: [users]
+      summary: List my NFT-backed STAR profiles and the active STAR
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: All STAR profiles owned by the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StarProfilesResponse"
+
+  /users/me/star-profiles/{starProfileId}/activate:
+    post:
+      operationId: activateMyStarProfile
+      tags: [users]
+      summary: Make one of my STAR profiles the active STAR identity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: starProfileId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active STAR profile and current play state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivateStarProfileResult"
+        "404":
+          description: STAR profile is not owned by the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /users/me/wallet/nfts:
+    get:
+      operationId: getMyWalletNftInventory
+      tags: [users]
+      summary: List eligible NFTs owned by my verified wallet
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Eligible NFT inventory across approved collections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletNftInventory"
+        "409":
+          description: Wallet verification is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: NFT ownership check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /users/me/star-nft/equip:
     post:
@@ -3717,6 +4746,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CallAttemptId"
+        - $ref: "#/components/parameters/CallOperationId"
       responses:
         "200":
           description: Failed call, or the existing terminal call
@@ -3731,12 +4762,207 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /users/{userId}/posts:
+    get:
+      tags: [users]
+      summary: List a user's public feed posts with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: starId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Public posts page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfilePostsPage" }
+  /users/{userId}/growth-records:
+    get:
+      tags: [users]
+      summary: List public growth records with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Growth records page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrowthRecordsPage" }
+  /users/{userId}/battle-results:
+    get:
+      tags: [users]
+      summary: List public battle results with cursor pagination
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Battle results page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BattleResultsPage" }
+  /profiles/{profileId}:
+    get:
+      operationId: getPublicCharacterProfile
+      tags: [users]
+      summary: Get one public activity profile and its posts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 60, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Public activity profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicCharacterProfileResponse" }
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiError" }
+
+  /profiles/{profileId}/follow:
+    post:
+      operationId: followCharacterProfile
+      tags: [users]
+      summary: Follow a public activity profile as the active profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Followed, content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileFollowState" } } } }
+        "409": { description: Cannot follow an owned profile, content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } } }
+    delete:
+      operationId: unfollowCharacterProfile
+      tags: [users]
+      summary: Unfollow a public activity profile as the active profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: profileId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Unfollowed, content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfileFollowState" } } } }
+
+  /users/{userId}/profile:
+    get:
+      tags: [users]
+      summary: Get a public user profile
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Public profile, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProfile" } } } }
+  /star-feed/activities:
+    get:
+      tags: [star-feed]
+      summary: List STAR feed activities
+      security: [{ bearerAuth: [] }]
+      responses: { "200": { description: Activities, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+  /star-feed/activities/read:
+    post:
+      tags: [star-feed]
+      summary: Mark STAR feed activities as read
+      security: [{ bearerAuth: [] }]
+      responses: { "204": { description: Marked as read } }
+  /fan-communities/{id}/broadcasts:
+    get:
+      tags: [fan-communities]
+      summary: List community broadcasts
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Broadcasts, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+    post:
+      tags: [fan-communities]
+      summary: Create a community broadcast
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { "201": { description: Broadcast created } }
+  /fan-communities/{id}/missions:
+    get:
+      tags: [fan-communities]
+      summary: List community missions
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Missions, content: { application/json: { schema: { type: array, items: { type: object } } } } } }
+    post:
+      tags: [fan-communities]
+      summary: Create a community mission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { "201": { description: Mission created } }
+  /fan-missions/{id}/join:
+    post:
+      tags: [fan-communities]
+      summary: Join a fan mission
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Mission joined } }
+
+  /admin/profiles/{profileId}/status:
+    patch:
+      operationId: updateAdminCharacterProfileStatus
+      tags: [admin]
+      summary: Lock or reactivate a character profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [active, locked] }
+                reason: { type: string, minLength: 2, maxLength: 300 }
+      responses:
+        "200":
+          description: Updated character profile
+          content: { application/json: { schema: { $ref: "#/components/schemas/CharacterProfile" } } }
+        "400": { description: Invalid profile status request }
+        "403": { description: Administrator permission required }
+        "404": { description: Character profile not found }
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    CallAttemptId:
+      name: X-Call-Attempt-Id
+      in: header
+      required: false
+      description: UUID shared by every stage of one client call attempt.
+      schema: { type: string, format: uuid }
+    CallOperationId:
+      name: X-Idempotency-Key
+      in: header
+      required: false
+      description: UUID that makes a terminal call-control operation replay-safe.
+      schema: { type: string, format: uuid }
 
   schemas:
     ApiError:
@@ -4167,11 +5393,9 @@ components:
 
     BibiOfficialProfile:
       type: object
-      required: [id, email, nickname, displayName, handle]
+      required: [id, nickname, displayName, handle]
       properties:
         id:
-          type: string
-        email:
           type: string
         nickname:
           type: string
@@ -4181,6 +5405,15 @@ components:
           type: string
         profileImageUrl:
           type: ["string", "null"]
+        starProfile:
+          type: ["object", "null"]
+          required: [id, displayName, stage, followedByMe]
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            imageUrl: { type: ["string", "null"] }
+            stage: { type: string }
+            followedByMe: { type: boolean }
         statusMessage:
           type: ["string", "null"]
 
@@ -4197,9 +5430,11 @@ components:
       type: object
       properties:
         roomId:
-          type: string
+          type: ["string", "null"]
+          format: uuid
         platform:
-          type: string
+          type: ["string", "null"]
+          minLength: 1
           maxLength: 32
 
     PresenceState:
@@ -4250,7 +5485,7 @@ components:
           enum: [EARN, SPEND, ADJUST]
         source:
           type: string
-          enum: [DAILY_TALK_REWARD, EVENT, ADMIN, MISSION]
+          enum: [DAILY_TALK_REWARD, EVENT, ADMIN, MISSION, AVATAR_ITEM]
         sourceId:
           type: string
         description:
@@ -4288,7 +5523,7 @@ components:
 
     StarFeedPost:
       type: object
-      required: [id, kind, title, body, visibility, createdAt, author, reactionCount, commentCount, reactedByMe, recentComments]
+      required: [id, kind, title, body, hashtags, media, visibility, createdAt, author, targetStarProfile, reactionCount, commentCount, reactedByMe, recentComments]
       properties:
         id:
           type: string
@@ -4302,6 +5537,14 @@ components:
         metadata:
           type: ["object", "null"]
           additionalProperties: true
+        hashtags:
+          type: array
+          items: { type: string }
+        media:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StarFeedMedia"
         visibility:
           type: string
           enum: [PRIVATE, FRIENDS, PUBLIC]
@@ -4310,6 +5553,10 @@ components:
           format: date-time
         author:
           $ref: "#/components/schemas/StarFeedAuthor"
+        targetStarProfile:
+          oneOf:
+            - $ref: "#/components/schemas/StarProfileTarget"
+            - type: "null"
         reactionCount:
           type: integer
         commentCount:
@@ -4336,6 +5583,103 @@ components:
           type: string
           minLength: 1
           maxLength: 500
+        targetStarProfileId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional STAR being supported by a FAN post; null means the neutral FAN profile.
+        media:
+          type: array
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/StarFeedMedia"
+
+    StarFeedMedia:
+      type: object
+      required: [objectPath, mediaType]
+      properties:
+        objectPath: { type: string }
+        mediaType: { type: string, enum: [image, video] }
+        altText: { type: string, maxLength: 160 }
+
+    StarFeedPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StarFeedPost" }
+        nextCursor:
+          type: [string, "null"]
+          format: date-time
+
+    StarFeedCreateResult:
+      type: object
+      required: [post, reward]
+      properties:
+        post: { $ref: "#/components/schemas/StarFeedPost" }
+        reward:
+          oneOf:
+            - $ref: "#/components/schemas/StarFeedReward"
+            - type: "null"
+
+    StarFeedReward:
+      type: object
+      required: [granted, xp, stat]
+      properties:
+        granted: { type: boolean }
+        xp: { type: integer, minimum: 0 }
+        stat: { type: string, enum: ["FAN XP"] }
+
+    StarProfileTarget:
+      type: object
+      required: [id, displayName, imageUrl]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        imageUrl: { type: [string, "null"] }
+
+    StarProfileFollowState:
+      type: object
+      required: [following]
+      properties:
+        following:
+          type: boolean
+
+    StarFeedReportInput:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, enum: [spam, harassment, sexual, violence, copyright, other] }
+        details: { type: string, maxLength: 500 }
+
+    StarFeedReport:
+      type: object
+      required: [id, postId, reason, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        postId: { type: string, format: uuid }
+        reason: { type: string }
+        details: { type: [string, "null"] }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    StarResultDraft:
+      type: object
+      required: [id, title, body, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    FanCommunityInput:
+      type: object
+      required: [starProfileId, name]
+      properties:
+        starProfileId: { type: string, format: uuid }
+        name: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
 
     StarFeedCommentInput:
       type: object
@@ -4442,7 +5786,7 @@ components:
 
     PlayModeState:
       type: object
-      required: [currentMode, starUnlocked, fanProfile]
+      required: [currentMode, starUnlocked, fanProfile, social, starProfiles]
       properties:
         currentMode:
           type: string
@@ -4451,10 +5795,195 @@ components:
           type: boolean
         fanProfile:
           $ref: "#/components/schemas/FanProfile"
+        social:
+          type: object
+          required: [followerCount, followingCount]
+          properties:
+            followerCount:
+              type: integer
+              minimum: 0
+            followingCount:
+              type: integer
+              minimum: 0
         equippedStar:
           oneOf:
             - $ref: "#/components/schemas/StarProfile"
             - type: "null"
+        starProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarProfile"
+
+    CharacterProfileSummary:
+      type: object
+      required: [id, type, handle, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [fan, star, official_ai]
+        handle:
+          type: string
+        displayName:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        activityProfile:
+          oneOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: "null"
+
+    CharacterProfile:
+      allOf:
+        - $ref: "#/components/schemas/CharacterProfileSummary"
+        - type: object
+          required: [status, level, xp, jobStage, stats, metadata, isActive]
+          properties:
+            statusMessage:
+              type: ["string", "null"]
+            status:
+              type: string
+              enum: [active, locked, torimia, archived]
+            level:
+              type: integer
+              minimum: 1
+            xp:
+              type: integer
+              minimum: 0
+            jobKey:
+              type: [string, "null"]
+            jobStage:
+              type: integer
+              minimum: 0
+            stats:
+              type: object
+              additionalProperties:
+                type: number
+            metadata:
+              type: object
+              additionalProperties: true
+            isActive:
+              type: boolean
+
+    CharacterProfileInventoryItem:
+      type: object
+      required: [id, profileId, itemKey, itemType, quantity, equipped, metadata, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        profileId: { type: string, format: uuid }
+        itemKey: { type: string }
+        itemType: { type: string }
+        quantity: { type: integer, minimum: 0 }
+        equipped: { type: boolean }
+        metadata: { type: object, additionalProperties: true }
+        updatedAt: { type: string, format: date-time }
+
+    AvatarCatalogItem:
+      type: object
+      required: [itemKey, avatarType, slot, classStage, displayName, assetPath, layerOrder, priceStarPoint, purchasable, isDefault, status, metadata, owned, equipped]
+      properties:
+        itemKey: { type: string }
+        avatarType: { type: string, enum: [fan, star] }
+        collectionKey: { type: [string, "null"] }
+        gender: { type: [string, "null"], enum: [man, woman, null] }
+        slot: { type: string, enum: [background, base, head, wear, effect, full_skin, star_form] }
+        classStage: { type: integer, minimum: 0, maximum: 3 }
+        jobKey: { type: [string, "null"] }
+        displayName: { type: string }
+        assetPath: { type: string }
+        layerOrder: { type: integer }
+        priceStarPoint: { type: integer, minimum: 0 }
+        purchasable: { type: boolean }
+        isDefault: { type: boolean }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        owned: { type: boolean }
+        equipped: { type: boolean }
+
+    AvatarAppearance:
+      type: object
+      required: [profileId, type, classStage, recipe, layers, loadout]
+      properties:
+        profileId: { type: string, format: uuid }
+        type: { type: string, enum: [fan, star] }
+        gender: { type: [string, "null"], enum: [man, woman, null] }
+        classStage: { type: integer, minimum: 0, maximum: 3 }
+        recipe: { type: string }
+        layers:
+          type: array
+          items: { $ref: "#/components/schemas/AvatarCatalogItem" }
+        loadout: { type: object, additionalProperties: true }
+
+    AvatarCatalogResponse:
+      type: object
+      required: [appearance, items]
+      properties:
+        appearance: { $ref: "#/components/schemas/AvatarAppearance" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AvatarCatalogItem" }
+
+    CharacterProfileNotification:
+      type: object
+      required: [id, profileId, type, data, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        profileId: { type: string, format: uuid }
+        actorProfileId: { type: [string, "null"], format: uuid }
+        type: { type: string }
+        data: { type: object, additionalProperties: true }
+        readAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    CharacterProfileSocialEntry:
+      allOf:
+        - $ref: "#/components/schemas/CharacterProfileSummary"
+        - type: object
+          required: [statusMessage, followedAt]
+          properties:
+            statusMessage: { type: ["string", "null"] }
+            followedAt: { type: string, format: date-time }
+
+    CharacterProfileSocialResponse:
+      type: object
+      required: [profileId, scope, profiles]
+      properties:
+        profileId: { type: string, format: uuid }
+        scope: { type: string, enum: [followers, following] }
+        profiles:
+          type: array
+          items: { $ref: "#/components/schemas/CharacterProfileSocialEntry" }
+
+    CharacterProfileState:
+      type: object
+      required: [activeProfile, profiles]
+      properties:
+        activeProfile:
+          $ref: "#/components/schemas/CharacterProfile"
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CharacterProfile"
+
+    StarProfilesResponse:
+      type: object
+      required: [starProfiles]
+      properties:
+        starProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/StarProfile"
+
+    ActivateStarProfileResult:
+      type: object
+      required: [equippedStar, state]
+      properties:
+        equippedStar:
+          $ref: "#/components/schemas/StarProfile"
+        state:
+          $ref: "#/components/schemas/PlayModeState"
 
     PlayModeError:
       allOf:
@@ -4497,10 +6026,14 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        chainId:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
 
     WalletChallenge:
       type: object
-      required: [id, walletAddress, message, expiresAt]
+      required: [id, walletAddress, message, expiresAt, chainId, domain, uri]
       properties:
         id:
           type: string
@@ -4515,6 +6048,13 @@ components:
           type: ["string", "null"]
         nftChainId:
           type: ["integer", "null"]
+        chainId:
+          type: integer
+        domain:
+          type: string
+        uri:
+          type: string
+          format: uri
 
     WalletVerificationInput:
       type: object
@@ -4548,6 +6088,120 @@ components:
         configMissing:
           type: boolean
 
+    WalletNftToken:
+      type: object
+      required: [collectionId, chainId, contractAddress, collectionName, ipName, category, tokenId]
+      properties:
+        collectionId: { type: string, format: uuid }
+        chainId: { type: integer }
+        contractAddress: { type: string }
+        collectionName: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        tokenId: { type: string }
+
+    WalletNftCollection:
+      type: object
+      required: [collectionId, chainId, contractAddress, collectionName, ipName, category, balance, enumerable, truncated, requiresTokenId, tokens]
+      properties:
+        collectionId: { type: string, format: uuid }
+        chainId: { type: integer }
+        contractAddress: { type: string }
+        collectionName: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        balance: { type: string }
+        enumerable: { type: boolean }
+        truncated: { type: boolean }
+        requiresTokenId: { type: boolean }
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletNftToken"
+
+    WalletNftInventory:
+      type: object
+      required: [walletAddress, collections, totalOwned, hasEligibleNft, configuredCollectionCount, failedCollectionCount, partial, checkedAt]
+      properties:
+        walletAddress: { type: string }
+        collections:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletNftCollection"
+        totalOwned: { type: integer, minimum: 0 }
+        hasEligibleNft: { type: boolean }
+        configuredCollectionCount: { type: integer, minimum: 0 }
+        failedCollectionCount: { type: integer, minimum: 0 }
+        partial: { type: boolean }
+        checkedAt: { type: string, format: date-time }
+
+    PublicNftCollection:
+      type: object
+      required: [id, chainId, contractAddress, name, ipName, category, status, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        chainId: { type: integer, minimum: 1 }
+        contractAddress: { type: string }
+        name: { type: string }
+        ipName: { type: string }
+        category: { type: string }
+        officialUrl: { type: ["string", "null"], format: uri }
+        roleName: { type: ["string", "null"] }
+        worldStyle: { type: ["string", "null"] }
+        status:
+          type: string
+          const: published
+        updatedAt: { type: string, format: date-time }
+
+    NftEvolutionStage:
+      type: object
+      required: [id, collectionId, stageKey, minLevel, title, description, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        collectionId: { type: string, format: uuid }
+        stageKey: { type: string }
+        minLevel: { type: integer, minimum: 1 }
+        title: { type: string }
+        description: { type: string }
+        retainedTraits:
+          type: array
+          items: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        status:
+          type: string
+          const: published
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    NftRpgMission:
+      type: object
+      required: [id, title, description, xp]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        xp: { type: integer, minimum: 1 }
+
+    NftRpgContent:
+      type: object
+      required: [collectionId, ipName, category, roleName, worldStyle, missions, story]
+      properties:
+        collectionId: { type: string, format: uuid }
+        ipName: { type: string }
+        category: { type: string }
+        roleName: { type: string }
+        worldStyle: { type: string }
+        missions:
+          type: array
+          items:
+            $ref: "#/components/schemas/NftRpgMission"
+        story:
+          type: object
+          required: [opening, next]
+          properties:
+            opening: { type: string }
+            next: { type: string }
+
     EquippedStarProfileResponse:
       type: object
       required: [equippedStar]
@@ -4565,6 +6219,9 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        collectionId:
+          type: string
+          format: uuid
 
     EquipStarNftResult:
       type: object
@@ -4816,6 +6473,21 @@ components:
           type: string
         metadata:
           $ref: "#/components/schemas/UploadUrlRequest"
+    MediaUrlRequest:
+      type: object
+      required: [objectPath]
+      properties:
+        objectPath:
+          type: string
+          minLength: 10
+          maxLength: 1024
+          pattern: ^/objects/
+    MediaUrlResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
     ErrorEnvelope:
       type: object
       required: [error]
@@ -4850,6 +6522,7 @@ components:
           type: string
         profileImageUrl:
           type: ["string", "null"]
+          description: Deprecated legacy field. Always null; use the active character profile.
         statusMessage:
           type: ["string", "null"]
         pushToken:
@@ -4858,6 +6531,25 @@ components:
           type: boolean
         createdAt:
           type: string
+
+    PublicCharacterIdentity:
+      type: object
+      required: [id, type, handle, displayName, profileImageUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [fan, star, official_ai]
+        handle:
+          type: string
+        displayName:
+          type: string
+        profileImageUrl:
+          type: ["string", "null"]
+        statusMessage:
+          type: ["string", "null"]
 
     PersonaStats:
       type: object
@@ -5103,11 +6795,14 @@ components:
       properties:
         nickname:
           type: string
+          minLength: 1
+          maxLength: 30
         statusMessage:
           type: ["string", "null"]
-        profileImageUrl:
-          type: ["string", "null"]
+          maxLength: 200
         notificationEnabled:
+          type: boolean
+        talkAnalysisEnabled:
           type: boolean
 
     ProfileUpdateHistoryItem:
@@ -5142,17 +6837,93 @@ components:
       properties:
         token:
           type: string
+          minLength: 1
+          maxLength: 8192
+
+    GlobalSearchResponse:
+      type: object
+      required: [query, type, users, starProfiles, posts, missions, nextCursor]
+      properties:
+        query: { type: string }
+        type: { type: string, enum: [all, users, stars, fans, posts, missions] }
+        users:
+          type: array
+          items:
+            type: object
+            required: [id, nickname, handle, profileImageUrl, statusMessage, profileType, isMe, followedByMe]
+            properties:
+              id: { type: string, format: uuid }
+              nickname: { type: string }
+              handle: { type: string }
+              profileImageUrl: { type: [string, "null"] }
+              statusMessage: { type: [string, "null"] }
+              profileType: { type: string, enum: [fan, star, official_ai] }
+              isMe: { type: boolean }
+              followedByMe: { type: boolean }
+        starProfiles:
+          type: array
+          items:
+            type: object
+            required: [id, displayName, starKey, imageUrl, stage, ownerId, followedByMe]
+            properties:
+              id: { type: string, format: uuid }
+              displayName: { type: string }
+              starKey: { type: string }
+              imageUrl: { type: [string, "null"] }
+              stage: { type: string }
+              ownerId: { type: [string, "null"], format: uuid }
+              followedByMe: { type: boolean }
+        posts:
+          type: array
+          items:
+            type: object
+            required: [id, title, body, kind, createdAt]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              body: { type: string }
+              kind: { type: string }
+              createdAt: { type: string, format: date-time }
+        missions:
+          type: array
+          items:
+            type: object
+            required: [key, type, title, description, target, rewardExp, metric]
+            properties:
+              key: { type: string }
+              type: { type: string, enum: [daily, weekly] }
+              title: { type: string }
+              description: { type: string }
+              target: { type: integer }
+              rewardExp: { type: integer }
+              metric: { type: string }
+        nextCursor: { type: [string, "null"] }
+
+    SearchRecommendation:
+      type: object
+      required: [id, type, handle, displayName, profileImageUrl, statusMessage, level, followedByMe, recommendationReason]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [fan, star, official_ai] }
+        handle: { type: string }
+        displayName: { type: string }
+        profileImageUrl: { type: [string, "null"] }
+        statusMessage: { type: [string, "null"] }
+        level: { type: integer }
+        followedByMe: { type: boolean }
+        recommendationReason: { type: string }
 
     PublicUser:
       type: object
-      required: [id, nickname, email]
+      required: [id, nickname, accountKind]
       properties:
         id:
           type: string
         nickname:
           type: string
-        email:
+        accountKind:
           type: string
+          enum: [user, official, system]
         friendAlias:
           type: ["string", "null"]
           description: Current viewer's saved name for this user, when available.
@@ -5161,8 +6932,13 @@ components:
           description: friendAlias when set, otherwise nickname.
         profileImageUrl:
           type: ["string", "null"]
+          description: Active character avatar. The legacy member account photo is never exposed.
         statusMessage:
           type: ["string", "null"]
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/PublicCharacterIdentity"
+            - type: "null"
 
     FriendAliasInput:
       type: object
@@ -5170,7 +6946,7 @@ components:
       properties:
         alias:
           type: ["string", "null"]
-          maxLength: 50
+          maxLength: 30
           description: Null or an empty string clears the saved name.
 
     FriendRequestInput:
@@ -5179,6 +6955,7 @@ components:
       properties:
         toUserId:
           type: string
+          format: uuid
 
     FriendRequest:
       type: object
@@ -5214,12 +6991,18 @@ components:
 
     ChatRoom:
       type: object
-      required: [id, type, createdAt]
+      required: [id, type, category, visibility, createdAt]
       properties:
         id:
           type: string
         type:
           type: string
+        category:
+          type: string
+          enum: [direct, fanclub, counseling, friend_finding, meetup, casual, peer, karaoke, growth_rpg, talk_battle]
+        visibility:
+          type: string
+          enum: [private, invite_only]
         name:
           type: ["string", "null"]
         ownerId:
@@ -5289,12 +7072,22 @@ components:
       properties:
         type:
           type: string
+          enum: [direct, group]
         name:
           type: ["string", "null"]
+          maxLength: 30
+        category:
+          type: string
+          enum: [direct, fanclub, counseling, friend_finding, meetup, casual, peer, karaoke, growth_rpg, talk_battle]
+        visibility:
+          type: string
+          enum: [private, invite_only]
         memberIds:
           type: array
+          maxItems: 100
           items:
             type: string
+            format: uuid
 
     InviteMembersInput:
       type: object
@@ -5302,24 +7095,44 @@ components:
       properties:
         memberIds:
           type: array
+          minItems: 1
+          maxItems: 50
           items:
             type: string
+            format: uuid
 
     Message:
       type: object
-      required: [id, roomId, senderId, type, content, createdAt]
+      required: [id, roomId, roomSeq, senderId, authorKind, type, content, createdAt]
       properties:
         id:
           type: string
         roomId:
           type: string
+        roomSeq:
+          type: integer
         senderId:
+          type: string
+        senderProfile:
+          oneOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: "null"
+        authorKind:
           type: string
         type:
           type: string
         content:
           type: string
         replyToMessageId:
+          type: ["string", "null"]
+        anotherMeSessionId:
+          type: ["string", "null"]
+        callId:
+          type: ["string", "null"]
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: {}
+        clientMessageId:
           type: ["string", "null"]
         deletedAt:
           type: ["string", "null"]
@@ -5398,10 +7211,21 @@ components:
       properties:
         content:
           type: string
+          maxLength: 4096
         type:
           type: string
+          enum: [text, image, file, sticker]
         replyToMessageId:
           type: ["string", "null"]
+          format: uuid
+        metadata:
+          type: ["object", "null"]
+          maxProperties: 20
+          additionalProperties: {}
+        clientMessageId:
+          type: ["string", "null"]
+          minLength: 1
+          maxLength: 128
 
     DeleteMessageInput:
       type: object
@@ -5424,6 +7248,10 @@ components:
       properties:
         targetRoomId:
           type: string
+        clientMessageId:
+          type: ["string", "null"]
+          minLength: 1
+          maxLength: 128
 
     StickerBadgeInput:
       type: object
@@ -5438,12 +7266,18 @@ components:
       properties:
         name:
           type: ["string", "null"]
+          minLength: 1
+          maxLength: 120
         memberIds:
           type: array
+          maxItems: 20
           items:
             type: string
+            format: uuid
         theme:
           type: ["string", "null"]
+          minLength: 1
+          maxLength: 200
 
     DungeonCharacter:
       type: object
@@ -5675,14 +7509,20 @@ components:
       properties:
         memberId:
           type: string
+          format: uuid
           description: The single friend's userId to invite. Provide this OR aiPersonaId.
         aiPersonaId:
           type: string
+          minLength: 1
+          maxLength: 100
           description: The AI opponent persona id to battle against. Provide this OR memberId.
         category:
           type: string
+          maxLength: 80
         topic:
           type: string
+          minLength: 1
+          maxLength: 300
 
     BattleTopicInput:
       type: object
@@ -5690,6 +7530,7 @@ components:
       properties:
         category:
           type: string
+          maxLength: 80
 
     BattleTopicSuggestions:
       type: object
@@ -5706,6 +7547,8 @@ components:
       properties:
         content:
           type: string
+          minLength: 1
+          maxLength: 1000
 
     BattleEvaluation:
       type: object
@@ -5942,6 +7785,8 @@ components:
           type: string
         inviteCode:
           type: string
+          minLength: 8
+          maxLength: 128
         inviterUserId:
           type: string
         status:
@@ -5964,6 +7809,7 @@ components:
       properties:
         blockedUserId:
           type: string
+          format: uuid
 
     CreateCallInput:
       type: object
@@ -5971,10 +7817,42 @@ components:
       properties:
         calleeId:
           type: string
+          format: uuid
         roomId:
           type: string
+          format: uuid
         media:
           $ref: "#/components/schemas/CallMedia"
+
+    CallDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [phase]
+      properties:
+        phase: { type: string, minLength: 1, maxLength: 100 }
+        platform: { type: string, maxLength: 50 }
+        role: { type: string, maxLength: 50 }
+        details:
+          type: object
+          maxProperties: 20
+          additionalProperties: true
+
+    QueuedCallDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [eventId, attemptId, phase, occurredAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        attemptId: { type: string, format: uuid }
+        callId: { type: string, format: uuid }
+        phase: { type: string, minLength: 1, maxLength: 100 }
+        platform: { type: string, maxLength: 50 }
+        role: { type: string, maxLength: 50 }
+        occurredAt: { type: string, format: date-time }
+        details:
+          type: object
+          maxProperties: 20
+          additionalProperties: true
 
     CallMedia:
       type: string
@@ -5986,7 +7864,6 @@ components:
         [
           ringing,
           active,
-          accepted,
           declined,
           missed,
           cancelled,
@@ -6000,6 +7877,9 @@ components:
       properties:
         id:
           type: string
+        attemptId:
+          type: ["string", "null"]
+          format: uuid
         roomName:
           type: string
         callerId:
@@ -6033,6 +7913,9 @@ components:
       properties:
         id:
           type: string
+        attemptId:
+          type: ["string", "null"]
+          format: uuid
         roomName:
           type: string
         callerId:
@@ -6564,3 +8447,103 @@ components:
               oneOf:
                 - $ref: "#/components/schemas/ClanWarResult"
                 - type: "null"
+    ProfilePostsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StarFeedPost" }
+        nextCursor:
+          type: string
+          format: date-time
+          nullable: true
+    GrowthRecordsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/GrowthRecord" }
+        nextCursor: { type: string, format: date-time, nullable: true }
+    GrowthRecord:
+      type: object
+      required: [id, starProfileId, eventType, xpDelta, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        starProfileId: { type: string, format: uuid }
+        eventType: { type: string }
+        xpDelta: { type: integer }
+        reason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    BattleResultsPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PublicBattleResult" }
+        nextCursor: { type: string, format: date-time, nullable: true }
+    PublicBattleResult:
+      type: object
+      required: [roomId, topic, category, outcome, myScore, opponentScore, opponentName, completedAt]
+      properties:
+        roomId: { type: string, format: uuid }
+        topic: { type: string }
+        category: { type: string }
+        outcome: { type: string, enum: [win, loss, draw] }
+        myScore: { type: integer }
+        opponentScore: { type: integer }
+        opponentName: { type: string }
+        completedAt: { type: string, format: date-time }
+    PublicCharacterProfileResponse:
+      type: object
+      required: [profile, posts]
+      properties:
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/CharacterProfileSummary"
+            - type: object
+              required: [level, xp, jobStage, jobLabel, stats, metadata, isMine, followedByMe, followerCount, followingCount, postCount]
+              properties:
+                statusMessage: { type: ["string", "null"] }
+                level: { type: integer, minimum: 1 }
+                xp: { type: integer, minimum: 0 }
+                jobKey: { type: ["string", "null"] }
+                jobStage: { type: integer, minimum: 0 }
+                jobLabel: { type: string }
+                characterImageUrl: { type: ["string", "null"] }
+                stats: { type: object, additionalProperties: { type: number } }
+                metadata: { type: object, additionalProperties: true }
+                isMine: { type: boolean }
+                followedByMe: { type: boolean }
+                followerCount: { type: integer, minimum: 0 }
+                followingCount: { type: integer, minimum: 0 }
+                postCount: { type: integer, minimum: 0 }
+        posts:
+          type: object
+          required: [items, nextCursor]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/StarFeedPost" } }
+            nextCursor: { type: ["string", "null"], format: date-time }
+
+    CharacterProfileFollowState:
+      type: object
+      required: [following]
+      properties:
+        following: { type: boolean }
+
+    PublicProfile:
+      type: object
+      required: [id, nickname, stars, followerCount, followingCount]
+      properties:
+        id: { type: string, format: uuid }
+        nickname: { type: string }
+        profileImageUrl: { type: string, nullable: true }
+        statusMessage: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        fan: { type: object }
+        stars: { type: array, items: { type: object } }
+        followerCount: { type: integer }
+        followingCount: { type: integer }
+        followedStarIds: { type: array, items: { type: string, format: uuid } }

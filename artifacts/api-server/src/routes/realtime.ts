@@ -5,10 +5,11 @@ import {
   RealtimeTicketUnavailableError,
   issueRealtimeTicket,
 } from "../lib/realtime";
+import { rateLimit } from "../lib/rateLimit";
 
 const router: IRouter = Router();
 
-router.post("/realtime/ticket", requireAuth, async (req, res): Promise<void> => {
+router.post("/realtime/ticket", requireAuth, rateLimit({ name: "realtime-ticket", limit: 20, windowSeconds: 60, requireRedis: true }), async (req, res): Promise<void> => {
   const rawOrigin = req.get("origin");
   const origin = normalizeOrigin(rawOrigin);
   if (rawOrigin && (!origin || !isAllowedOrigin(origin))) {

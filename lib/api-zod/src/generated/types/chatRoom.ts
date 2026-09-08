@@ -5,12 +5,16 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatRoomCategory } from './chatRoomCategory';
+import type { ChatRoomVisibility } from './chatRoomVisibility';
 import type { MessageSummary } from './messageSummary';
 import type { PublicUser } from './publicUser';
 
 export interface ChatRoom {
   id: string;
   type: string;
+  category: ChatRoomCategory;
+  visibility: ChatRoomVisibility;
   /** @nullable */
   name?: string | null;
   /** @nullable */

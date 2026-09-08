@@ -1,76 +1,74 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
+import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
-import React, { useEffect } from "react";
+import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useAuth } from "@clerk/expo";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { neon } from "@/constants/colors";
 import { useColors } from "@/hooks/useColors";
-import { useThemeMode } from "@/hooks/useThemeMode";
+import { ThemeModeContext, useThemeMode } from "@/hooks/useThemeMode";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
-
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>홈</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="chats">
-        <Icon sf={{ default: "bubble.left.and.bubble.right", selected: "bubble.left.and.bubble.right.fill" }} />
-        <Label>채팅</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="battle">
-        <Icon sf={{ default: "mic", selected: "mic.fill" }} />
-        <Label>배틀</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="dungeon">
-        <Icon sf={{ default: "map", selected: "map.fill" }} />
-        <Label>라이프</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="persona">
-        <Icon sf={{ default: "person", selected: "person.fill" }} />
-        <Label>자아</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
+import { useUnreadMessageCount } from "@/hooks/useUnreadMessageCount";
 
 function ClassicTabLayout() {
   const colors = useColors();
   const { scheme } = useThemeMode();
+  const { count: unreadCount } = useUnreadMessageCount();
   const isDark = scheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
   const pwaBottom = usePwaBottomInset();
+  const insets = useSafeAreaInsets();
+  const bottomInset = isWeb ? pwaBottom : insets.bottom;
 
   const tabIcon = (
     ios: string,
     feather: keyof typeof Feather.glyphMap,
-  ) => ({ color }: { color: string }) =>
-    isIOS ? (
-      <SymbolView name={ios as any} tintColor={color} size={24} />
-    ) : (
-      <Feather name={feather} size={22} color={color} />
-    );
+  ) => ({ color, focused }: { color: string; focused: boolean }) => (
+    <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
+      {isIOS ? (
+        <SymbolView name={ios as any} tintColor={color} size={24} />
+      ) : (
+        <Feather
+          name={feather}
+          size={22}
+          color={color}
+          style={focused ? styles.tabIconGlyphActive : undefined}
+        />
+      )}
+    </View>
+  );
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarActiveTintColor: "#E8FF39",
+        tabBarInactiveTintColor: "#9B979E",
         headerShown: false,
-        tabBarLabelStyle: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+        sceneStyle: { backgroundColor: neon.background },
+        tabBarLabelStyle: {
+          fontFamily: "Inter_600SemiBold",
+          fontSize: 11,
+          lineHeight: 15,
+          marginTop: 1,
+        },
+        tabBarItemStyle: { paddingTop: 6 },
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : colors.background,
-          borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: colors.border,
+          height: 72 + bottomInset,
+          paddingTop: 5,
+          paddingBottom: Math.max(6, bottomInset),
+          backgroundColor: isIOS ? "transparent" : "#05040D",
+          borderTopWidth: 1,
+          borderTopColor: "rgba(139, 92, 246, 0.24)",
           elevation: 0,
-          ...(isWeb ? { height: 84 + pwaBottom, paddingBottom: pwaBottom } : {}),
+          shadowColor: "#7C3AED",
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.12,
+          shadowRadius: 14,
         },
         tabBarBackground: () =>
           isIOS ? (
@@ -80,9 +78,14 @@ function ClassicTabLayout() {
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View
-              style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}
-            />
+            <LinearGradient
+              colors={["rgba(16,12,34,0.99)", "rgba(5,4,13,1)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            >
+              <View pointerEvents="none" style={styles.tabBarTopGlow} />
+            </LinearGradient>
           ) : null,
       }}
     >
@@ -91,39 +94,88 @@ function ClassicTabLayout() {
         options={{ title: "홈", tabBarIcon: tabIcon("house", "home") }}
       />
       <Tabs.Screen
+        name="search"
+        options={{ title: "검색", tabBarIcon: tabIcon("magnifyingglass", "search") }}
+      />
+      <Tabs.Screen
+        name="feed"
+        options={{ title: "피드", tabBarIcon: tabIcon("sparkles", "grid") }}
+      />
+      <Tabs.Screen
         name="chats"
-        options={{ title: "채팅", tabBarIcon: tabIcon("bubble.left.and.bubble.right", "message-circle") }}
+        options={{
+          title: "채팅",
+          tabBarIcon: tabIcon("bubble.left.and.bubble.right", "message-circle"),
+          tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? "99+" : unreadCount) : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: colors.primary,
+            color: colors.primaryForeground,
+            fontFamily: "Inter_700Bold",
+            fontSize: 10,
+          },
+        }}
       />
       <Tabs.Screen
         name="battle"
-        options={{ title: "배틀", tabBarIcon: tabIcon("mic", "mic") }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="dungeon"
-        options={{ title: "라이프", tabBarIcon: tabIcon("map", "compass") }}
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="quests"
+        options={{ title: "미션", tabBarIcon: tabIcon("target", "star") }}
       />
       <Tabs.Screen
         name="persona"
-        options={{ title: "자아", tabBarIcon: tabIcon("person", "user") }}
+        options={{ title: "마이페이지", tabBarIcon: tabIcon("person", "user") }}
       />
+      <Tabs.Screen name="character/[profileId]" options={{ href: null }} />
     </Tabs>
   );
 }
 
 export default function TabLayout() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
-
-  useEffect(() => {
-    if (isSignedIn) {
-      setAuthTokenGetter(() => getToken());
-    }
-  }, [isSignedIn, getToken]);
+  const { isLoaded, isSignedIn } = useAuth();
+  const themeMode = useThemeMode();
+  const darkTabsTheme = React.useMemo(
+    () => ({ ...themeMode, scheme: "dark" as const }),
+    [themeMode],
+  );
 
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  return (
+    <ThemeModeContext.Provider value={darkTabsTheme}>
+      <ClassicTabLayout />
+    </ThemeModeContext.Provider>
+  );
 }
+
+const styles = StyleSheet.create({
+  tabIconWrap: {
+    width: 38,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabIconWrapActive: {
+    backgroundColor: "transparent",
+  },
+  tabIconGlyphActive: {
+    textShadowColor: "#C06CFF",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  tabBarTopGlow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 1,
+    backgroundColor: "rgba(183, 117, 255, 0.38)",
+  },
+});

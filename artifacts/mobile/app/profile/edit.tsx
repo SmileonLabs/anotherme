@@ -5,110 +5,68 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
-import { useGetMe, useUpdateMe } from "@workspace/api-client-react";
+import { useGetMe } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
-import { uploadBlob } from "@/lib/uploadImage";
 import { Avatar } from "@/components/Avatar";
-import { ImageCropModal } from "@/components/ImageCropModal";
 import { useColors } from "@/hooks/useColors";
+import { profileHistoryQueryKey } from "@/hooks/useProfileHistory";
+import { starFeedQueryKey } from "@/hooks/useStarFeed";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { profileId } = useLocalSearchParams<{ profileId?: string }>();
+  const queryClient = useQueryClient();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { data: me, refetch } = useGetMe();
-  const updateMe = useUpdateMe();
+  const { data: me } = useGetMe();
+  const { activeProfile, profiles, updateProfile, isUpdating } = useCharacterProfiles();
+  const targetProfile =
+    profiles.find((profile) => profile.id === profileId) ?? activeProfile;
 
   const [nickname, setNickname] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-  // undefined = unchanged, string = new object path, null = removed
-  const [imagePath, setImagePath] = useState<string | null | undefined>(undefined);
-  const [cropUri, setCropUri] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (me) {
-      setNickname(me.nickname);
-      setStatusMessage(me.statusMessage ?? "");
+    if (targetProfile) {
+      setNickname(targetProfile.displayName);
+      setStatusMessage(targetProfile.statusMessage ?? "");
     }
-  }, [me]);
+  }, [targetProfile]);
 
-  const previewUri = imagePath !== undefined ? imagePath : me?.profileImageUrl;
+  const previewUri = targetProfile?.profileImageUrl;
+  const canCustomizeAvatar = targetProfile?.type === "fan" || targetProfile?.profileImageUrl?.startsWith("anotherme-avatar:");
 
-  const handlePickAvatar = async () => {
-    if (uploading) return;
-    try {
-      if (Platform.OS === "web") {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-        });
-        if (result.canceled || !result.assets?.length) return;
-        setCropUri(result.assets[0].uri);
-        return;
-      }
-
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        crossAlert("권한 필요", "사진 접근 권한을 허용해주세요");
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.length) return;
-      setUploading(true);
-      const blob = await (await fetch(result.assets[0].uri)).blob();
-      const path = await uploadBlob(blob);
-      setImagePath(path);
-    } catch {
-      crossAlert("오류", "이미지를 불러오지 못했습니다");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleCropConfirm = async (blob: Blob) => {
-    setUploading(true);
-    try {
-      const path = await uploadBlob(blob);
-      setImagePath(path);
-      setCropUri(null);
-    } catch {
-      crossAlert("오류", "이미지 업로드에 실패했습니다");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const saving = uploading || updateMe.isPending;
+  const saving = isUpdating;
 
   const handleSave = async () => {
     if (!nickname.trim()) {
       crossAlert("닉네임을 입력해주세요");
       return;
     }
+    if (!targetProfile) {
+      crossAlert("오류", "프로필을 불러오지 못했습니다.");
+      return;
+    }
     try {
-      await updateMe.mutateAsync({
-        data: {
-          nickname: nickname.trim(),
-          statusMessage: statusMessage.trim() || null,
-          ...(imagePath !== undefined ? { profileImageUrl: imagePath } : {}),
-        },
+      await updateProfile({
+        profileId: targetProfile.id,
+        displayName: nickname.trim(),
+        statusMessage: statusMessage.trim() || null,
       });
-      await refetch();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: starFeedQueryKey }),
+        queryClient.invalidateQueries({ queryKey: profileHistoryQueryKey }),
+      ]);
       router.back();
     } catch {
       crossAlert("오류", "저장에 실패했습니다");
@@ -126,31 +84,34 @@ export default function EditProfileScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.avatarSection}>
-          <Pressable onPress={handlePickAvatar} disabled={uploading} style={styles.avatarPress}>
-            <Avatar uri={previewUri} name={me?.nickname ?? "?"} size={90} />
+          <Pressable onPress={() => canCustomizeAvatar && targetProfile && router.push({ pathname: "/profile/avatar", params: { profileId: targetProfile.id } } as never)} disabled={!canCustomizeAvatar} style={styles.avatarPress}>
+            <Avatar
+              uri={previewUri}
+              name={targetProfile?.displayName ?? "?"}
+              size={90}
+              crop="face"
+              characterType={targetProfile?.type ?? "fan"}
+            />
             <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
-              {uploading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Ionicons name="camera" size={16} color="#fff" />
-              )}
+              <Ionicons name={canCustomizeAvatar ? "options" : "lock-closed"} size={16} color="#fff" />
             </View>
           </Pressable>
-          <Pressable onPress={handlePickAvatar} disabled={uploading} hitSlop={8}>
-            <Text style={[styles.changePhotoText, { color: colors.primary }]}>
-              {uploading ? "업로드 중..." : "사진 변경"}
-            </Text>
+          <Pressable onPress={() => canCustomizeAvatar && targetProfile && router.push({ pathname: "/profile/avatar", params: { profileId: targetProfile.id } } as never)} disabled={!canCustomizeAvatar} hitSlop={8}>
+            <Text style={[styles.changePhotoText, { color: colors.primary }]}>{canCustomizeAvatar ? "아바타 꾸미기" : "성장 외형은 자동 적용됩니다"}</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push("/profile/history" as never)} hitSlop={8}>
+            <Text style={[styles.historyLink, { color: colors.mutedForeground }]}>프로필 히스토리 보기</Text>
           </Pressable>
         </View>
 
         <View style={styles.form}>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>닉네임</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>활동 프로필 이름</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.input, color: colors.foreground, borderColor: colors.border }]}
               value={nickname}
               onChangeText={setNickname}
-              placeholder="닉네임"
+              placeholder="프로필 이름"
               placeholderTextColor={colors.mutedForeground}
               maxLength={30}
             />
@@ -192,11 +153,6 @@ export default function EditProfileScreen() {
         </Pressable>
       </CustomScrollView>
 
-      <ImageCropModal
-        imageUri={cropUri}
-        onCancel={() => setCropUri(null)}
-        onConfirm={handleCropConfirm}
-      />
     </KeyboardAvoidingView>
   );
 }
@@ -217,6 +173,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   changePhotoText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  historyLink: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   form: { paddingHorizontal: 20, gap: 20 },
   label: { fontSize: 13, fontFamily: "Inter_600SemiBold", marginBottom: 8 },
   input: { height: 52, borderRadius: 12, paddingHorizontal: 16, fontSize: 15, fontFamily: "Inter_400Regular", borderWidth: 1 },

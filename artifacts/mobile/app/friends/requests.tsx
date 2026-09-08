@@ -8,7 +8,9 @@ import {
   Text,
   View,
 } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  getListFriendsQueryKey,
   useListIncomingFriendRequests,
   useListOutgoingFriendRequests,
   useAcceptFriendRequest,
@@ -21,6 +23,7 @@ import { useColors } from "@/hooks/useColors";
 
 export default function RequestsScreen() {
   const colors = useColors();
+  const queryClient = useQueryClient();
   const {
     data: incoming = [],
     refetch: refetchIn,
@@ -42,7 +45,10 @@ export default function RequestsScreen() {
 
   const handleAccept = async (id: string, name: string) => {
     await accept.mutateAsync({ id });
-    refetchIn();
+    await Promise.all([
+      refetchIn(),
+      queryClient.invalidateQueries({ queryKey: getListFriendsQueryKey() }),
+    ]);
     crossAlert("수락됨", `${name}님과 친구가 되었습니다`);
   };
 
@@ -106,10 +112,10 @@ export default function RequestsScreen() {
         if (!user) return null;
         return (
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Avatar uri={user.profileImageUrl} name={user.nickname} size={48} />
+            <Avatar uri={user.profileImageUrl} name={user.nickname} size={48} crop="face" characterType={user.profile?.type} />
             <View style={styles.info}>
               <Text style={[styles.name, { color: colors.foreground }]}>{user.nickname}</Text>
-              <Text style={[styles.email, { color: colors.mutedForeground }]}>{user.email}</Text>
+              <Text style={[styles.email, { color: colors.mutedForeground }]}>{user.statusMessage || "AnotherMe 사용자"}</Text>
             </View>
             {(section as any).isIncoming ? (
               <View style={styles.actions}>

@@ -1,0 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { customFetch } from "@workspace/api-client-react";
+export type AdminReport = { id: string; postId: string; reason: string; details: string | null; status: string; postTitle: string | null; reporterNickname: string | null; createdAt: string };
+export function useAdminModeration() { const client = useQueryClient(); const reports = useQuery({ queryKey: ["admin", "reports"], queryFn: () => customFetch<AdminReport[]>("/api/star-feed/admin/reports", { responseType: "json" }) }); const resolve = useMutation({ mutationFn: ({ id, action }: { id: string; action: "remove" | "keep" }) => customFetch(`/api/star-feed/admin/reports/${id}/resolve`, { method: "POST", responseType: "json", body: JSON.stringify({ action }) }), onSuccess: () => client.invalidateQueries({ queryKey: ["admin", "reports"] }) }); return { ...reports, resolve }; }

@@ -7,5 +7,9 @@
  */
 
 export interface PushTokenInput {
+  /**
+     * @minLength 1
+     * @maxLength 8192
+     */
   token: string;
 }

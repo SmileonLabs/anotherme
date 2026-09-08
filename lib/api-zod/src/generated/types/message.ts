@@ -5,7 +5,9 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { CharacterProfileSummary } from './characterProfileSummary';
 import type { MessageLinkPreview } from './messageLinkPreview';
+import type { MessageMetadata } from './messageMetadata';
 import type { MessageReplyPreview } from './messageReplyPreview';
 import type { MessageStickerBadge } from './messageStickerBadge';
 import type { PublicUser } from './publicUser';
@@ -13,11 +15,22 @@ import type { PublicUser } from './publicUser';
 export interface Message {
   id: string;
   roomId: string;
+  roomSeq: number;
   senderId: string;
+  senderProfile?: CharacterProfileSummary | null;
+  authorKind: string;
   type: string;
   content: string;
   /** @nullable */
   replyToMessageId?: string | null;
+  /** @nullable */
+  anotherMeSessionId?: string | null;
+  /** @nullable */
+  callId?: string | null;
+  /** @nullable */
+  metadata?: MessageMetadata;
+  /** @nullable */
+  clientMessageId?: string | null;
   /** @nullable */
   deletedAt?: string | null;
   createdAt: string;

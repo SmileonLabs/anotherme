@@ -53,7 +53,7 @@ export default function ClanCreateScreen() {
 
   const onSubmit = async () => {
     if (!nameValid) {
-      crossAlert("확인", "가문 이름은 2~20자로 입력해 주세요.");
+      crossAlert("확인", "팬클럽 이름은 2~20자로 입력해 주세요.");
       return;
     }
     try {
@@ -71,10 +71,12 @@ export default function ClanCreateScreen() {
       ]);
       router.replace("/clan");
     } catch (err) {
-      const message =
-        (err as { message?: string })?.message?.includes("이름")
-          ? "이미 사용 중인 가문 이름이에요."
-          : "가문 생성에 실패했어요. 잠시 후 다시 시도해 주세요.";
+      const dataMessage = (err as { data?: { message?: string } })?.data?.message;
+      const message = dataMessage
+        ? dataMessage
+        : (err as { message?: string })?.message?.includes("이름")
+          ? "이미 사용 중인 팬클럽 이름이에요."
+          : "팬클럽 생성에 실패했어요. 잠시 후 다시 시도해 주세요.";
       crossAlert("오류", message);
     }
   };
@@ -84,7 +86,14 @@ export default function ClanCreateScreen() {
       <CustomScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
       >
-        <Field label="가문 이름" required colors={colors} hint={`${trimmedName.length}/${NAME_MAX}`}>
+        <View style={[styles.noticeCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <Text style={[styles.noticeTitle, { color: colors.foreground }]}>토르미아 승급 필요</Text>
+          <Text style={[styles.noticeBody, { color: colors.mutedForeground }]}>
+            팬클럽은 토르미아의 문을 연 공식 STAR만 만들 수 있어요. 조건이 부족하면 연습생 STAR 미션에서 먼저 성장해 주세요.
+          </Text>
+        </View>
+
+        <Field label="팬클럽 이름" required colors={colors} hint={`${trimmedName.length}/${NAME_MAX}`}>
           <TextInput
             value={name}
             onChangeText={(t) => setName(t.slice(0, NAME_MAX))}
@@ -98,7 +107,7 @@ export default function ClanCreateScreen() {
           <TextInput
             value={description}
             onChangeText={(t) => setDescription(t.slice(0, DESC_MAX))}
-            placeholder="가문을 한두 문장으로 소개해 주세요."
+            placeholder="팬클럽을 한두 문장으로 소개해 주세요."
             placeholderTextColor={colors.mutedForeground}
             multiline
             style={[styles.input, styles.multiline, { color: colors.foreground, backgroundColor: colors.background, borderColor: colors.border }]}
@@ -145,7 +154,7 @@ export default function ClanCreateScreen() {
           disabled={!canSubmit}
           style={[styles.submitBtn, { backgroundColor: canSubmit ? colors.primary : colors.border }]}
         >
-          <Text style={styles.submitText}>{create.isPending ? "만드는 중..." : "가문 만들기"}</Text>
+          <Text style={styles.submitText}>{create.isPending ? "만드는 중..." : "팬클럽 만들기"}</Text>
         </Pressable>
       </CustomScrollView>
     </View>
@@ -181,6 +190,15 @@ function Field({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  noticeCard: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+    marginBottom: 18,
+    padding: 14,
+  },
+  noticeTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  noticeBody: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
   field: { marginBottom: 18 },
   fieldHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   fieldLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },

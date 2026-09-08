@@ -18,6 +18,7 @@ async function buildAll() {
     entryPoints: {
       index: path.resolve(artifactDir, "src/index.ts"),
       "scripts/initializeKnowledgeGraph": path.resolve(artifactDir, "src/scripts/initializeKnowledgeGraph.ts"),
+      "scripts/callMigrationReadiness": path.resolve(artifactDir, "src/scripts/callMigrationReadiness.ts"),
     },
     platform: "node",
     bundle: true,

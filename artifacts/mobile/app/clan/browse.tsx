@@ -60,7 +60,7 @@ export default function ClanBrowseScreen() {
   const [joiningId, setJoiningId] = React.useState<string | null>(null);
 
   const onJoin = (clan: ClanSummary) => {
-    crossAlert("가문 가입", `'${clan.name}' 가문에 가입할까요?`, [
+    crossAlert("팬클럽 가입", `'${clan.name}' 팬클럽에 가입할까요?`, [
       { text: "취소", style: "cancel" },
       {
         text: "가입",
@@ -72,8 +72,8 @@ export default function ClanBrowseScreen() {
             router.replace("/clan");
           } catch (err) {
             const msg = (err as { message?: string })?.message?.includes("이미")
-              ? "이미 다른 가문에 소속되어 있어요."
-              : "가문 가입에 실패했어요.";
+              ? "이미 다른 팬클럽에 소속되어 있어요."
+              : "팬클럽 가입에 실패했어요.";
             crossAlert("오류", msg);
           } finally {
             setJoiningId(null);
@@ -92,7 +92,7 @@ export default function ClanBrowseScreen() {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="가문 이름 검색"
+          placeholder="팬클럽 이름 검색"
           placeholderTextColor={colors.mutedForeground}
           style={[styles.searchInput, { color: colors.foreground }]}
         />
@@ -139,7 +139,7 @@ export default function ClanBrowseScreen() {
         ) : isError ? (
           <View style={styles.center}>
             <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-              가문 목록을 불러오지 못했어요.
+              팬클럽 목록을 불러오지 못했어요.
             </Text>
             <Pressable onPress={() => refetch()} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
               <Text style={styles.retryText}>다시 시도</Text>
@@ -149,13 +149,13 @@ export default function ClanBrowseScreen() {
           <View style={styles.center}>
             <Feather name="shield" size={32} color={colors.mutedForeground} />
             <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-              {debounced || archetype ? "조건에 맞는 가문이 없어요." : "아직 만들어진 가문이 없어요."}
+              {debounced || archetype ? "조건에 맞는 팬클럽이 없어요." : "아직 만들어진 팬클럽이 없어요."}
             </Text>
             <Pressable
               onPress={() => router.push("/clan/create")}
               style={[styles.retryBtn, { backgroundColor: colors.foreground }]}
             >
-              <Text style={[styles.retryText, { color: colors.background }]}>가문 만들기</Text>
+              <Text style={[styles.retryText, { color: colors.background }]}>팬클럽 만들기</Text>
             </Pressable>
           </View>
         ) : (

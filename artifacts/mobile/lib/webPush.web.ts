@@ -10,12 +10,16 @@ export type WebPushState = {
 
 const VAPID_PUBLIC_KEY = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY || "";
 
-export const webPushSupported =
+const browserPushSupported =
   typeof window !== "undefined" &&
   typeof navigator !== "undefined" &&
   "serviceWorker" in navigator &&
   "PushManager" in window &&
   "Notification" in window;
+
+export const webPushSupported = browserPushSupported && !!VAPID_PUBLIC_KEY;
+
+const SW_READY_TIMEOUT_MS = 8000;
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -67,7 +71,7 @@ function getBasePath(): string {
 // but never throws into the caller.
 let swRegistered = false;
 export async function registerPushServiceWorker(): Promise<void> {
-  if (!webPushSupported) return;
+  if (!browserPushSupported) return;
   if (swRegistered) return;
   try {
     const base = getBasePath();
@@ -78,12 +82,59 @@ export async function registerPushServiceWorker(): Promise<void> {
   }
 }
 
+async function getReadyRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!webPushSupported) return null;
+  await registerPushServiceWorker();
+  try {
+    return await Promise.race<ServiceWorkerRegistration | null>([
+      navigator.serviceWorker.ready,
+      new Promise((resolve) => setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+let pushOwnerUpdateQueue: Promise<void> = Promise.resolve();
+
+async function postPushOwnerUpdate(userId: string | null): Promise<void> {
+  const registration = await getReadyRegistration();
+  const worker = registration?.active ?? navigator.serviceWorker.controller;
+  if (!worker) return;
+  await new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    const timeout = setTimeout(resolve, 2_000);
+    channel.port1.onmessage = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    worker.postMessage({ type: "push-owner-changed", userId }, [channel.port2]);
+  });
+}
+
+/** Serialised so an old owner's async cleanup cannot clear a newer owner. */
+export function setWebPushOwner(userId: string | null): Promise<void> {
+  pushOwnerUpdateQueue = pushOwnerUpdateQueue
+    .catch(() => undefined)
+    .then(() => postPushOwnerUpdate(userId));
+  return pushOwnerUpdateQueue;
+}
+
+export async function getCurrentWebPushSubscriptionToken(): Promise<string | null> {
+  const registration = await getReadyRegistration();
+  if (!registration) return null;
+  try {
+    const subscription = await registration.pushManager.getSubscription();
+    return subscription ? JSON.stringify(subscription) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getOrCreateSubscription(): Promise<PushSubscription | null> {
   if (!webPushSupported || !VAPID_PUBLIC_KEY) return null;
-  // Make sure our SW is registered before awaiting `.ready` (which only resolves
-  // once a registration exists), otherwise the await would hang forever.
-  await registerPushServiceWorker();
-  const reg = await navigator.serviceWorker.ready;
+  const reg = await getReadyRegistration();
+  if (!reg) return null;
   const existing = await reg.pushManager.getSubscription();
   if (existing) return existing;
   return reg.pushManager.subscribe({
@@ -102,7 +153,12 @@ export async function subscribeWebPush(
   if (!webPushSupported || !VAPID_PUBLIC_KEY) return "unsupported";
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return "denied";
-  const sub = await getOrCreateSubscription();
+  let sub: PushSubscription | null = null;
+  try {
+    sub = await getOrCreateSubscription();
+  } catch {
+    return "unsupported";
+  }
   if (!sub) return "unsupported";
   await register(JSON.stringify(sub));
   return "granted";
@@ -121,7 +177,8 @@ export async function getWebPushState(): Promise<WebPushState> {
   let subscribed = false;
   if (permission === "granted") {
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await getReadyRegistration();
+      if (!reg) return { supported: true, permission, subscribed: false };
       subscribed = (await reg.pushManager.getSubscription()) !== null;
     } catch {
       subscribed = false;

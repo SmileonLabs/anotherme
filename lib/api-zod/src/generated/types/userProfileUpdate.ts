@@ -7,10 +7,16 @@
  */
 
 export interface UserProfileUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
   nickname?: string;
-  /** @nullable */
+  /**
+     * @maxLength 200
+     * @nullable
+     */
   statusMessage?: string | null;
-  /** @nullable */
-  profileImageUrl?: string | null;
   notificationEnabled?: boolean;
+  talkAnalysisEnabled?: boolean;
 }

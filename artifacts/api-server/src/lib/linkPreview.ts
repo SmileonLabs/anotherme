@@ -1,11 +1,13 @@
-import net from "node:net";
 import { eq } from "drizzle-orm";
-import {
-  chatRoomMembersTable,
-  db,
-  messageLinkPreviewsTable,
-} from "@workspace/db";
+import { db, messageLinkPreviewsTable } from "@workspace/db";
 import { publishRealtimeEvent } from "./realtime";
+import { getRoomDeliveryRecipients } from "./chatDelivery";
+import {
+  buildLinkPreviewFailureLog,
+  buildLinkPreviewRoomFailureLog,
+} from "./linkPreviewLogging";
+import { safeLinkPreviewImageUrl } from "./linkPreviewImagePolicy";
+import { fetchPinnedPublicHtml, isSafePublicUrl } from "./linkPreviewNetwork";
 
 const URL_RE = /https?:\/\/[^\s<>'"]+/i;
 const MAX_TITLE = 140;
@@ -44,6 +46,7 @@ export async function scheduleLinkPreview(
   try {
     const parsed = new URL(rawUrl);
     if (!isSafePublicUrl(parsed)) return;
+    parsed.hash = "";
     normalizedUrl = parsed.toString();
   } catch {
     return;
@@ -85,7 +88,10 @@ export async function scheduleLinkPreview(
         .update(messageLinkPreviewsTable)
         .set({ status: "failed", updatedAt: new Date() })
         .where(eq(messageLinkPreviewsTable.messageId, messageId));
-      log?.warn?.({ err, messageId, url: normalizedUrl }, "Failed to build link preview");
+      log?.warn?.(
+        buildLinkPreviewFailureLog(err, normalizedUrl, messageId),
+        "Failed to build link preview",
+      );
     } finally {
       await publishMessageUpdated(roomId, actorUserId, messageId, log);
     }
@@ -99,100 +105,48 @@ async function publishMessageUpdated(
   log?: LoggerLike,
 ): Promise<void> {
   try {
-    const members = await db
-      .select({ userId: chatRoomMembersTable.userId })
-      .from(chatRoomMembersTable)
-      .where(eq(chatRoomMembersTable.roomId, roomId));
+    const recipients = await getRoomDeliveryRecipients(roomId, actorUserId);
     await publishRealtimeEvent({
       type: "message.updated",
       roomId,
       actorUserId,
-      userIds: members.map((m) => m.userId),
+      userIds: recipients.realtimeUserIds,
       data: { messageId },
     });
   } catch (err) {
-    log?.error?.({ err, roomId, messageId }, "Failed to publish link-preview realtime event");
+    log?.error?.(
+      buildLinkPreviewRoomFailureLog(err, roomId, messageId),
+      "Failed to publish link-preview realtime event",
+    );
   }
 }
 
 async function fetchLinkMeta(rawUrl: string): Promise<LinkMeta> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-  try {
-    const response = await fetch(rawUrl, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent": "AnotherMeBot/1.0 (+https://anothermeai.app)",
-      },
-    });
-    const finalUrl = new URL(response.url || rawUrl);
-    if (!isSafePublicUrl(finalUrl)) throw new Error("unsafe redirect url");
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("text/html")) throw new Error("not html");
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (contentLength > 1_000_000) throw new Error("html too large");
+  const response = await fetchPinnedPublicHtml(rawUrl);
+  const finalUrl = new URL(response.finalUrl);
+  const html = response.body;
+  const baseUrl = finalUrl.toString();
+  const title = firstClean(
+    getMeta(html, "og:title"),
+    getMeta(html, "twitter:title"),
+    getTitle(html),
+  );
+  const description = firstClean(
+    getMeta(html, "og:description"),
+    getMeta(html, "description"),
+    getMeta(html, "twitter:description"),
+  );
+  const imageUrl = safeLinkPreviewImageUrl(
+    firstClean(getMeta(html, "og:image"), getMeta(html, "twitter:image")),
+  );
 
-    const html = await response.text();
-    const baseUrl = finalUrl.toString();
-    const title = firstClean(
-      getMeta(html, "og:title"),
-      getMeta(html, "twitter:title"),
-      getTitle(html),
-    );
-    const description = firstClean(
-      getMeta(html, "og:description"),
-      getMeta(html, "description"),
-      getMeta(html, "twitter:description"),
-    );
-    const imageUrl = normalizeImageUrl(
-      firstClean(getMeta(html, "og:image"), getMeta(html, "twitter:image")),
-      baseUrl,
-    );
-
-    return {
-      url: baseUrl,
-      domain: finalUrl.hostname.replace(/^www\./i, ""),
-      title: title ? truncate(title, MAX_TITLE) : null,
-      description: description ? truncate(description, MAX_DESCRIPTION) : null,
-      imageUrl,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function isSafePublicUrl(url: URL): boolean {
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  const host = url.hostname.toLowerCase();
-  if (!host || host === "localhost" || host.endsWith(".localhost")) return false;
-  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan")) return false;
-  const ipVersion = net.isIP(host);
-  if (ipVersion === 4) return isPublicIpv4(host);
-  if (ipVersion === 6) return isPublicIpv6(host);
-  return true;
-}
-
-function isPublicIpv4(ip: string): boolean {
-  const parts = ip.split(".").map((p) => Number(p));
-  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return false;
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return false;
-  if (a === 169 && b === 254) return false;
-  if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && b === 168) return false;
-  if (a === 100 && b >= 64 && b <= 127) return false;
-  return true;
-}
-
-function isPublicIpv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
-  if (normalized === "::" || normalized === "::1") return false;
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return false;
-  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return false;
-  return true;
+  return {
+    url: baseUrl,
+    domain: finalUrl.hostname.replace(/^www\./i, ""),
+    title: title ? truncate(title, MAX_TITLE) : null,
+    description: description ? truncate(description, MAX_DESCRIPTION) : null,
+    imageUrl,
+  };
 }
 
 function getMeta(html: string, key: string): string | null {
@@ -239,14 +193,4 @@ function cleanText(value: string | null | undefined): string | null {
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 3)}...` : value;
-}
-
-function normalizeImageUrl(value: string | null, baseUrl: string): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value, baseUrl);
-    return isSafePublicUrl(url) ? url.toString() : null;
-  } catch {
-    return null;
-  }
 }

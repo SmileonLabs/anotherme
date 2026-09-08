@@ -1,1 +1,3 @@
-export const APK_URL = "https://expo.dev/artifacts/eas/uGGzTdA2soHz5hzQM0woaPj-DivKuTqghudF4GMXnLk.apk";
+// Keep the direct download path stable while invalidating stale browser caches
+// after an APK replacement.
+export const APK_URL = "/downloads/anotherme.apk?v=3";

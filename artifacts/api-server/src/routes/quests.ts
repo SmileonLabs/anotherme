@@ -1,13 +1,14 @@
 import { Router, type IRouter } from "express";
 import { requireAuth } from "../lib/auth";
 import {
-  claimAchievement,
-  claimQuest,
-  getAchievements,
-  getQuests,
-  getRewardsSummary,
+  claimCharacterProfileAchievement,
+  claimCharacterProfileQuest,
+  getCharacterProfileAchievements,
+  getCharacterProfileQuests,
+  getCharacterProfileRewardsSummary,
   type ClaimResult,
 } from "../lib/quests";
+import { resolveCharacterProfileActor } from "../lib/characterProfiles";
 
 const router: IRouter = Router();
 
@@ -34,7 +35,8 @@ function sendClaimError(res: import("express").Response, result: ClaimResult & {
 
 router.get("/users/me/quests", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
-  res.json(await getQuests(user.id));
+  const actor = await resolveCharacterProfileActor(user.id, req.header("x-character-profile-id"));
+  res.json(await getCharacterProfileQuests(actor.id));
 });
 
 router.post(
@@ -42,7 +44,8 @@ router.post(
   requireAuth,
   async (req, res): Promise<void> => {
     const user = req.dbUser!;
-    const result = await claimQuest(user.id, String(req.params.questKey));
+    const actor = await resolveCharacterProfileActor(user.id, req.header("x-character-profile-id"));
+    const result = await claimCharacterProfileQuest(user.id, actor.id, String(req.params.questKey));
     if (result.ok) {
       res.json({ ok: true, rewardExp: result.rewardExp });
       return;
@@ -53,7 +56,8 @@ router.post(
 
 router.get("/users/me/achievements", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
-  res.json(await getAchievements(user.id));
+  const actor = await resolveCharacterProfileActor(user.id, req.header("x-character-profile-id"));
+  res.json(await getCharacterProfileAchievements(actor.id));
 });
 
 router.post(
@@ -61,7 +65,8 @@ router.post(
   requireAuth,
   async (req, res): Promise<void> => {
     const user = req.dbUser!;
-    const result = await claimAchievement(user.id, String(req.params.achievementKey));
+    const actor = await resolveCharacterProfileActor(user.id, req.header("x-character-profile-id"));
+    const result = await claimCharacterProfileAchievement(user.id, actor.id, String(req.params.achievementKey));
     if (result.ok) {
       res.json({ ok: true, rewardExp: result.rewardExp });
       return;
@@ -72,7 +77,8 @@ router.post(
 
 router.get("/users/me/rewards/summary", requireAuth, async (req, res): Promise<void> => {
   const user = req.dbUser!;
-  res.json(await getRewardsSummary(user.id));
+  const actor = await resolveCharacterProfileActor(user.id, req.header("x-character-profile-id"));
+  res.json(await getCharacterProfileRewardsSummary(actor.id));
 });
 
 export default router;

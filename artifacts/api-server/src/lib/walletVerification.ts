@@ -1,17 +1,34 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   db,
-  userPlayModesTable,
+  nftCollectionsTable,
   userWalletsTable,
   walletVerificationChallengesTable,
   type UserWallet,
 } from "@workspace/db";
 import { getAddress, verifyMessage, type Address, type Hex } from "viem";
 import { ensurePlayModeState } from "./fanStar";
-import { checkNftBalance, getNftConfig } from "./nft";
+import { getNftConfig } from "./nft";
+import { listAddressNftInventory } from "./nftInventory";
+import { buildChallengeMessage } from "./walletChallenge";
 
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_CHAIN_ID = 56;
+
+function getSignInContext() {
+  const configuredUri = process.env.WALLET_SIGN_IN_URI ?? "https://anothermeai.app";
+  try {
+    const uri = new URL(configuredUri);
+    if (uri.protocol !== "https:") throw new Error("wallet sign-in URI must use HTTPS");
+    return {
+      domain: process.env.WALLET_SIGN_IN_DOMAIN?.trim() || uri.host,
+      uri: uri.origin,
+    };
+  } catch {
+    return { domain: "anothermeai.app", uri: "https://anothermeai.app" };
+  }
+}
 
 export interface WalletStatus {
   walletAddress: string | null;
@@ -32,6 +49,9 @@ export interface WalletChallengeView {
   expiresAt: string;
   nftContractAddress: string | null;
   nftChainId: number | null;
+  chainId: number;
+  domain: string;
+  uri: string;
 }
 
 export interface VerifyWalletResult {
@@ -65,29 +85,42 @@ function normalizeWalletAddress(value: string): Address {
   }
 }
 
-function buildChallengeMessage(params: {
-  walletAddress: string;
-  userId: string;
-  nonce: string;
-  issuedAt: Date;
-  expiresAt: Date;
-}) {
-  return [
-    "Another Me STAR NFT verification",
-    "",
-    "Sign this message to prove that you control this wallet.",
-    "This does not grant token transfer permission and costs no gas.",
-    "",
-    `Wallet: ${params.walletAddress}`,
-    `User: ${params.userId}`,
-    `Nonce: ${params.nonce}`,
-    `Issued At: ${params.issuedAt.toISOString()}`,
-    `Expires At: ${params.expiresAt.toISOString()}`,
-  ].join("\n");
+async function getPublishedNftSummary(): Promise<{
+  configured: boolean;
+  contractAddress: string | null;
+  chainId: number | null;
+}> {
+  const collections = await db.select({
+    contractAddress: nftCollectionsTable.contractAddress,
+    chainId: nftCollectionsTable.chainId,
+    rpcUrl: nftCollectionsTable.rpcUrl,
+  }).from(nftCollectionsTable)
+    .where(eq(nftCollectionsTable.status, "published"))
+    .orderBy(desc(nftCollectionsTable.updatedAt))
+    .limit(100);
+  const configured = collections.filter((collection) =>
+    Boolean(collection.rpcUrl && collection.contractAddress && collection.chainId > 0)
+  );
+  if (configured.length === 0) {
+    const legacy = getNftConfig();
+    return {
+      configured: legacy.configured,
+      contractAddress: legacy.contractAddress,
+      chainId: legacy.chainId,
+    };
+  }
+  return {
+    configured: true,
+    contractAddress: configured.length === 1 ? configured[0]!.contractAddress : null,
+    chainId: configured.length === 1 ? configured[0]!.chainId : null,
+  };
 }
 
-function serializeWalletStatus(row: UserWallet | undefined, starUnlocked: boolean): WalletStatus {
-  const config = getNftConfig();
+function serializeWalletStatus(
+  row: UserWallet | undefined,
+  starUnlocked: boolean,
+  config: Awaited<ReturnType<typeof getPublishedNftSummary>>,
+): WalletStatus {
   return {
     walletAddress: row?.walletAddress ?? null,
     chainId: row?.chainId ?? config.chainId,
@@ -108,23 +141,36 @@ export async function getWalletStatus(userId: string): Promise<WalletStatus> {
     .where(eq(userWalletsTable.userId, userId))
     .orderBy(desc(userWalletsTable.updatedAt))
     .limit(1);
-  const playMode = await ensurePlayModeState(userId);
-  return serializeWalletStatus(wallet, playMode.starUnlocked);
+  const [playMode, config] = await Promise.all([
+    ensurePlayModeState(userId),
+    getPublishedNftSummary(),
+  ]);
+  return serializeWalletStatus(wallet, playMode.starUnlocked, config);
 }
 
 export async function createWalletChallenge(params: {
   userId: string;
   walletAddress: string;
+  chainId?: number;
 }): Promise<WalletChallengeView> {
   const walletAddress = normalizeWalletAddress(params.walletAddress);
-  const config = getNftConfig();
+  const config = await getPublishedNftSummary();
+  const chainId = params.chainId ?? config.chainId ?? DEFAULT_CHAIN_ID;
+  if (!Number.isInteger(chainId) || chainId <= 0 || chainId > 2_147_483_647) {
+    throw new WalletVerificationError("invalid_wallet", "지원하지 않는 네트워크입니다.");
+  }
+  const context = getSignInContext();
+  const challengeId = randomUUID();
   const nonce = randomBytes(16).toString("hex");
   const issuedAt = new Date();
   const expiresAt = new Date(issuedAt.getTime() + CHALLENGE_TTL_MS);
   const message = buildChallengeMessage({
     walletAddress,
-    userId: params.userId,
+    requestId: challengeId,
     nonce,
+    domain: context.domain,
+    uri: context.uri,
+    chainId,
     issuedAt,
     expiresAt,
   });
@@ -132,8 +178,12 @@ export async function createWalletChallenge(params: {
   const [challenge] = await db
     .insert(walletVerificationChallengesTable)
     .values({
+      id: challengeId,
       userId: params.userId,
       walletAddress,
+      chainId,
+      domain: context.domain,
+      uri: context.uri,
       nonce,
       message,
       expiresAt,
@@ -148,16 +198,10 @@ export async function createWalletChallenge(params: {
     expiresAt: expiresAt.toISOString(),
     nftContractAddress: config.contractAddress,
     nftChainId: config.chainId,
+    chainId,
+    domain: context.domain,
+    uri: context.uri,
   };
-}
-
-async function syncStarUnlock(userId: string, unlock: boolean | null) {
-  await db.insert(userPlayModesTable).values({ userId }).onConflictDoNothing();
-  if (unlock === null) return;
-  await db
-    .update(userPlayModesTable)
-    .set({ starUnlocked: unlock, currentMode: unlock ? "star" : "fan" })
-    .where(eq(userPlayModesTable.userId, userId));
 }
 
 export async function verifyWalletChallenge(params: {
@@ -207,50 +251,61 @@ export async function verifyWalletChallenge(params: {
     throw new WalletVerificationError("wallet_claimed", "이미 다른 계정에 연결된 지갑이에요.");
   }
 
-  let nft;
+  let inventory;
   try {
-    nft = await checkNftBalance(walletAddress);
+    inventory = await listAddressNftInventory(walletAddress);
   } catch {
     throw new WalletVerificationError("nft_check_failed", "NFT 보유 여부를 확인하지 못했어요.");
   }
 
   const now = new Date();
-  const config = getNftConfig();
   await db.transaction(async (tx) => {
-    await tx
+    const consumed = await tx
+      .update(walletVerificationChallengesTable)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(walletVerificationChallengesTable.id, challenge.id),
+          isNull(walletVerificationChallengesTable.consumedAt),
+        ),
+      )
+      .returning({ id: walletVerificationChallengesTable.id });
+    if (consumed.length !== 1) {
+      throw new WalletVerificationError("challenge_not_found", "이미 사용된 인증 메시지예요. 다시 생성해 주세요.");
+    }
+
+    const linkedWallet = await tx
       .insert(userWalletsTable)
       .values({
         userId: params.userId,
         walletAddress,
-        chainId: config.chainId ?? 1,
+        chainId: challenge.chainId,
         verifiedAt: now,
-        nftVerifiedAt: nft.owns ? now : null,
+        nftVerifiedAt: inventory.hasEligibleNft ? now : null,
         lastCheckedAt: now,
       })
       .onConflictDoUpdate({
         target: userWalletsTable.walletAddress,
         set: {
           verifiedAt: now,
-          nftVerifiedAt: nft.owns ? now : null,
+          chainId: challenge.chainId,
+          nftVerifiedAt: inventory.hasEligibleNft ? now : null,
           lastCheckedAt: now,
           updatedAt: now,
         },
-      });
-
-    await tx
-      .update(walletVerificationChallengesTable)
-      .set({ consumedAt: now })
-      .where(eq(walletVerificationChallengesTable.id, challenge.id));
+      })
+      .returning({ userId: userWalletsTable.userId });
+    if (linkedWallet[0]?.userId !== params.userId) {
+      throw new WalletVerificationError("wallet_claimed", "이미 다른 계정에 연결된 지갑이에요.");
+    }
   });
-
-  await syncStarUnlock(params.userId, nft.configured ? nft.owns : null);
 
   return {
     ok: true,
     status: await getWalletStatus(params.userId),
-    nftOwned: nft.owns,
-    balance: nft.balance?.toString() ?? null,
-    configMissing: !nft.configured,
+    nftOwned: inventory.hasEligibleNft,
+    balance: String(inventory.totalOwned),
+    configMissing: inventory.configuredCollectionCount === 0,
   };
 }
 
@@ -265,9 +320,9 @@ export async function refreshWalletNft(userId: string): Promise<VerifyWalletResu
     throw new WalletVerificationError("challenge_not_found", "먼저 지갑을 인증해 주세요.");
   }
 
-  let nft;
+  let inventory;
   try {
-    nft = await checkNftBalance(normalizeWalletAddress(wallet.walletAddress));
+    inventory = await listAddressNftInventory(normalizeWalletAddress(wallet.walletAddress));
   } catch {
     throw new WalletVerificationError("nft_check_failed", "NFT 보유 여부를 확인하지 못했어요.");
   }
@@ -276,18 +331,16 @@ export async function refreshWalletNft(userId: string): Promise<VerifyWalletResu
   await db
     .update(userWalletsTable)
     .set({
-      nftVerifiedAt: nft.owns ? now : null,
+      nftVerifiedAt: inventory.hasEligibleNft ? now : null,
       lastCheckedAt: now,
       updatedAt: now,
     })
     .where(eq(userWalletsTable.id, wallet.id));
-  await syncStarUnlock(userId, nft.configured ? nft.owns : null);
-
   return {
     ok: true,
     status: await getWalletStatus(userId),
-    nftOwned: nft.owns,
-    balance: nft.balance?.toString() ?? null,
-    configMissing: !nft.configured,
+    nftOwned: inventory.hasEligibleNft,
+    balance: String(inventory.totalOwned),
+    configMissing: inventory.configuredCollectionCount === 0,
   };
 }

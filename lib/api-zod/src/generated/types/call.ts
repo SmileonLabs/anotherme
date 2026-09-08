@@ -10,6 +10,8 @@ import type { CallStatus } from './callStatus';
 
 export interface Call {
   id: string;
+  /** @nullable */
+  attemptId?: string | null;
   roomName: string;
   callerId: string;
   calleeId: string;

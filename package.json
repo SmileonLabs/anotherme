@@ -8,9 +8,15 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "openapi:check": "pnpm --filter @workspace/scripts run openapi:check"
+    "openapi:check": "pnpm --filter @workspace/scripts run openapi:check",
+    "security:tracked-files": "pnpm --filter @workspace/scripts run security:tracked-files"
   },
   "private": true,
+  "pnpm": {
+    "overrides": {
+      "ws@>=8.0.0 <8.21.0": "8.21.0"
+    }
+  },
   "devDependencies": {
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"

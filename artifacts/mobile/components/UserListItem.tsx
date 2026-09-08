@@ -8,6 +8,7 @@ interface UserListItemProps {
   name: string;
   subtitle?: string;
   avatarUri?: string | null;
+  characterType?: "fan" | "star" | "official_ai" | string | null;
   onPress?: () => void;
   rightElement?: React.ReactNode;
   showChevron?: boolean;
@@ -17,6 +18,7 @@ export function UserListItem({
   name,
   subtitle,
   avatarUri,
+  characterType = "fan",
   onPress,
   rightElement,
   showChevron = false,
@@ -30,7 +32,7 @@ export function UserListItem({
       ]}
       onPress={onPress}
     >
-      <Avatar uri={avatarUri} name={name} size={48} />
+      <Avatar uri={avatarUri} name={name} size={48} crop="face" characterType={characterType} />
       <View style={styles.info}>
         <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
           {name}

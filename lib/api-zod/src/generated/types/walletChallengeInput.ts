@@ -12,4 +12,9 @@ export interface WalletChallengeInput {
      * @maxLength 120
      */
   walletAddress: string;
+  /**
+     * @minimum 1
+     * @maximum 2147483647
+     */
+  chainId?: number;
 }

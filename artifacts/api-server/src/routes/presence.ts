@@ -1,10 +1,15 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod/v4";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, chatRoomMembersTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
 import { getPresenceStates, markPresence } from "../lib/presence";
 
 const router: IRouter = Router();
+const heartbeatSchema = z.object({
+  roomId: z.uuid().nullable().optional(),
+  platform: z.string().trim().min(1).max(32).nullable().optional(),
+}).strict();
 const MAX_QUERY_USERS = 50;
 
 function parseIds(raw: unknown): string[] {
@@ -15,9 +20,13 @@ function parseIds(raw: unknown): string[] {
 
 router.post("/presence/heartbeat", requireAuth, async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
-  const body = req.body as { roomId?: unknown; platform?: unknown };
-  const roomId = typeof body.roomId === "string" && body.roomId.trim() ? body.roomId.trim() : null;
-  const platform = typeof body.platform === "string" && body.platform.trim() ? body.platform.trim() : null;
+  const parsed = heartbeatSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid presence heartbeat" });
+    return;
+  }
+  const roomId = parsed.data.roomId ?? null;
+  const platform = parsed.data.platform ?? null;
 
   await markPresence(userId, { roomId, platform });
   res.sendStatus(204);

@@ -14,32 +14,44 @@ export interface FanProfileState {
   };
 }
 
+export interface StarProfileState {
+  id: string;
+  starKey: string;
+  displayName: string;
+  tokenId: string;
+  contractAddress: string;
+  chainId: number;
+  collectionId: string | null;
+  category: string;
+  ownershipStatus: string;
+  currentEvolutionStage: string;
+  metadata: Record<string, unknown> | null;
+  imageUrl: string | null;
+  stage: "aspiring" | "promoted";
+  level: number;
+  xp: number;
+  stats: {
+    charm: number;
+    stagePresence: number;
+    bond: number;
+    lore: number;
+  };
+  equippedAt: string | null;
+  verifiedAt: string | null;
+  torimiaOpenedAt: string | null;
+  promotedAt: string | null;
+}
+
 export interface PlayModeState {
   currentMode: PlayMode;
   starUnlocked: boolean;
   fanProfile: FanProfileState;
-  equippedStar: {
-    id: string;
-    starKey: string;
-    displayName: string;
-    tokenId: string;
-    contractAddress: string;
-    chainId: number;
-    imageUrl: string | null;
-    stage: "aspiring" | "promoted";
-    level: number;
-    xp: number;
-    stats: {
-      charm: number;
-      stagePresence: number;
-      bond: number;
-      lore: number;
-    };
-    equippedAt: string | null;
-    verifiedAt: string | null;
-    torimiaOpenedAt: string | null;
-    promotedAt: string | null;
-  } | null;
+  social: {
+    followerCount: number;
+    followingCount: number;
+  };
+  equippedStar: StarProfileState | null;
+  starProfiles: StarProfileState[];
 }
 
 export const playModeQueryKey = ["play-mode"] as const;
@@ -64,15 +76,28 @@ export function usePlayMode() {
     onSuccess: (data) => queryClient.setQueryData(playModeQueryKey, data),
   });
 
+  const activateStarMutation = useMutation({
+    mutationFn: (starProfileId: string) =>
+      customFetch<{ state: PlayModeState }>(`/api/users/me/star-profiles/${starProfileId}/activate`, {
+        method: "POST",
+        responseType: "json",
+      }),
+    onSuccess: ({ state }) => queryClient.setQueryData(playModeQueryKey, state),
+  });
+
   return {
     state: query.data,
     mode: query.data?.currentMode ?? "fan",
     fanProfile: query.data?.fanProfile,
+    social: query.data?.social ?? { followerCount: 0, followingCount: 0 },
     equippedStar: query.data?.equippedStar ?? null,
+    starProfiles: query.data?.starProfiles ?? [],
     starUnlocked: query.data?.starUnlocked ?? false,
     isLoading: query.isLoading,
     isChanging: mutation.isPending,
     refetch: query.refetch,
     setMode: mutation.mutateAsync,
+    activateStar: activateStarMutation.mutateAsync,
+    isActivatingStar: activateStarMutation.isPending,
   };
 }

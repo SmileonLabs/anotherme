@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>anotherme 메신저 서버 구성 제안서</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a32;
+      --panel-2: #18223f;
+      --ink: #eef4ff;
+      --muted: #a8b5d1;
+      --line: #2d3a61;
+      --blue: #66a6ff;
+      --green: #4ade80;
+      --yellow: #facc15;
+      --red: #fb7185;
+      --purple: #c084fc;
+      --cyan: #22d3ee;
+      --orange: #fb923c;
+      --card-radius: 22px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 5%, rgba(102, 166, 255, 0.22), transparent 34rem),
+        radial-gradient(circle at 85% 10%, rgba(192, 132, 252, 0.18), transparent 30rem),
+        linear-gradient(180deg, #081023 0%, #0b1020 42%, #0a0f1e 100%);
+      color: var(--ink);
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.62;
+    }
+
+    a { color: var(--cyan); }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 28px;
+    }
+
+    .hero-main,
+    .hero-side,
+    .section,
+    .mini-card,
+    .server-box,
+    .table-wrap {
+      background: linear-gradient(180deg, rgba(24, 34, 63, 0.92), rgba(18, 26, 50, 0.92));
+      border: 1px solid rgba(168, 181, 209, 0.16);
+      border-radius: var(--card-radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-main { padding: 34px; }
+    .hero-side { padding: 28px; }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: #bbd7ff;
+      background: rgba(102, 166, 255, 0.12);
+      border: 1px solid rgba(102, 166, 255, 0.28);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 18px 0 14px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.05;
+      letter-spacing: -0.05em;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.18;
+      letter-spacing: -0.035em;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+    }
+
+    p { margin: 0 0 12px; }
+
+    .lead {
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 800px;
+    }
+
+    .hero-side .big-number {
+      display: block;
+      font-size: 52px;
+      font-weight: 900;
+      letter-spacing: -0.06em;
+      color: var(--green);
+      line-height: 1;
+    }
+
+    .side-row {
+      padding: 16px 0;
+      border-bottom: 1px solid rgba(168, 181, 209, 0.14);
+    }
+
+    .side-row:last-child { border-bottom: 0; }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+    .strong { color: #fff; font-weight: 800; }
+
+    .section {
+      padding: 30px;
+      margin: 24px 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .mini-card {
+      padding: 20px;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .badge.blue { color: #cfe5ff; background: rgba(102, 166, 255, 0.18); }
+    .badge.green { color: #ccffdc; background: rgba(74, 222, 128, 0.16); }
+    .badge.yellow { color: #fff4b0; background: rgba(250, 204, 21, 0.16); }
+    .badge.red { color: #ffd6df; background: rgba(251, 113, 133, 0.16); }
+    .badge.purple { color: #ead9ff; background: rgba(192, 132, 252, 0.16); }
+    .badge.cyan { color: #cffafe; background: rgba(34, 211, 238, 0.16); }
+
+    .diagram {
+      background: rgba(4, 9, 22, 0.62);
+      border: 1px solid rgba(168, 181, 209, 0.14);
+      border-radius: 24px;
+      padding: 22px;
+      overflow-x: auto;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 170px 40px 190px 40px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-width: 820px;
+    }
+
+    .arrow {
+      color: var(--cyan);
+      text-align: center;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .node {
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      border: 1px solid rgba(168, 181, 209, 0.22);
+      border-radius: 18px;
+      padding: 16px;
+      min-height: 98px;
+    }
+
+    .node .title {
+      display: block;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .node .desc {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .server-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 14px;
+      min-width: 900px;
+    }
+
+    .server-box {
+      padding: 16px;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.04);
+      min-height: 150px;
+    }
+
+    .server-box.app { border-color: rgba(102, 166, 255, 0.42); }
+    .server-box.db { border-color: rgba(74, 222, 128, 0.42); }
+    .server-box.redis { border-color: rgba(251, 146, 60, 0.42); }
+    .server-box.media { border-color: rgba(192, 132, 252, 0.42); }
+    .server-box.external { border-color: rgba(34, 211, 238, 0.36); }
+
+    .server-box .count {
+      float: right;
+      display: inline-flex;
+      min-width: 34px;
+      height: 34px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      font-weight: 900;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    ul.clean {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+    }
+
+    ul.clean li {
+      display: flex;
+      gap: 8px;
+      margin: 7px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    ul.clean li::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      flex: 0 0 7px;
+      margin-top: 9px;
+    }
+
+    .table-wrap {
+      overflow: hidden;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(168, 181, 209, 0.13);
+    }
+
+    th {
+      color: #dce9ff;
+      background: rgba(102, 166, 255, 0.12);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    td { color: var(--muted); }
+    td:first-child { color: #fff; font-weight: 800; }
+    tr:last-child td { border-bottom: 0; }
+
+    .sequence {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 10px;
+      min-width: 860px;
+      align-items: stretch;
+    }
+
+    .step {
+      position: relative;
+      padding: 18px 16px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(168, 181, 209, 0.14);
+      border-radius: 18px;
+    }
+
+    .step::after {
+      content: "→";
+      position: absolute;
+      right: -18px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--cyan);
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .step:last-child::after { content: ""; }
+
+    .step .num {
+      display: inline-flex;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(34, 211, 238, 0.18);
+      color: #ccfbff;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .choice {
+      padding: 20px;
+      border-radius: 20px;
+      border: 1px solid rgba(168, 181, 209, 0.16);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .choice.recommended {
+      border-color: rgba(74, 222, 128, 0.45);
+      background: linear-gradient(180deg, rgba(74, 222, 128, 0.12), rgba(255, 255, 255, 0.035));
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    .phase {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(168, 181, 209, 0.14);
+    }
+
+    .phase .label {
+      display: inline-block;
+      color: #0b1020;
+      background: var(--yellow);
+      font-weight: 900;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .print-note {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 880px) {
+      .hero,
+      .grid-2,
+      .grid-3,
+      .decision,
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .section { padding: 22px; }
+      .hero-main, .hero-side { padding: 24px; }
+    }
+
+    @media print {
+      body { background: #fff; color: #111827; }
+      .hero-main, .hero-side, .section, .mini-card, .server-box, .table-wrap, .diagram {
+        background: #fff !important;
+        color: #111827;
+        border-color: #d1d5db;
+        box-shadow: none;
+      }
+      .muted, td, .node .desc, ul.clean li { color: #4b5563; }
+      .node .title, td:first-child, h1, h2, h3, .strong { color: #111827; }
+      .page { width: 100%; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-main">
+        <span class="eyebrow">anotherme 메신저 서버 구성 제안서</span>
+        <h1>텍스트 채팅, 보이스톡, 영상통화를 안정적으로 운영하는 서버 그림</h1>
+        <p class="lead">
+          개발자가 아니어도 이해할 수 있도록 “물리 서버가 몇 대인지”, “각 서버 안에서 어떤 논리 서버가 도는지”, “메시지와 통화가 어떤 길로 흐르는지”를 그림 중심으로 정리했습니다.
+        </p>
+      </div>
+      <aside class="hero-side">
+        <div class="side-row">
+          <span class="big-number">4대</span>
+          <p class="strong">초기 권장 핵심 서버 수</p>
+          <p class="muted small">앱 서버 2대 + PostgreSQL 1대 + Redis 1대. LiveKit/스토리지는 외부 관리형 서비스를 쓰는 기준입니다.</p>
+        </div>
+        <div class="side-row">
+          <p class="strong">현재 소스 상태</p>
+          <p class="muted small">텍스트 채팅은 폴링 방식, 보이스톡은 LiveKit 기반 골격 있음, 영상통화는 아직 미구현입니다.</p>
+        </div>
+        <div class="side-row">
+          <p class="strong">가장 먼저 할 일</p>
+          <p class="muted small">폴링을 WebSocket/SSE 실시간 이벤트로 바꾸고, 타이핑/온라인 상태를 Redis로 옮기는 것입니다.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section">
+      <h2>1. 한 문장 요약</h2>
+      <div class="grid-3">
+        <div class="mini-card">
+          <span class="badge blue">텍스트 채팅</span>
+          <h3>현재는 3~5초마다 새로고침</h3>
+          <p class="muted">사용자가 많아지면 데이터베이스 조회가 많이 늘어납니다. 실시간 소켓으로 바꾸면 카카오톡처럼 바로 도착합니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge green">보이스톡</span>
+          <h3>LiveKit 구조는 방향이 맞음</h3>
+          <p class="muted">API 서버는 통화 시작/종료와 토큰만 관리하고, 실제 음성 데이터는 LiveKit 서버가 처리합니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge yellow">영상통화</span>
+          <h3>아직 기능 추가 필요</h3>
+          <p class="muted">LiveKit을 그대로 확장하면 되지만, 앱에 카메라 권한, 영상 화면, video 타입 처리가 추가되어야 합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2. 물리 서버와 논리 서버의 차이</h2>
+      <div class="grid-2">
+        <div class="mini-card">
+          <span class="badge purple">물리 서버</span>
+          <h3>실제로 돈을 내고 띄우는 서버</h3>
+          <p class="muted">클라우드 VM, 컨테이너 인스턴스, 관리형 데이터베이스, 관리형 Redis처럼 실제 운영 자원이 여기에 해당합니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge cyan">논리 서버</span>
+          <h3>서버 안에서 맡는 역할</h3>
+          <p class="muted">API 서버, 실시간 서버, 푸시 작업자, 통화 토큰 발급기처럼 “기능 역할”입니다. 초기에는 한 물리 서버 안에 여러 논리 서버를 같이 둘 수 있습니다.</p>
+        </div>
+      </div>
+      <div class="diagram" style="margin-top:16px;">
+        <div class="flow">
+          <div class="node">
+            <span class="title">물리 서버 1대</span>
+            <span class="desc">예: App Server A</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="title">안에 들어가는 역할</span>
+            <span class="desc">API + 실시간 연결 + 푸시 작업</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="title">사용자 입장</span>
+            <span class="desc">로그인, 채팅 보내기, 읽음 표시, 통화 요청을 처리해 줍니다.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>3. 초기 운영 추천 구성: 핵심 4대 + 외부 서비스</h2>
+      <p class="muted">사용자가 많지 않은 초기 서비스라면, 직접 운영해야 할 핵심 서버는 4대 정도가 현실적입니다. LiveKit, 파일 저장소, 인증, 푸시는 관리형 서비스를 쓰는 편이 안전합니다.</p>
+      <div class="diagram">
+        <div class="server-row">
+          <div class="server-box app">
+            <span class="count">2</span>
+            <h3>App Server</h3>
+            <p class="muted small">API 서버 + 실시간 연결 + 푸시 작업자</p>
+            <ul class="clean">
+              <li>한 대가 죽어도 다른 한 대가 처리</li>
+              <li>채팅/친구/방/통화 상태 API</li>
+              <li>WebSocket 또는 SSE 연결</li>
+            </ul>
+          </div>
+          <div class="server-box db">
+            <span class="count">1</span>
+            <h3>PostgreSQL</h3>
+            <p class="muted small">영구 저장소</p>
+            <ul class="clean">
+              <li>회원, 채팅방, 메시지</li>
+              <li>읽음 위치, 통화 이력</li>
+              <li>자동 백업 필수</li>
+            </ul>
+          </div>
+          <div class="server-box redis">
+            <span class="count">1</span>
+            <h3>Redis</h3>
+            <p class="muted small">짧게 살아있는 실시간 상태</p>
+            <ul class="clean">
+              <li>타이핑 중</li>
+              <li>온라인 상태</li>
+              <li>서버 간 메시지 전달</li>
+            </ul>
+          </div>
+          <div class="server-box media">
+            <span class="count">외부</span>
+            <h3>LiveKit Cloud</h3>
+            <p class="muted small">음성/영상 미디어 서버</p>
+            <ul class="clean">
+              <li>보이스톡 음성 데이터 처리</li>
+              <li>영상통화 확장 가능</li>
+              <li>직접 운영 부담 감소</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:16px; overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>물리 서버 수</th>
+              <th>안에서 도는 논리 서버</th>
+              <th>역할</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>App Server</td>
+              <td>2대</td>
+              <td>API, Realtime Gateway, Push Worker</td>
+              <td>채팅 API, 실시간 이벤트, 통화 상태 처리, 푸시 발송 예약</td>
+            </tr>
+            <tr>
+              <td>PostgreSQL</td>
+              <td>1대</td>
+              <td>DB Primary</td>
+              <td>메시지, 방, 회원, 통화 이력 저장</td>
+            </tr>
+            <tr>
+              <td>Redis</td>
+              <td>1대</td>
+              <td>Pub/Sub, Cache, Presence Store</td>
+              <td>타이핑/온라인 상태, 서버 간 실시간 이벤트 전달</td>
+            </tr>
+            <tr>
+              <td>LiveKit</td>
+              <td>0대 직접 운영</td>
+              <td>외부 LiveKit Cloud</td>
+              <td>보이스톡/영상통화 미디어 처리</td>
+            </tr>
+            <tr>
+              <td>Object Storage</td>
+              <td>0대 직접 운영</td>
+              <td>S3/R2/GCS</td>
+              <td>사진, 파일 첨부 저장</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>4. 초기 구성 그림</h2>
+      <div class="diagram">
+        <div class="flow">
+          <div class="node">
+            <span class="title">사용자 앱</span>
+            <span class="desc">모바일 앱 / 웹 PWA</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="title">로드밸런서</span>
+            <span class="desc">트래픽을 App Server A/B로 분산</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="title">App Server A/B</span>
+            <span class="desc">로그인 확인, 채팅 API, 실시간 이벤트, 통화 상태 관리</span>
+          </div>
+        </div>
+        <div class="server-row" style="margin-top:18px; grid-template-columns: repeat(5, minmax(150px, 1fr)); min-width:900px;">
+          <div class="server-box db">
+            <h3>PostgreSQL</h3>
+            <p class="muted small">영구 데이터</p>
+          </div>
+          <div class="server-box redis">
+            <h3>Redis</h3>
+            <p class="muted small">실시간 상태</p>
+          </div>
+          <div class="server-box media">
+            <h3>LiveKit</h3>
+            <p class="muted small">음성/영상</p>
+          </div>
+          <div class="server-box external">
+            <h3>Storage</h3>
+            <p class="muted small">사진/파일</p>
+          </div>
+          <div class="server-box external">
+            <h3>FCM/Web Push</h3>
+            <p class="muted small">알림/수신전화</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>5. 메시지가 이동하는 길</h2>
+      <p class="muted">비유하면, PostgreSQL은 “기록장”, Redis는 “무전기”, WebSocket은 “열려 있는 전화선”, Push는 “앱을 깨우는 초인종”입니다.</p>
+      <div class="diagram">
+        <div class="sequence">
+          <div class="step">
+            <span class="num">1</span>
+            <h3>메시지 작성</h3>
+            <p class="muted small">사용자가 앱에서 메시지를 보냅니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">2</span>
+            <h3>API 서버 확인</h3>
+            <p class="muted small">로그인 사용자와 채팅방 권한을 확인합니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">3</span>
+            <h3>DB 저장</h3>
+            <p class="muted small">PostgreSQL에 메시지를 영구 저장합니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">4</span>
+            <h3>실시간 전달</h3>
+            <p class="muted small">Redis를 통해 다른 App Server에도 알려줍니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">5</span>
+            <h3>상대방 수신</h3>
+            <p class="muted small">온라인이면 즉시 표시, 오프라인이면 푸시 알림을 보냅니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>6. 보이스톡/영상통화가 이동하는 길</h2>
+      <div class="diagram">
+        <div class="sequence">
+          <div class="step">
+            <span class="num">1</span>
+            <h3>전화 걸기</h3>
+            <p class="muted small">앱이 API 서버에 통화 생성을 요청합니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">2</span>
+            <h3>통화방 생성</h3>
+            <p class="muted small">서버가 calls 테이블에 ringing 상태를 저장합니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">3</span>
+            <h3>수신 알림</h3>
+            <p class="muted small">FCM/Web Push로 상대방 앱을 깨웁니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">4</span>
+            <h3>LiveKit 접속</h3>
+            <p class="muted small">양쪽 앱이 LiveKit에 접속합니다.</p>
+          </div>
+          <div class="step">
+            <span class="num">5</span>
+            <h3>미디어 전송</h3>
+            <p class="muted small">음성/영상 데이터는 API 서버가 아니라 LiveKit이 처리합니다.</p>
+          </div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="mini-card">
+          <span class="badge green">보이스톡</span>
+          <h3>현재 코드에 골격 있음</h3>
+          <p class="muted">LiveKit 토큰 발급, 통화 수락/거절/종료, 수신 전화 푸시까지 기본 구조가 있습니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge yellow">영상통화</span>
+          <h3>LiveKit으로 확장 가능</h3>
+          <p class="muted">서버는 call kind를 voice/video로 구분하고, 앱은 카메라 권한과 영상 화면을 추가하면 됩니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>7. 성장형 구성: DAU 1만 전후</h2>
+      <p class="muted">사용자가 늘면 “한 서버 안에 여러 역할”을 넣지 말고 역할별로 분리합니다. 장애 범위가 작아지고 증설도 쉬워집니다.</p>
+      <div class="diagram">
+        <div class="server-row">
+          <div class="server-box app">
+            <span class="count">3</span>
+            <h3>API Server</h3>
+            <p class="muted small">REST API 전담</p>
+            <ul class="clean">
+              <li>채팅방/친구/프로필</li>
+              <li>메시지 저장</li>
+              <li>통화 상태 API</li>
+            </ul>
+          </div>
+          <div class="server-box app">
+            <span class="count">3</span>
+            <h3>Realtime Server</h3>
+            <p class="muted small">WebSocket/SSE 전담</p>
+            <ul class="clean">
+              <li>메시지 즉시 수신</li>
+              <li>읽음/타이핑</li>
+              <li>온라인 상태</li>
+            </ul>
+          </div>
+          <div class="server-box redis">
+            <span class="count">2</span>
+            <h3>Worker Server</h3>
+            <p class="muted small">백그라운드 작업</p>
+            <ul class="clean">
+              <li>푸시 발송</li>
+              <li>이미지 후처리</li>
+              <li>AI/성장RPG 작업 분리</li>
+            </ul>
+          </div>
+          <div class="server-box db">
+            <span class="count">2</span>
+            <h3>PostgreSQL</h3>
+            <p class="muted small">Primary + Read Replica</p>
+            <ul class="clean">
+              <li>쓰기 1대</li>
+              <li>읽기 복제 1대</li>
+              <li>자동 백업/복구</li>
+            </ul>
+          </div>
+        </div>
+        <div class="server-row" style="margin-top:14px; grid-template-columns: repeat(4, minmax(180px, 1fr)); min-width:900px;">
+          <div class="server-box redis">
+            <span class="count">2</span>
+            <h3>Redis HA</h3>
+            <p class="muted small">고가용성 Redis</p>
+          </div>
+          <div class="server-box media">
+            <span class="count">외부</span>
+            <h3>LiveKit Cloud</h3>
+            <p class="muted small">미디어 서버는 관리형 권장</p>
+          </div>
+          <div class="server-box external">
+            <span class="count">외부</span>
+            <h3>CDN + Storage</h3>
+            <p class="muted small">파일 다운로드 속도 개선</p>
+          </div>
+          <div class="server-box external">
+            <span class="count">외부</span>
+            <h3>Monitoring</h3>
+            <p class="muted small">Sentry, Grafana, 로그 수집</p>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:16px; overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>성장형 서버</th>
+              <th>권장 수량</th>
+              <th>왜 필요한가</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>API Server</td>
+              <td>3대</td>
+              <td>한 대 장애에도 서비스 유지, 일반 API 요청 분산</td>
+            </tr>
+            <tr>
+              <td>Realtime Server</td>
+              <td>3대</td>
+              <td>수천~수만 개 WebSocket 연결을 안정적으로 유지</td>
+            </tr>
+            <tr>
+              <td>Worker Server</td>
+              <td>2대</td>
+              <td>푸시, AI, 파일 후처리를 사용자 요청과 분리</td>
+            </tr>
+            <tr>
+              <td>PostgreSQL</td>
+              <td>2대</td>
+              <td>Primary + 읽기 복제본으로 조회 부하 분산</td>
+            </tr>
+            <tr>
+              <td>Redis</td>
+              <td>2대</td>
+              <td>실시간 상태와 Pub/Sub 장애 대응</td>
+            </tr>
+            <tr>
+              <td>합계</td>
+              <td>12대 수준</td>
+              <td>LiveKit Cloud/Storage/인증/푸시는 외부 관리형 기준</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>8. LiveKit을 직접 운영한다면?</h2>
+      <div class="decision">
+        <div class="choice recommended">
+          <span class="badge green">추천</span>
+          <h3>LiveKit Cloud 사용</h3>
+          <p class="muted">초기에는 직접 미디어 서버를 운영하지 않는 편이 좋습니다. 음성/영상 품질, NAT, TURN, 지역 라우팅, 장애 대응을 직접 처리하지 않아도 됩니다.</p>
+          <p class="strong">직접 운영 미디어 서버 수: 0대</p>
+        </div>
+        <div class="choice">
+          <span class="badge yellow">대안</span>
+          <h3>LiveKit 자체 구축</h3>
+          <p class="muted">규모가 커지고 비용 최적화가 필요할 때 검토합니다. 처음부터 직접 운영하면 운영 난이도가 올라갑니다.</p>
+          <p class="strong">추가 서버: LiveKit SFU 2대 + TURN 1대 이상</p>
+        </div>
+      </div>
+      <div class="diagram" style="margin-top:16px;">
+        <div class="server-row" style="grid-template-columns: repeat(3, minmax(220px, 1fr)); min-width:760px;">
+          <div class="server-box media">
+            <span class="count">2+</span>
+            <h3>LiveKit SFU</h3>
+            <p class="muted small">음성/영상 스트림 중계. 한 대 장애에 대비해 최소 2대 권장.</p>
+          </div>
+          <div class="server-box media">
+            <span class="count">1+</span>
+            <h3>TURN Server</h3>
+            <p class="muted small">회사망, 통신사망, 방화벽 환경에서 통화 연결을 도와주는 우회 서버.</p>
+          </div>
+          <div class="server-box redis">
+            <span class="count">1~2</span>
+            <h3>LiveKit Redis</h3>
+            <p class="muted small">LiveKit 여러 대를 묶을 때 필요한 상태 공유. 기존 Redis와 분리 권장.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>9. 현재 코드에서 위험한 지점</h2>
+      <div class="grid-2">
+        <div class="mini-card">
+          <span class="badge red">위험 1</span>
+          <h3>폴링이 많음</h3>
+          <p class="muted">채팅방 목록 5초, 메시지 3초, 타이핑 2초, 수신전화 3초마다 서버를 계속 두드립니다. 사용자가 늘면 DB 부하가 먼저 커집니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge red">위험 2</span>
+          <h3>타이핑 상태가 서버 메모리</h3>
+          <p class="muted">App Server가 2대 이상이면 A 서버에서 입력한 타이핑 상태를 B 서버 사용자가 못 볼 수 있습니다. Redis로 옮겨야 합니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge yellow">주의 3</span>
+          <h3>영상통화는 미구현</h3>
+          <p class="muted">서버 토큰은 확장 가능하지만, 앱 화면과 카메라 publish 로직이 없습니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge yellow">주의 4</span>
+          <h3>외부 비밀키 필요</h3>
+          <p class="muted">Clerk, LiveKit, Firebase, VAPID, Object Storage 환경 변수가 없으면 실제 운영 기능이 제한됩니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>10. 단계별 실행 계획</h2>
+      <div class="timeline">
+        <div class="phase">
+          <span class="label">1단계</span>
+          <h3>현재 구조 안정화</h3>
+          <p class="muted small">DB 백업, 환경 변수, LiveKit Cloud, FCM, VAPID 설정을 완료합니다.</p>
+        </div>
+        <div class="phase">
+          <span class="label">2단계</span>
+          <h3>실시간 채팅 도입</h3>
+          <p class="muted small">WebSocket/SSE와 Redis Pub/Sub을 추가해 메시지/읽음/타이핑을 즉시 전달합니다.</p>
+        </div>
+        <div class="phase">
+          <span class="label">3단계</span>
+          <h3>보이스톡 품질 개선</h3>
+          <p class="muted small">통화 상태도 실시간 이벤트로 바꾸고, 통화 실패/끊김/재연결 로그를 수집합니다.</p>
+        </div>
+        <div class="phase">
+          <span class="label">4단계</span>
+          <h3>영상통화 확장</h3>
+          <p class="muted small">call kind, 카메라 권한, 영상 UI, LiveKit video track 처리를 추가합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>11. 최종 추천</h2>
+      <div class="grid-2">
+        <div class="mini-card">
+          <span class="badge green">초기 런칭</span>
+          <h3>핵심 4대 구성</h3>
+          <p class="muted">App Server 2대, PostgreSQL 1대, Redis 1대. LiveKit/Storage/Clerk/FCM은 관리형 서비스를 사용합니다.</p>
+        </div>
+        <div class="mini-card">
+          <span class="badge blue">원활한 메신저</span>
+          <h3>실시간 계층이 핵심</h3>
+          <p class="muted">서버를 많이 늘리는 것보다 먼저 폴링을 줄이고 WebSocket/SSE + Redis 구조를 넣는 것이 체감 품질과 비용에 가장 크게 기여합니다.</p>
+        </div>
+      </div>
+      <p class="print-note">이 문서는 단일 HTML 파일입니다. 브라우저에서 열고 인쇄하면 제안서 형태로 공유할 수 있습니다.</p>
+    </section>
+  </main>
+</body>
+</html>

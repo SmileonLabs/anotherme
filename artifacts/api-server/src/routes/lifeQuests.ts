@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { db, nftCollectionsTable } from "@workspace/db";
 import {
   lifeQuestsTable,
   type LifeQuest,
@@ -8,10 +8,12 @@ import {
   type StarStats,
 } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 import { generateLifeQuestScenario, normalizeTheme } from "../lib/lifeQuest";
 import { ensurePlayModeState, type PlayModeState } from "../lib/fanStar";
 import { getTorimiaState, type TorimiaState } from "../lib/torimia";
-import { recordStarActivity } from "../lib/starProfiles";
+import { ensureActiveStarOwnership, recordStarActivity, StarProfileError } from "../lib/starProfiles";
+import { normalizeNftRpgMissions } from "../lib/nftRpgContent";
 
 const router: IRouter = Router();
 
@@ -53,6 +55,22 @@ async function requireStarMissionAccess(userId: string): Promise<StarMissionAcce
       state,
     };
   }
+  try {
+    await ensureActiveStarOwnership({
+      userId,
+      starProfileId: state.equippedStar.id,
+    });
+  } catch (error) {
+    const refreshed = await ensurePlayModeState(userId);
+    const unavailable = error instanceof StarProfileError && error.code === "nft_check_failed";
+    return {
+      ok: false,
+      status: unavailable ? 503 : 409,
+      error: unavailable ? "NFT_OWNERSHIP_CHECK_FAILED" : "NFT_OWNERSHIP_REQUIRED",
+      message: error instanceof Error ? error.message : "NFT 소유권을 다시 확인해 주세요.",
+      state: refreshed,
+    };
+  }
   return { ok: true, state, torimia: await getTorimiaState(userId) };
 }
 
@@ -81,7 +99,7 @@ function cleanStarStats(stats: Record<string, number>): Partial<StarStats> {
 // Start a new Life Quest. The AI authors the ENTIRE scenario in one call here;
 // the rest of the run never calls AI. Generation failures persist nothing and
 // surface a 502 so the client can retry.
-router.post("/life-quests", requireAuth, async (req, res): Promise<void> => {
+router.post("/life-quests", requireAuth, rateLimit({ name: "create-life-quest", limit: 20, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   const userId = req.dbUser!.id;
   const access = await requireStarMissionAccess(userId);
   if (!access.ok) {
@@ -91,12 +109,23 @@ router.post("/life-quests", requireAuth, async (req, res): Promise<void> => {
 
   const { theme: rawTheme } = (req.body ?? {}) as { theme?: string | null };
   const theme = normalizeTheme(rawTheme);
+  const collectionId = access.state.equippedStar!.collectionId;
+  const [collection] = collectionId
+    ? await db.select().from(nftCollectionsTable)
+      .where(and(eq(nftCollectionsTable.id, collectionId), eq(nftCollectionsTable.status, "published")))
+      .limit(1)
+    : [];
 
   let scenario;
   try {
     scenario = await generateLifeQuestScenario(theme, req.log, {
       starName: access.state.equippedStar?.displayName,
       promoted: access.torimia.promoted,
+      ipName: collection?.ipName,
+      category: collection?.category ?? access.state.equippedStar?.category,
+      roleName: collection?.roleName,
+      worldStyle: collection?.worldStyle,
+      missions: collection ? normalizeNftRpgMissions(collection) : [],
     });
   } catch (err) {
     req.log.error({ err, theme }, "Life Quest generation failed");
@@ -269,6 +298,7 @@ router.post("/life-quests/:id/choose", requireAuth, async (req, res): Promise<vo
   const actionStats = cleanStarStats(outcome.statChanges);
   const actionGranted = await recordStarActivity({
     userId,
+    starProfileId: access.state.equippedStar!.id,
     eventType: "star_mission_action",
     sourceKey: `star_mission_action:${id}:${stageNumber}:${userId}`,
     xp: XP_PER_CHOICE,
@@ -281,6 +311,7 @@ router.post("/life-quests/:id/choose", requireAuth, async (req, res): Promise<vo
   if (outcome.completed) {
     const completeGranted = await recordStarActivity({
       userId,
+      starProfileId: access.state.equippedStar!.id,
       eventType: "star_mission_complete",
       sourceKey: `star_mission_complete:${id}:${userId}`,
       xp: XP_ON_COMPLETE,
@@ -330,6 +361,7 @@ router.post("/life-quests/:id/abandon", requireAuth, async (req, res): Promise<v
 
   await recordStarActivity({
     userId,
+    starProfileId: access.state.equippedStar!.id,
     eventType: "star_mission_abandon",
     sourceKey: `star_mission_abandon:${id}:${userId}`,
     xp: XP_ON_ABANDON,

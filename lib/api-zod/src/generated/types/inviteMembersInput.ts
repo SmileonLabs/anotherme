@@ -7,5 +7,9 @@
  */
 
 export interface InviteMembersInput {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
   memberIds: string[];
 }

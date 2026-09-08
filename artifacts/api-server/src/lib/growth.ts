@@ -1,10 +1,13 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import type { Logger } from "pino";
 import { db } from "@workspace/db";
 import {
   DEFAULT_FAN_STATS,
   DEFAULT_PERSONA_STATS,
   fanProfilesTable,
+  fanCharacterProfilesTable,
+  characterGrowthEventsTable,
+  characterProfilesTable,
   personasTable,
   xpEventsTable,
   type FanStats,
@@ -16,6 +19,7 @@ import {
 } from "@workspace/db";
 import { logger as defaultLogger } from "./logger";
 import { awardClanExp, clanExpForGrowth, CLAN_BASE_RATE } from "./clanGrowth";
+import { ensureCharacterProfileState } from "./characterProfiles";
 
 /**
  * Internal grant kinds. These are finer-grained than the stored `eventType`
@@ -88,14 +92,14 @@ const GROWTH_RULES: Record<GrowthKind, GrowthRule> = {
     eventType: "dungeon_action",
     xp: 4,
     stats: {},
-    reason: "던전 모험",
+    reason: "성장RPG 모험",
   },
   dungeon_goal: {
     sourceType: "dungeon",
     eventType: "dungeon_result",
     xp: 20,
     stats: {},
-    reason: "던전 목표 달성",
+    reason: "성장RPG 목표 달성",
   },
 };
 
@@ -224,6 +228,10 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
   try {
     const rule = GROWTH_RULES[kind];
     if (!rule) return;
+    const fanGrowthRule = FAN_BATTLE_RESULT_RULES[kind];
+    const fanCharacterProfileId = fanGrowthRule
+      ? (await ensureCharacterProfileState(userId)).profiles.find((profile) => profile.type === "fan")?.id ?? null
+      : null;
 
     // Make sure the persona exists before we try to lock it.
     const ensured = await ensurePersona(userId);
@@ -276,8 +284,7 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
         .set({ xp: afterExp, stats: newStats, level: afterLevel })
         .where(eq(personasTable.userId, userId));
 
-      const fanRule = FAN_BATTLE_RESULT_RULES[kind];
-      if (fanRule) {
+      if (fanGrowthRule) {
         await tx.insert(fanProfilesTable).values({ userId }).onConflictDoNothing();
         const [fanProfile] = await tx
           .select()
@@ -286,9 +293,9 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
           .for("update");
 
         if (fanProfile) {
-          const fanXp = fanProfile.xp + fanRule.xp;
+          const fanXp = fanProfile.xp + fanGrowthRule.xp;
           const fanStats: FanStats = { ...DEFAULT_FAN_STATS, ...fanProfile.stats };
-          for (const [key, delta] of Object.entries(fanRule.stats)) {
+          for (const [key, delta] of Object.entries(fanGrowthRule.stats)) {
             const k = key as keyof FanStats;
             fanStats[k] = (fanStats[k] ?? 0) + (delta ?? 0);
           }
@@ -297,6 +304,33 @@ export async function recordActivity(params: RecordActivityParams): Promise<void
             .update(fanProfilesTable)
             .set({ xp: fanXp, stats: fanStats, level: computeLevel(fanXp) })
             .where(eq(fanProfilesTable.userId, userId));
+          if (fanCharacterProfileId) {
+            await tx
+              .insert(characterGrowthEventsTable)
+              .values({
+                profileId: fanCharacterProfileId,
+                ownerUserId: userId,
+                sourceKey: `fan:${sourceKey}`,
+                eventType: rule.eventType,
+                xpDelta: fanGrowthRule.xp,
+                statChanges: {
+                  ...(fanGrowthRule.stats.fanPower !== undefined ? { fanPower: fanGrowthRule.stats.fanPower } : {}),
+                  ...(fanGrowthRule.stats.supportPower !== undefined ? { supportPower: fanGrowthRule.stats.supportPower } : {}),
+                  ...(fanGrowthRule.stats.empathy !== undefined ? { empathy: fanGrowthRule.stats.empathy } : {}),
+                  ...(fanGrowthRule.stats.story !== undefined ? { story: fanGrowthRule.stats.story } : {}),
+                },
+                beforeLevel: fanProfile.level,
+                afterLevel: computeLevel(fanXp),
+                beforeXp: fanProfile.xp,
+                afterXp: fanXp,
+                metadata: metadata ?? {},
+              })
+              .onConflictDoNothing({ target: characterGrowthEventsTable.sourceKey });
+            await tx
+              .update(characterProfilesTable)
+              .set({ xp: fanXp, stats: { fanPower: fanStats.fanPower, supportPower: fanStats.supportPower, empathy: fanStats.empathy, story: fanStats.story }, level: computeLevel(fanXp) })
+              .where(eq(characterProfilesTable.id, fanCharacterProfileId));
+          }
         }
       }
       granted = true;
@@ -458,9 +492,10 @@ export async function recordLifeQuestActivity(
 
 export interface RecordRewardParams {
   userId: string;
+  profileId?: string;
   /** "quest" | "achievement" — keeps reward grants distinct from core activity. */
-  sourceType: Extract<GrowthSourceType, "quest" | "achievement">;
-  eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward">;
+  sourceType: Extract<GrowthSourceType, "quest" | "achievement" | "system">;
+  eventType: Extract<GrowthEventType, "quest_reward" | "achievement_reward" | "fan_support">;
   /** Deterministic idempotency key, e.g. `quest:{periodKey}:{questKey}:{userId}`. */
   sourceKey: string;
   /** Flat FAN XP reward. Must be > 0 to grant. */
@@ -489,15 +524,18 @@ export interface RecordRewardParams {
 export async function recordReward(params: RecordRewardParams): Promise<boolean> {
   const { userId, sourceType, eventType, sourceKey, expDelta, reason, metadata } = params;
   if (expDelta <= 0) return false;
+  const state = await ensureCharacterProfileState(userId);
+  const targetProfile = params.profileId
+    ? state.profiles.find((profile) => profile.id === params.profileId)
+    : state.activeProfile;
+  if (!targetProfile || targetProfile.status !== "active") return false;
 
   let granted = false;
   await db.transaction(async (tx) => {
-    await tx.insert(fanProfilesTable).values({ userId }).onConflictDoNothing();
-
     const [locked] = await tx
       .select()
-      .from(fanProfilesTable)
-      .where(eq(fanProfilesTable.userId, userId))
+      .from(characterProfilesTable)
+      .where(and(eq(characterProfilesTable.id, targetProfile.id), eq(characterProfilesTable.ownerUserId, userId)))
       .for("update");
     if (!locked) return;
 
@@ -528,10 +566,32 @@ export async function recordReward(params: RecordRewardParams): Promise<boolean>
 
     if (inserted.length === 0) return;
 
-    await tx
-      .update(fanProfilesTable)
-      .set({ xp: afterExp, level: afterLevel })
-      .where(eq(fanProfilesTable.userId, userId));
+    await tx.update(characterProfilesTable).set({ xp: afterExp, level: afterLevel, updatedAt: new Date() })
+      .where(eq(characterProfilesTable.id, targetProfile.id));
+    await tx.insert(characterGrowthEventsTable).values({
+      profileId: targetProfile.id,
+      ownerUserId: userId,
+      sourceKey: `profile:${targetProfile.id}:${sourceKey}`,
+      eventType,
+      xpDelta: expDelta,
+      statChanges: {},
+      beforeLevel,
+      afterLevel,
+      beforeXp: beforeExp,
+      afterXp: afterExp,
+      metadata: metadata ?? {},
+    }).onConflictDoNothing({ target: characterGrowthEventsTable.sourceKey });
+
+    if (targetProfile.type === "fan") {
+      const [legacy] = await tx.select().from(fanCharacterProfilesTable).where(and(
+        eq(fanCharacterProfilesTable.profileId, targetProfile.id),
+        isNotNull(fanCharacterProfilesTable.legacyFanUserId),
+      ));
+      if (legacy?.legacyFanUserId) {
+        await tx.update(fanProfilesTable).set({ xp: afterExp, level: afterLevel })
+          .where(eq(fanProfilesTable.userId, legacy.legacyFanUserId));
+      }
+    }
     granted = true;
   });
 

@@ -25,6 +25,16 @@ import anotherMeRouter from "./anotherMe";
 import officialAccountsRouter from "./officialAccounts";
 import knowledgeRouter from "./knowledge";
 import realtimeRouter from "./realtime";
+import fanCommunitiesRouter from "./fanCommunities";
+import fanCommunityProgramsRouter from "./fanCommunityPrograms";
+import starFeedAdminRouter from "./starFeedAdmin";
+import searchAdminRouter from "./searchAdmin";
+import nftCollectionsRouter from "./nftCollections";
+import adminMembersRouter from "./adminMembers";
+import adminAuditRouter from "./adminAudit";
+import adminRolesRouter from "./adminRoles";
+import adminOperationsRouter from "./adminOperations";
+import characterProfilesRouter from "./characterProfiles";
 
 const router: IRouter = Router();
 
@@ -54,5 +64,15 @@ router.use(anotherMeRouter);
 router.use(officialAccountsRouter);
 router.use(knowledgeRouter);
 router.use(realtimeRouter);
+router.use(fanCommunitiesRouter);
+router.use(fanCommunityProgramsRouter);
+router.use(starFeedAdminRouter);
+router.use(searchAdminRouter);
+router.use(nftCollectionsRouter);
+router.use(adminMembersRouter);
+router.use(adminAuditRouter);
+router.use(adminRolesRouter);
+router.use(adminOperationsRouter);
+router.use(characterProfilesRouter);
 
 export default router;

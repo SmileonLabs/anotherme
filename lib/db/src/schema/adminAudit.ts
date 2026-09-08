@@ -1,0 +1,4 @@
+import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
+export const adminAuditLogsTable = pgTable("admin_audit_logs", { id: uuid("id").primaryKey().defaultRandom(), actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }), action: text("action").notNull(), targetType: text("target_type").notNull(), targetId: text("target_id"), beforeJson: jsonb("before_json").$type<Record<string, unknown> | null>(), afterJson: jsonb("after_json").$type<Record<string, unknown> | null>(), reason: text("reason"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() }, (t) => [index("admin_audit_logs_actor_created_idx").on(t.actorUserId, t.createdAt), index("admin_audit_logs_target_created_idx").on(t.targetType, t.targetId, t.createdAt)]);
+export type AdminAuditLog = typeof adminAuditLogsTable.$inferSelect;

@@ -2,6 +2,10 @@ import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   achievementsTable,
+  characterProfilesTable,
+  characterGrowthEventsTable,
+  characterProfileAchievementsTable,
+  characterProfileQuestProgressTable,
   clansTable,
   clanMembersTable,
   clanMemoriesTable,
@@ -9,6 +13,7 @@ import {
   clanWarsTable,
   personasTable,
   questProgressTable,
+  starFeedReactionsTable,
   starGrowthEventsTable,
   xpEventsTable,
   type Achievement,
@@ -16,6 +21,15 @@ import {
   type QuestType,
 } from "@workspace/db";
 import { ensurePersona, recordReward } from "./growth";
+import { grantPvtInTransaction } from "./pvt";
+import {
+  DAILY_QUESTS,
+  WEEKLY_QUESTS,
+  type QuestDef,
+  type QuestMetric,
+} from "./questDefinitions";
+
+export { DAILY_QUESTS, WEEKLY_QUESTS } from "./questDefinitions";
 
 /* ------------------------------------------------------------------------- */
 /* Period keys (KST, UTC+9)                                                   */
@@ -73,103 +87,6 @@ export function weeklyPeriodKey(now: Date): string {
 
 export type QuestCategory = "daily" | "weekly";
 
-export interface QuestDef {
-  key: string;
-  type: QuestType;
-  title: string;
-  description: string;
-  target: number;
-  rewardExp: number;
-  /** Metric used to compute progress (see Metrics below). */
-  metric: QuestMetric;
-}
-
-type QuestMetric =
-  | "chat"
-  | "battle"
-  | "dungeonAction"
-  | "clanContribution"
-  | "analysis"
-  | "dailyCompleted";
-
-export const DAILY_QUESTS: QuestDef[] = [
-  {
-    key: "daily_battle",
-    type: "daily",
-    title: "토크배틀 참여",
-    description: "토크배틀에서 발언하거나 배틀을 완료하세요.",
-    target: 1,
-    rewardExp: 20,
-    metric: "battle",
-  },
-  {
-    key: "daily_dungeon",
-    type: "daily",
-    title: "STAR 미션",
-    description: "STAR 미션에서 3번 선택하세요.",
-    target: 3,
-    rewardExp: 15,
-    metric: "dungeonAction",
-  },
-  {
-    key: "daily_clan",
-    type: "daily",
-    title: "팬클럽 기여",
-    description: "팬클럽 기억을 작성하거나 팬클럽전에 참여하세요.",
-    target: 1,
-    rewardExp: 20,
-    metric: "clanContribution",
-  },
-  {
-    key: "daily_analysis",
-    type: "daily",
-    title: "분석 업데이트",
-    description: "Another Me AI 분석을 1회 실행하세요.",
-    target: 1,
-    rewardExp: 10,
-    metric: "analysis",
-  },
-];
-
-export const WEEKLY_QUESTS: QuestDef[] = [
-  {
-    key: "weekly_debater",
-    type: "weekly",
-    title: "토론가의 한 주",
-    description: "토크배틀에 5번 참여하세요.",
-    target: 5,
-    rewardExp: 100,
-    metric: "battle",
-  },
-  {
-    key: "weekly_dungeon",
-    type: "weekly",
-    title: "STAR 미션 마스터",
-    description: "STAR 미션에서 20번 선택하세요.",
-    target: 20,
-    rewardExp: 100,
-    metric: "dungeonAction",
-  },
-  {
-    key: "weekly_clan",
-    type: "weekly",
-    title: "팬클럽의 기둥",
-    description: "팬클럽 활동을 5번 하세요.",
-    target: 5,
-    rewardExp: 120,
-    metric: "clanContribution",
-  },
-  {
-    key: "weekly_growth",
-    type: "weekly",
-    title: "꾸준한 팬 활동",
-    description: "일일 퀘스트를 5개 완료하세요.",
-    target: 5,
-    rewardExp: 150,
-    metric: "dailyCompleted",
-  },
-];
-
 export type AchievementCategory = "chat" | "battle" | "dungeon" | "clan" | "persona";
 
 export interface AchievementDef {
@@ -183,18 +100,12 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { key: "first_battle", title: "첫 토크배틀 참여", description: "처음으로 토크배틀에 참여했어요.", rewardExp: 20, category: "battle", icon: "zap" },
-  { key: "first_battle_win", title: "첫 토크배틀 승리", description: "처음으로 토크배틀에서 승리했어요.", rewardExp: 50, category: "battle", icon: "award" },
   { key: "first_dungeon", title: "첫 STAR 미션", description: "처음으로 STAR 미션에서 선택했어요.", rewardExp: 20, category: "dungeon", icon: "compass" },
   { key: "first_dungeon_goal", title: "첫 STAR 미션 완료", description: "처음으로 STAR 미션을 완료했어요.", rewardExp: 50, category: "dungeon", icon: "flag" },
   { key: "first_clan_join", title: "첫 팬클럽 가입", description: "처음으로 팬클럽에 들어갔어요.", rewardExp: 30, category: "clan", icon: "users" },
   { key: "first_clan_memory", title: "첫 팬클럽 기억 작성", description: "처음으로 팬클럽 기억을 남겼어요.", rewardExp: 30, category: "clan", icon: "book-open" },
-  { key: "first_clan_war", title: "첫 팬클럽전 참여", description: "처음으로 팬클럽전에 참여했어요.", rewardExp: 40, category: "clan", icon: "shield" },
   { key: "first_clan_war_win", title: "첫 팬클럽전 승리", description: "처음으로 팬클럽전에서 승리했어요.", rewardExp: 80, category: "clan", icon: "shield" },
-  { key: "persona_lv10", title: "Persona Lv.10 달성", description: "Another Me가 10레벨에 도달했어요.", rewardExp: 100, category: "persona", icon: "trending-up" },
-  { key: "persona_lv30", title: "Persona Lv.30 달성", description: "Another Me가 30레벨에 도달했어요.", rewardExp: 300, category: "persona", icon: "trending-up" },
   { key: "clan_create", title: "팬클럽 생성", description: "직접 팬클럽을 만들었어요.", rewardExp: 50, category: "clan", icon: "flag" },
-  { key: "clan_lv5", title: "팬클럽 Lv.5 달성", description: "소속 팬클럽이 5레벨에 도달했어요.", rewardExp: 100, category: "clan", icon: "star" },
 ];
 
 /* ------------------------------------------------------------------------- */
@@ -203,6 +114,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
 
 interface ActivityCounts {
   chat: number;
+  feedReaction: number;
+  attendance: number;
   battle: number;
   dungeonAction: number;
   clanContribution: number;
@@ -259,9 +172,20 @@ async function activityCountsSince(userId: string, since: Date): Promise<Activit
   const clanContribution = Number(memRow?.count ?? 0) + Number(warRow?.count ?? 0);
   const analysis =
     persona?.lastAnalyzedAt && persona.lastAnalyzedAt >= since ? 1 : 0;
+  const [reactionRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(starFeedReactionsTable)
+    .where(
+      and(
+        eq(starFeedReactionsTable.userId, userId),
+        gte(starFeedReactionsTable.createdAt, since),
+      ),
+    );
 
   return {
     chat: Number(xpRows?.chat ?? 0),
+    feedReaction: Number(reactionRow?.count ?? 0),
+    attendance: 1,
     battle: Number(xpRows?.battle ?? 0),
     dungeonAction: Number(xpRows?.dungeonAction ?? 0) + Number(starMissionRow?.count ?? 0),
     clanContribution,
@@ -311,6 +235,10 @@ function metricValue(
   switch (metric) {
     case "chat":
       return counts.chat;
+    case "feedReaction":
+      return counts.feedReaction;
+    case "attendance":
+      return counts.attendance;
     case "battle":
       return counts.battle;
     case "dungeonAction":
@@ -677,4 +605,176 @@ export async function getRewardsSummary(
     claimableAchievements,
     total: claimableQuests + claimableAchievements,
   };
+}
+
+async function profileActivityCounts(profileId: string, since: Date): Promise<ActivityCounts> {
+  const [row] = await db.select({
+    chat: sql<number>`count(*) filter (where ${characterGrowthEventsTable.eventType} = 'chat_message')`,
+    battle: sql<number>`count(*) filter (where ${characterGrowthEventsTable.eventType} in ('battle_speech','battle_result'))`,
+    dungeonAction: sql<number>`count(*) filter (where ${characterGrowthEventsTable.eventType} in ('dungeon_action','dungeon_result','life_quest_action','life_quest_complete','star_mission_action','star_mission_complete'))`,
+    clanContribution: sql<number>`count(*) filter (where ${characterGrowthEventsTable.eventType} in ('clan_memory','clan_war'))`,
+    analysis: sql<number>`count(*) filter (where ${characterGrowthEventsTable.eventType} = 'persona_analysis')`,
+  }).from(characterGrowthEventsTable).where(and(
+    eq(characterGrowthEventsTable.profileId, profileId),
+    gte(characterGrowthEventsTable.createdAt, since),
+  ));
+  const [reactionRow] = await db.select({ count: sql<number>`count(*)` }).from(starFeedReactionsTable).where(and(
+    eq(starFeedReactionsTable.profileId, profileId),
+    gte(starFeedReactionsTable.createdAt, since),
+  ));
+  return {
+    chat: Number(row?.chat ?? 0),
+    feedReaction: Number(reactionRow?.count ?? 0),
+    attendance: 1,
+    battle: Number(row?.battle ?? 0),
+    dungeonAction: Number(row?.dungeonAction ?? 0),
+    clanContribution: Number(row?.clanContribution ?? 0),
+    analysis: Number(row?.analysis ?? 0),
+  };
+}
+
+function questAvailableForProfileType(def: QuestDef, profileType: string | undefined): boolean {
+  if (def.type === "daily") {
+    return def.key !== "daily_dungeon" || profileType === "star";
+  }
+  return profileType === "star"
+    ? def.key === "weekly_dungeon"
+    : def.key !== "weekly_dungeon";
+}
+
+const STAR_ACHIEVEMENT_KEYS = new Set(["first_dungeon", "first_dungeon_goal"]);
+
+function achievementAvailableForProfileType(
+  def: AchievementDef,
+  profileType: string | undefined,
+): boolean {
+  return profileType === "star"
+    ? STAR_ACHIEVEMENT_KEYS.has(def.key)
+    : !STAR_ACHIEVEMENT_KEYS.has(def.key);
+}
+
+export async function getCharacterProfileQuests(profileId: string, now = new Date()): Promise<QuestView[]> {
+  const dayKey = dailyPeriodKey(now); const weekKey = weeklyPeriodKey(now);
+  const [profile] = await db
+    .select({ type: characterProfilesTable.type })
+    .from(characterProfilesTable)
+    .where(eq(characterProfilesTable.id, profileId))
+    .limit(1);
+  const defs = [...DAILY_QUESTS, ...WEEKLY_QUESTS].filter((def) =>
+    questAvailableForProfileType(def, profile?.type),
+  );
+  const eligibleDailyKeys = defs
+    .filter((def) => def.type === "daily")
+    .map((def) => def.key);
+  const [daily, weekly] = await Promise.all([profileActivityCounts(profileId, startOfDayKst(now)), profileActivityCounts(profileId, startOfWeekKst(now))]);
+  const [dailyCompleted] = await db.select({ count: sql<number>`count(*)` }).from(characterProfileQuestProgressTable).where(and(
+    eq(characterProfileQuestProgressTable.profileId, profileId),
+    eq(characterProfileQuestProgressTable.questType, "daily"),
+    inArray(characterProfileQuestProgressTable.questKey, eligibleDailyKeys),
+    gte(characterProfileQuestProgressTable.completedAt, startOfWeekKst(now)),
+  ));
+  const views: QuestView[] = [];
+  for (const def of defs) {
+    const periodKey = def.type === "daily" ? dayKey : weekKey;
+    const progress = Math.min(metricValue(def.metric, daily, weekly, def.type, Number(dailyCompleted?.count ?? 0)), def.target);
+    const completed = progress >= def.target;
+    const [row] = await db.insert(characterProfileQuestProgressTable).values({ profileId, questKey: def.key, questType: def.type, periodKey, progress, target: def.target, rewardXp: def.rewardExp, completedAt: completed ? now : null }).onConflictDoUpdate({
+      target: [characterProfileQuestProgressTable.profileId, characterProfileQuestProgressTable.questKey, characterProfileQuestProgressTable.periodKey],
+      set: { progress, target: def.target, rewardXp: def.rewardExp, completedAt: sql`coalesce(${characterProfileQuestProgressTable.completedAt}, ${completed ? now : null})` },
+    }).returning();
+    views.push({ key: def.key, type: def.type, title: def.title, description: def.description, progress: row.progress, target: row.target, completed: row.completedAt !== null, rewardClaimed: row.rewardClaimedAt !== null, rewardExp: row.rewardXp });
+  }
+  return views;
+}
+
+export async function claimCharacterProfileQuest(userId: string, profileId: string, questKey: string, now = new Date()): Promise<ClaimResult> {
+  const def = [...DAILY_QUESTS, ...WEEKLY_QUESTS].find((quest) => quest.key === questKey);
+  if (!def) return { ok: false, code: "not_found" };
+  const [profile] = await db
+    .select({ type: characterProfilesTable.type })
+    .from(characterProfilesTable)
+    .where(eq(characterProfilesTable.id, profileId))
+    .limit(1);
+  if (!questAvailableForProfileType(def, profile?.type)) {
+    return { ok: false, code: "not_found" };
+  }
+  await getCharacterProfileQuests(profileId, now);
+  const periodKey = def.type === "daily" ? dailyPeriodKey(now) : weeklyPeriodKey(now);
+  const [row] = await db.select().from(characterProfileQuestProgressTable).where(and(eq(characterProfileQuestProgressTable.profileId, profileId), eq(characterProfileQuestProgressTable.questKey, questKey), eq(characterProfileQuestProgressTable.periodKey, periodKey)));
+  if (!row) return { ok: false, code: "not_found" };
+  if (!row.completedAt) return { ok: false, code: "not_completed" };
+  if (row.rewardClaimedAt) return { ok: false, code: "already_claimed" };
+  await recordReward({ userId, profileId, sourceType: "quest", eventType: "quest_reward", sourceKey: `profile-quest:${profileId}:${periodKey}:${questKey}`, expDelta: def.rewardExp, reason: `퀘스트 보상 · ${def.title}`, metadata: { profileId, questKey, periodKey } });
+  await db.transaction(async (tx) => {
+    await grantPvtInTransaction(tx, {
+      userId,
+      amount: def.rewardExp,
+      source: "MISSION",
+      sourceId: `profile-quest:${profileId}:${periodKey}:${questKey}`,
+      description: `미션 보상 · ${def.title}`,
+    });
+    await tx
+      .update(characterProfileQuestProgressTable)
+      .set({ rewardClaimedAt: now })
+      .where(and(
+        eq(characterProfileQuestProgressTable.id, row.id),
+        isNull(characterProfileQuestProgressTable.rewardClaimedAt),
+      ));
+  });
+  return { ok: true, rewardExp: def.rewardExp };
+}
+
+export async function getCharacterProfileAchievements(profileId: string): Promise<AchievementView[]> {
+  const [profile] = await db
+    .select({
+      type: characterProfilesTable.type,
+      ownerUserId: characterProfilesTable.ownerUserId,
+    })
+    .from(characterProfilesTable)
+    .where(eq(characterProfilesTable.id, profileId))
+    .limit(1);
+  if (!profile) return [];
+  const eligibleDefinitions = ACHIEVEMENTS.filter((def) =>
+    achievementAvailableForProfileType(def, profile.type),
+  );
+  const unlocked = await evaluateUnlocked(profile.ownerUserId);
+  for (const def of eligibleDefinitions) {
+    if (unlocked.has(def.key)) {
+      await db
+        .insert(characterProfileAchievementsTable)
+        .values({ profileId, achievementKey: def.key, metadata: { rewardExp: def.rewardExp } })
+        .onConflictDoNothing();
+    }
+  }
+  const rows = await db.select().from(characterProfileAchievementsTable).where(eq(characterProfileAchievementsTable.profileId, profileId));
+  const byKey = new Map(rows.map((row) => [row.achievementKey, row]));
+  return eligibleDefinitions.map((def) => ({ key: def.key, title: def.title, description: def.description, category: def.category, icon: def.icon, unlocked: byKey.has(def.key), rewardClaimed: byKey.get(def.key)?.rewardClaimedAt !== null && byKey.get(def.key)?.rewardClaimedAt !== undefined, rewardExp: def.rewardExp }));
+}
+
+export async function claimCharacterProfileAchievement(userId: string, profileId: string, achievementKey: string, now = new Date()): Promise<ClaimResult> {
+  const def = ACHIEVEMENTS.find((achievement) => achievement.key === achievementKey);
+  if (!def) return { ok: false, code: "not_found" };
+  const [profile] = await db
+    .select({ type: characterProfilesTable.type })
+    .from(characterProfilesTable)
+    .where(eq(characterProfilesTable.id, profileId))
+    .limit(1);
+  if (!achievementAvailableForProfileType(def, profile?.type)) {
+    return { ok: false, code: "not_found" };
+  }
+  await getCharacterProfileAchievements(profileId);
+  const [row] = await db.select().from(characterProfileAchievementsTable).where(and(eq(characterProfileAchievementsTable.profileId, profileId), eq(characterProfileAchievementsTable.achievementKey, achievementKey)));
+  if (!row) return { ok: false, code: "not_completed" };
+  if (row.rewardClaimedAt) return { ok: false, code: "already_claimed" };
+  const granted = await recordReward({ userId, profileId, sourceType: "achievement", eventType: "achievement_reward", sourceKey: `profile-achievement:${profileId}:${achievementKey}`, expDelta: def.rewardExp, reason: `업적 보상 · ${def.title}`, metadata: { profileId, achievementKey } });
+  if (!granted) return { ok: false, code: "already_claimed" };
+  await db.update(characterProfileAchievementsTable).set({ rewardClaimedAt: now }).where(eq(characterProfileAchievementsTable.id, row.id));
+  return { ok: true, rewardExp: def.rewardExp };
+}
+
+export async function getCharacterProfileRewardsSummary(profileId: string, now = new Date()): Promise<RewardsSummary> {
+  const [quests, achievements] = await Promise.all([getCharacterProfileQuests(profileId, now), getCharacterProfileAchievements(profileId)]);
+  const claimableQuests = quests.filter((quest) => quest.completed && !quest.rewardClaimed).length;
+  const claimableAchievements = achievements.filter((achievement) => achievement.unlocked && !achievement.rewardClaimed).length;
+  return { claimableQuests, claimableAchievements, total: claimableQuests + claimableAchievements };
 }

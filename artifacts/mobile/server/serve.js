@@ -10,12 +10,29 @@
  */
 
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-const STATIC_ROOT = path.resolve(__dirname, "..", "web-build");
+const STATIC_ROOT = process.env.PWA_STATIC_ROOT
+  ? path.resolve(process.env.PWA_STATIC_ROOT)
+  : path.resolve(__dirname, "..", "web-build");
 const INDEX_HTML = path.join(STATIC_ROOT, "index.html");
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
+const apiProxyTarget = parseApiProxyTarget(process.env.API_PROXY_TARGET);
+const apiProxyOrigin =
+  process.env.API_PROXY_ORIGIN ||
+  process.env.PWA_ORIGIN ||
+  "https://anothermeai.app";
+
+function parseApiProxyTarget(value) {
+  if (!value) return null;
+  const target = new URL(value);
+  if (!["http:", "https:"].includes(target.protocol)) {
+    throw new Error("API_PROXY_TARGET must use http or https");
+  }
+  return target;
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -88,9 +105,57 @@ function serveStaticOrFallback(pathname, res) {
   serveIndex(res);
 }
 
+function proxyApi(req, res, url) {
+  if (!apiProxyTarget) return false;
+
+  const transport = apiProxyTarget.protocol === "https:" ? https : http;
+  const upstreamPath = `${apiProxyTarget.pathname.replace(/\/+$/, "")}${url.pathname}${url.search}`;
+  const headers = {
+    ...req.headers,
+    host: apiProxyTarget.host,
+    // The production API intentionally rejects unknown browser origins. The
+    // preview server is same-origin from the browser's perspective, so present
+    // the upstream's own trusted origin instead of weakening production CORS.
+    origin: apiProxyOrigin,
+  };
+  delete headers["content-length"];
+
+  const upstream = transport.request(
+    apiProxyTarget,
+    {
+      method: req.method,
+      path: upstreamPath,
+      headers,
+    },
+    (upstreamResponse) => {
+      res.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
+      upstreamResponse.pipe(res);
+    },
+  );
+
+  upstream.setTimeout(30_000, () => {
+    upstream.destroy(new Error("Upstream API request timed out"));
+  });
+  upstream.on("error", () => {
+    if (!res.headersSent) {
+      res.writeHead(502, { "content-type": "application/json; charset=utf-8" });
+    }
+    res.end(JSON.stringify({ error: "Preview API proxy unavailable" }));
+  });
+  req.pipe(upstream);
+  return true;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   let pathname = url.pathname;
+
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    if (proxyApi(req, res, url)) return;
+    res.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ error: "API proxy is not configured" }));
+    return;
+  }
 
   if (basePath && pathname.startsWith(basePath)) {
     pathname = pathname.slice(basePath.length) || "/";
@@ -106,4 +171,7 @@ const server = http.createServer((req, res) => {
 const port = parseInt(process.env.PORT || "3000", 10);
 server.listen(port, "0.0.0.0", () => {
   console.log(`Serving browser web build on port ${port} (base path: ${basePath || "/"})`);
+  if (apiProxyTarget) {
+    console.log(`Preview API proxy enabled for ${apiProxyTarget.origin}`);
+  }
 });

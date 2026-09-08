@@ -7,9 +7,18 @@
  */
 
 export interface DungeonInput {
-  /** @nullable */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
   name?: string | null;
+  /** @maxItems 20 */
   memberIds: string[];
-  /** @nullable */
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @nullable
+     */
   theme?: string | null;
 }

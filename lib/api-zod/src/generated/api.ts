@@ -30,13 +30,168 @@ export const CreateRealtimeTicketResponse = zod.object({
 export const ListUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Search public profiles, STAR/FAN identities, public feed posts, and missions
+ */
+export const globalSearchQueryQMin = 2;
+export const globalSearchQueryQMax = 80;
+
+export const globalSearchQueryTypeDefault = `all`;
+export const globalSearchQueryLimitDefault = 20;
+export const globalSearchQueryLimitMax = 30;
+
+
+
+export const GlobalSearchQueryParams = zod.object({
+  "q": zod.coerce.string().min(globalSearchQueryQMin).max(globalSearchQueryQMax),
+  "type": zod.enum(['all', 'users', 'stars', 'fans', 'posts', 'missions']).default(globalSearchQueryTypeDefault),
+  "limit": zod.coerce.number().min(1).max(globalSearchQueryLimitMax).default(globalSearchQueryLimitDefault)
+})
+
+export const GlobalSearchResponse = zod.object({
+  "query": zod.string(),
+  "type": zod.enum(['all', 'users', 'stars', 'fans', 'posts', 'missions']),
+  "users": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "nickname": zod.string(),
+  "handle": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
+  "statusMessage": zod.string().nullable(),
+  "profileType": zod.enum(['fan', 'star', 'official_ai']),
+  "isMe": zod.boolean(),
+  "followedByMe": zod.boolean()
+})),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "starKey": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "stage": zod.string(),
+  "ownerId": zod.string().uuid().nullable(),
+  "followedByMe": zod.boolean()
+})),
+  "posts": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "kind": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "missions": zod.array(zod.object({
+  "key": zod.string(),
+  "type": zod.enum(['daily', 'weekly']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "target": zod.number(),
+  "rewardExp": zod.number(),
+  "metric": zod.string()
+})),
+  "nextCursor": zod.string().nullable()
+})
+
+
+/**
+ * @summary Get recommended public STAR and FAN character profiles
+ */
+export const getSearchRecommendationsQueryLimitDefault = 12;
+export const getSearchRecommendationsQueryLimitMin = 4;
+export const getSearchRecommendationsQueryLimitMax = 30;
+
+
+
+export const GetSearchRecommendationsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(getSearchRecommendationsQueryLimitMin).max(getSearchRecommendationsQueryLimitMax).default(getSearchRecommendationsQueryLimitDefault)
+})
+
+export const GetSearchRecommendationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
+  "statusMessage": zod.string().nullable(),
+  "level": zod.number(),
+  "followedByMe": zod.boolean(),
+  "recommendationReason": zod.string()
+}))
+})
+
+
+/**
+ * @summary Get cached popular search terms
+ */
+export const getTrendingSearchesQueryLimitDefault = 5;
+export const getTrendingSearchesQueryLimitMax = 10;
+
+
+
+export const GetTrendingSearchesQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getTrendingSearchesQueryLimitMax).default(getTrendingSearchesQueryLimitDefault)
+})
+
+export const GetTrendingSearchesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "term": zod.string(),
+  "rank": zod.number(),
+  "change": zod.number(),
+  "resultCount": zod.number()
+})),
+  "generatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List hidden trending search terms
+ */
+export const ListSearchTrendingBlocksResponseItem = zod.object({
+  "normalizedTerm": zod.string(),
+  "reason": zod.string(),
+  "createdBy": zod.string().uuid().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListSearchTrendingBlocksResponse = zod.array(ListSearchTrendingBlocksResponseItem)
+
+
+/**
+ * @summary Hide a term from trending search results
+ */
+export const blockSearchTrendingTermBodyTermMin = 2;
+export const blockSearchTrendingTermBodyTermMax = 80;
+
+export const blockSearchTrendingTermBodyReasonMax = 200;
+
+
+
+export const BlockSearchTrendingTermBody = zod.object({
+  "term": zod.string().min(blockSearchTrendingTermBodyTermMin).max(blockSearchTrendingTermBodyTermMax),
+  "reason": zod.string().max(blockSearchTrendingTermBodyReasonMax).optional()
+})
+
+
+/**
+ * @summary Remove a term from the trending block list
+ */
+export const UnblockSearchTrendingTermParams = zod.object({
+  "term": zod.coerce.string()
+})
 
 
 /**
@@ -47,7 +202,7 @@ export const GetMeResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
@@ -58,11 +213,17 @@ export const GetMeResponse = zod.object({
 /**
  * @summary Update my profile
  */
+export const updateMeBodyNicknameMax = 30;
+
+export const updateMeBodyStatusMessageMax = 200;
+
+
+
 export const UpdateMeBody = zod.object({
-  "nickname": zod.string().optional(),
-  "statusMessage": zod.string().nullish(),
-  "profileImageUrl": zod.string().nullish(),
-  "notificationEnabled": zod.boolean().optional()
+  "nickname": zod.string().min(1).max(updateMeBodyNicknameMax).optional(),
+  "statusMessage": zod.string().max(updateMeBodyStatusMessageMax).nullish(),
+  "notificationEnabled": zod.boolean().optional(),
+  "talkAnalysisEnabled": zod.boolean().optional()
 })
 
 export const UpdateMeResponse = zod.object({
@@ -70,7 +231,7 @@ export const UpdateMeResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
@@ -99,8 +260,12 @@ export const ListMyProfileHistoryResponse = zod.array(ListMyProfileHistoryRespon
 /**
  * @summary Register push token
  */
+export const registerPushTokenBodyTokenMax = 8192;
+
+
+
 export const RegisterPushTokenBody = zod.object({
-  "token": zod.string()
+  "token": zod.string().min(1).max(registerPushTokenBodyTokenMax)
 })
 
 export const RegisterPushTokenResponse = zod.object({
@@ -108,11 +273,23 @@ export const RegisterPushTokenResponse = zod.object({
   "clerkId": zod.string(),
   "email": zod.string(),
   "nickname": zod.string(),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Deprecated legacy field. Always null; use the active character profile.'),
   "statusMessage": zod.string().nullish(),
   "pushToken": zod.string().nullish(),
   "notificationEnabled": zod.boolean(),
   "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Revoke a push token owned by the authenticated user
+ */
+export const revokePushTokenBodyTokenMax = 8192;
+
+
+
+export const RevokePushTokenBody = zod.object({
+  "token": zod.string().min(1).max(revokePushTokenBodyTokenMax)
 })
 
 
@@ -302,14 +479,13 @@ export const GetMyClanResponse = zod.union([zod.object({
  * @summary Browse / search clans
  */
 export const listClansQueryLimitDefault = 30;
-export const listClansQueryLimitMax = 100;
-
-
+export const listClansQueryScopeDefault = `recommended`;
 
 export const ListClansQueryParams = zod.object({
   "q": zod.coerce.string().optional().describe('Search term matched against name and description.'),
   "archetype": zod.enum(['strategist', 'harmonizer', 'explorer', 'pioneer', 'sage', 'entertainer', 'activist', 'observer']).optional(),
-  "limit": zod.coerce.number().min(1).max(listClansQueryLimitMax).default(listClansQueryLimitDefault)
+  "limit": zod.coerce.number().default(listClansQueryLimitDefault),
+  "scope": zod.enum(['recommended', 'following']).default(listClansQueryScopeDefault)
 })
 
 export const ListClansResponseItem = zod.object({
@@ -622,7 +798,7 @@ export const DeleteClanMemoryResponse = zod.object({
 
 
 /**
- * @summary Search users by email
+ * @summary Find a user by exact email address
  */
 export const SearchUsersQueryParams = zod.object({
   "email": zod.coerce.string()
@@ -631,11 +807,19 @@ export const SearchUsersQueryParams = zod.object({
 export const SearchUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const SearchUsersResponse = zod.array(SearchUsersResponseItem)
 
@@ -646,11 +830,19 @@ export const SearchUsersResponse = zod.array(SearchUsersResponseItem)
 export const ListFriendsResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListFriendsResponse = zod.array(ListFriendsResponseItem)
 
@@ -662,7 +854,7 @@ export const UpdateFriendAliasParams = zod.object({
   "userId": zod.coerce.string()
 })
 
-export const updateFriendAliasBodyAliasMax = 50;
+export const updateFriendAliasBodyAliasMax = 30;
 
 
 
@@ -673,11 +865,19 @@ export const UpdateFriendAliasBody = zod.object({
 export const UpdateFriendAliasResponse = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 
 
@@ -693,7 +893,7 @@ export const RemoveFriendParams = zod.object({
  * @summary Send a friend request
  */
 export const SendFriendRequestBody = zod.object({
-  "toUserId": zod.string()
+  "toUserId": zod.string().uuid()
 })
 
 
@@ -709,11 +909,19 @@ export const ListIncomingFriendRequestsResponseItem = zod.object({
   "user": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListIncomingFriendRequestsResponse = zod.array(ListIncomingFriendRequestsResponseItem)
@@ -731,11 +939,19 @@ export const ListOutgoingFriendRequestsResponseItem = zod.object({
   "user": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListOutgoingFriendRequestsResponse = zod.array(ListOutgoingFriendRequestsResponseItem)
@@ -779,6 +995,8 @@ export const RejectFriendRequestResponse = zod.object({
 export const ListRoomsResponseItem = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -801,11 +1019,19 @@ export const ListRoomsResponseItem = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 export const ListRoomsResponse = zod.array(ListRoomsResponseItem)
@@ -814,10 +1040,18 @@ export const ListRoomsResponse = zod.array(ListRoomsResponseItem)
 /**
  * @summary Create a chat room
  */
+export const createRoomBodyNameMax = 30;
+
+export const createRoomBodyMemberIdsMax = 100;
+
+
+
 export const CreateRoomBody = zod.object({
-  "type": zod.string(),
-  "name": zod.string().nullish(),
-  "memberIds": zod.array(zod.string())
+  "type": zod.enum(['direct', 'group']),
+  "name": zod.string().max(createRoomBodyNameMax).nullish(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']).optional(),
+  "visibility": zod.enum(['private', 'invite_only']).optional(),
+  "memberIds": zod.array(zod.string().uuid()).max(createRoomBodyMemberIdsMax)
 })
 
 
@@ -831,6 +1065,8 @@ export const GetRoomParams = zod.object({
 export const GetRoomResponse = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -853,11 +1089,19 @@ export const GetRoomResponse = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 
@@ -900,11 +1144,19 @@ export const ListRoomMembersParams = zod.object({
 export const ListRoomMembersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListRoomMembersResponse = zod.array(ListRoomMembersResponseItem)
 
@@ -916,13 +1168,19 @@ export const InviteRoomMembersParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const inviteRoomMembersBodyMemberIdsMax = 50;
+
+
+
 export const InviteRoomMembersBody = zod.object({
-  "memberIds": zod.array(zod.string())
+  "memberIds": zod.array(zod.string().uuid()).min(1).max(inviteRoomMembersBodyMemberIdsMax)
 })
 
 export const InviteRoomMembersResponse = zod.object({
   "id": zod.string(),
   "type": zod.string(),
+  "category": zod.enum(['direct', 'fanclub', 'counseling', 'friend_finding', 'meetup', 'casual', 'peer', 'karaoke', 'growth_rpg', 'talk_battle']),
+  "visibility": zod.enum(['private', 'invite_only']),
   "name": zod.string().nullish(),
   "ownerId": zod.string().nullish(),
   "lastMessage": zod.string().nullish(),
@@ -945,39 +1203,82 @@ export const InviteRoomMembersResponse = zod.object({
   "members": zod.array(zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })).optional()
 })
 
 
 /**
- * @summary List messages in a room (last 50)
+ * @summary List messages in a room using a room sequence cursor
  */
 export const FetchRoomMessagesParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+export const fetchRoomMessagesQueryAfterSeqMin = 0;
+
+export const fetchRoomMessagesQueryLimitMax = 100;
+
+
+
+export const FetchRoomMessagesQueryParams = zod.object({
+  "beforeSeq": zod.coerce.number().min(1).optional().describe('Return messages with roomSeq lower than this cursor.'),
+  "afterSeq": zod.coerce.number().min(fetchRoomMessagesQueryAfterSeqMin).optional().describe('Return messages with roomSeq greater than this cursor in ascending order. Mutually exclusive with beforeSeq.'),
+  "limit": zod.coerce.number().min(1).max(fetchRoomMessagesQueryLimitMax).optional().describe('Page size, from 1 through 100 (defaults to 50).')
+})
+
 export const FetchRoomMessagesResponseItem = zod.object({
   "id": zod.string(),
   "roomId": zod.string(),
+  "roomSeq": zod.number(),
   "senderId": zod.string(),
+  "senderProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "authorKind": zod.string(),
   "type": zod.string(),
   "content": zod.string(),
   "replyToMessageId": zod.string().nullish(),
+  "anotherMeSessionId": zod.string().nullish(),
+  "callId": zod.string().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "clientMessageId": zod.string().nullish(),
   "deletedAt": zod.string().nullish(),
   "createdAt": zod.string(),
   "sender": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 }).optional(),
   "replyTo": zod.union([zod.object({
   "id": zod.string(),
@@ -995,11 +1296,19 @@ export const FetchRoomMessagesResponseItem = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 }),zod.null()]).optional()
 })).optional(),
   "linkPreview": zod.union([zod.object({
@@ -1021,10 +1330,18 @@ export const SendMessageParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const sendMessageBodyContentMax = 4096;
+
+export const sendMessageBodyClientMessageIdMax = 128;
+
+
+
 export const SendMessageBody = zod.object({
-  "content": zod.string(),
-  "type": zod.string().optional(),
-  "replyToMessageId": zod.string().nullish()
+  "content": zod.string().max(sendMessageBodyContentMax),
+  "type": zod.enum(['text', 'image', 'file', 'sticker']).optional(),
+  "replyToMessageId": zod.string().uuid().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "clientMessageId": zod.string().min(1).max(sendMessageBodyClientMessageIdMax).nullish()
 })
 
 
@@ -1049,8 +1366,13 @@ export const ForwardMessageParams = zod.object({
   "messageId": zod.coerce.string()
 })
 
+export const forwardMessageBodyClientMessageIdMax = 128;
+
+
+
 export const ForwardMessageBody = zod.object({
-  "targetRoomId": zod.string()
+  "targetRoomId": zod.string(),
+  "clientMessageId": zod.string().min(1).max(forwardMessageBodyClientMessageIdMax).nullish()
 })
 
 
@@ -1109,11 +1431,19 @@ export const GetTypingUsersParams = zod.object({
 export const GetTypingUsersResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const GetTypingUsersResponse = zod.array(GetTypingUsersResponseItem)
 
@@ -1148,11 +1478,19 @@ export const RedeemInviteResponse = zod.object({
 export const ListBlockedResponseItem = zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 export const ListBlockedResponse = zod.array(ListBlockedResponseItem)
 
@@ -1161,7 +1499,7 @@ export const ListBlockedResponse = zod.array(ListBlockedResponseItem)
  * @summary Block a user
  */
 export const BlockUserBody = zod.object({
-  "blockedUserId": zod.string()
+  "blockedUserId": zod.string().uuid()
 })
 
 
@@ -1176,9 +1514,13 @@ export const UnblockUserParams = zod.object({
 /**
  * @summary Start a voice or video call
  */
+export const CreateCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const CreateCallBody = zod.object({
-  "calleeId": zod.string(),
-  "roomId": zod.string().optional(),
+  "calleeId": zod.string().uuid(),
+  "roomId": zod.string().uuid().optional(),
   "media": zod.enum(['audio', 'video']).optional()
 })
 
@@ -1188,22 +1530,31 @@ export const CreateCallBody = zod.object({
  */
 export const ListIncomingCallsResponseItem = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "endedAt": zod.string().nullish(),
   "caller": zod.object({
   "id": zod.string(),
   "nickname": zod.string(),
-  "email": zod.string(),
+  "accountKind": zod.enum(['user', 'official', 'system']),
   "friendAlias": zod.string().nullish().describe('Current viewer\'s saved name for this user, when available.'),
   "displayName": zod.string().optional().describe('friendAlias when set, otherwise nickname.'),
-  "profileImageUrl": zod.string().nullish(),
+  "profileImageUrl": zod.string().nullish().describe('Active character avatar. The legacy member account photo is never exposed.'),
+  "statusMessage": zod.string().nullish(),
+  "profile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullable(),
   "statusMessage": zod.string().nullish()
+}),zod.null()]).optional()
 })
 })
 export const ListIncomingCallsResponse = zod.array(ListIncomingCallsResponseItem)
@@ -1216,14 +1567,19 @@ export const GetCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const GetCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const GetCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1241,15 +1597,20 @@ export const AcceptCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const AcceptCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const AcceptCallResponse = zod.object({
   "call": zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1270,15 +1631,20 @@ export const JoinCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const JoinCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
 export const JoinCallResponse = zod.object({
   "call": zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1299,14 +1665,20 @@ export const DeclineCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const DeclineCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const DeclineCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1324,14 +1696,20 @@ export const CancelCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const CancelCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const CancelCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1349,14 +1727,20 @@ export const EndCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const EndCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const EndCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -1364,6 +1748,64 @@ export const EndCallResponse = zod.object({
   "cancelledAt": zod.string().nullish(),
   "endedAt": zod.string().nullish(),
   "durationSec": zod.number().nullish()
+})
+
+
+/**
+ * @summary Upload a bounded call lifecycle diagnostic, including failures before a call ID exists
+ */
+export const reportQueuedCallDiagnosticBodyPhaseMax = 100;
+
+export const reportQueuedCallDiagnosticBodyPlatformMax = 50;
+
+export const reportQueuedCallDiagnosticBodyRoleMax = 50;
+
+
+
+export const ReportQueuedCallDiagnosticBody = zod.object({
+  "eventId": zod.string().uuid(),
+  "attemptId": zod.string().uuid(),
+  "callId": zod.string().uuid().optional(),
+  "phase": zod.string().min(1).max(reportQueuedCallDiagnosticBodyPhaseMax),
+  "platform": zod.string().max(reportQueuedCallDiagnosticBodyPlatformMax).optional(),
+  "role": zod.string().max(reportQueuedCallDiagnosticBodyRoleMax).optional(),
+  "occurredAt": zod.coerce.date(),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
+ * @summary Report a diagnostic for a known call
+ */
+export const ReportCallDiagnosticParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ReportCallDiagnosticHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.')
+})
+
+export const reportCallDiagnosticBodyPhaseMax = 100;
+
+export const reportCallDiagnosticBodyPlatformMax = 50;
+
+export const reportCallDiagnosticBodyRoleMax = 50;
+
+
+
+export const ReportCallDiagnosticBody = zod.object({
+  "phase": zod.string().min(1).max(reportCallDiagnosticBodyPhaseMax),
+  "platform": zod.string().max(reportCallDiagnosticBodyPlatformMax).optional(),
+  "role": zod.string().max(reportCallDiagnosticBodyRoleMax).optional(),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
+ * @summary Receive a signature-verified LiveKit lifecycle webhook
+ */
+export const ReceiveLiveKitWebhookHeader = zod.object({
+  "Authorization": zod.string()
 })
 
 
@@ -1398,6 +1840,26 @@ export const RequestUploadUrlResponse = zod.object({
 
 
 /**
+ * @summary Issue a short-lived authorized URL for a private object
+ */
+export const requestMediaUrlBodyObjectPathMin = 10;
+export const requestMediaUrlBodyObjectPathMax = 1024;
+
+
+export const requestMediaUrlBodyObjectPathRegExp = new RegExp('^\/objects');
+
+
+export const RequestMediaUrlBody = zod.object({
+  "objectPath": zod.string().min(requestMediaUrlBodyObjectPathMin).max(requestMediaUrlBodyObjectPathMax).regex(requestMediaUrlBodyObjectPathRegExp)
+})
+
+export const RequestMediaUrlResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * Requires a valid short-lived media ticket in the `ticket` query parameter.
  * @summary Serve an object entity from PRIVATE_OBJECT_DIR
  */
 export const GetStorageObjectParams = zod.object({
@@ -1408,10 +1870,18 @@ export const GetStorageObjectParams = zod.object({
 /**
  * @summary Create a dungeon (MUD game room with AI Dungeon Master)
  */
+export const createDungeonBodyNameMax = 120;
+
+export const createDungeonBodyMemberIdsMax = 20;
+
+export const createDungeonBodyThemeMax = 200;
+
+
+
 export const CreateDungeonBody = zod.object({
-  "name": zod.string().nullish(),
-  "memberIds": zod.array(zod.string()),
-  "theme": zod.string().nullish()
+  "name": zod.string().min(1).max(createDungeonBodyNameMax).nullish(),
+  "memberIds": zod.array(zod.string().uuid()).max(createDungeonBodyMemberIdsMax),
+  "theme": zod.string().min(1).max(createDungeonBodyThemeMax).nullish()
 })
 
 
@@ -1659,19 +2129,31 @@ export const AbandonLifeQuestResponse = zod.object({
 /**
  * @summary Create a talk-battle room (AI-judged debate game)
  */
+export const createBattleBodyAiPersonaIdMax = 100;
+
+export const createBattleBodyCategoryMax = 80;
+
+export const createBattleBodyTopicMax = 300;
+
+
+
 export const CreateBattleBody = zod.object({
-  "memberId": zod.string().optional().describe('The single friend\'s userId to invite. Provide this OR aiPersonaId.'),
-  "aiPersonaId": zod.string().optional().describe('The AI opponent persona id to battle against. Provide this OR memberId.'),
-  "category": zod.string(),
-  "topic": zod.string()
+  "memberId": zod.string().uuid().optional().describe('The single friend\'s userId to invite. Provide this OR aiPersonaId.'),
+  "aiPersonaId": zod.string().min(1).max(createBattleBodyAiPersonaIdMax).optional().describe('The AI opponent persona id to battle against. Provide this OR memberId.'),
+  "category": zod.string().max(createBattleBodyCategoryMax),
+  "topic": zod.string().min(1).max(createBattleBodyTopicMax)
 })
 
 
 /**
  * @summary Get AI-suggested debate topics for a category
  */
+export const suggestBattleTopicsBodyCategoryMax = 80;
+
+
+
 export const SuggestBattleTopicsBody = zod.object({
-  "category": zod.string()
+  "category": zod.string().max(suggestBattleTopicsBodyCategoryMax)
 })
 
 export const SuggestBattleTopicsResponse = zod.object({
@@ -1848,8 +2330,12 @@ export const SubmitBattleTurnParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const submitBattleTurnBodyContentMax = 1000;
+
+
+
 export const SubmitBattleTurnBody = zod.object({
-  "content": zod.string()
+  "content": zod.string().min(1).max(submitBattleTurnBodyContentMax)
 })
 
 export const SubmitBattleTurnResponse = zod.object({
@@ -2904,11 +3390,17 @@ export const PostDailyTalkRewardToFeedResponse = zod.object({
  */
 export const GetBibiOfficialProfileResponse = zod.object({
   "id": zod.string(),
-  "email": zod.string(),
   "nickname": zod.string(),
   "displayName": zod.string(),
   "handle": zod.string(),
   "profileImageUrl": zod.string().nullish(),
+  "starProfile": zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.string(),
+  "followedByMe": zod.boolean()
+}).nullish(),
   "statusMessage": zod.string().nullish()
 })
 
@@ -2921,8 +3413,8 @@ export const recordPresenceHeartbeatBodyPlatformMax = 32;
 
 
 export const RecordPresenceHeartbeatBody = zod.object({
-  "roomId": zod.string().optional(),
-  "platform": zod.string().max(recordPresenceHeartbeatBodyPlatformMax).optional()
+  "roomId": zod.string().uuid().nullish(),
+  "platform": zod.string().min(1).max(recordPresenceHeartbeatBodyPlatformMax).nullish()
 })
 
 
@@ -2969,7 +3461,7 @@ export const ListPvtTransactionsResponseItem = zod.object({
   "id": zod.string(),
   "amount": zod.number(),
   "type": zod.enum(['EARN', 'SPEND', 'ADJUST']),
-  "source": zod.enum(['DAILY_TALK_REWARD', 'EVENT', 'ADMIN', 'MISSION']),
+  "source": zod.enum(['DAILY_TALK_REWARD', 'EVENT', 'ADMIN', 'MISSION', 'AVATAR_ITEM']),
   "sourceId": zod.string(),
   "description": zod.string().nullish(),
   "balanceAfter": zod.number(),
@@ -2981,21 +3473,36 @@ export const ListPvtTransactionsResponse = zod.array(ListPvtTransactionsResponse
 /**
  * @summary List STAR feed posts visible to me
  */
-export const listStarFeedPostsQueryLimitDefault = 30;
+export const listStarFeedPostsQueryLimitDefault = 20;
 export const listStarFeedPostsQueryLimitMax = 100;
 
-
+export const listStarFeedPostsQueryScopeDefault = `recommended`;
 
 export const ListStarFeedPostsQueryParams = zod.object({
-  "limit": zod.coerce.number().min(1).max(listStarFeedPostsQueryLimitMax).default(listStarFeedPostsQueryLimitDefault)
+  "limit": zod.coerce.number().min(1).max(listStarFeedPostsQueryLimitMax).default(listStarFeedPostsQueryLimitDefault),
+  "scope": zod.enum(['recommended', 'following']).default(listStarFeedPostsQueryScopeDefault),
+  "cursor": zod.date().optional()
 })
 
-export const ListStarFeedPostsResponseItem = zod.object({
+export const listStarFeedPostsResponseItemsItemMediaItemAltTextMax = 160;
+
+export const listStarFeedPostsResponseItemsItemMediaMax = 4;
+
+
+
+export const ListStarFeedPostsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(listStarFeedPostsResponseItemsItemMediaItemAltTextMax).optional()
+})).max(listStarFeedPostsResponseItemsItemMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3003,6 +3510,93 @@ export const ListStarFeedPostsResponseItem = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Create a FAN or official STAR feed post
+ */
+export const createStarFeedPostBodyKindDefault = `fan`;
+export const createStarFeedPostBodyTitleMax = 80;
+
+export const createStarFeedPostBodyBodyMax = 500;
+
+export const createStarFeedPostBodyMediaItemAltTextMax = 160;
+
+export const createStarFeedPostBodyMediaMax = 4;
+
+
+
+export const CreateStarFeedPostBody = zod.object({
+  "kind": zod.enum(['fan', 'star']).default(createStarFeedPostBodyKindDefault),
+  "title": zod.string().max(createStarFeedPostBodyTitleMax).optional(),
+  "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax),
+  "targetStarProfileId": zod.string().uuid().nullish().describe('Optional STAR being supported by a FAN post; null means the neutral FAN profile.'),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(createStarFeedPostBodyMediaItemAltTextMax).optional()
+})).max(createStarFeedPostBodyMediaMax).optional()
+})
+
+
+/**
+ * @summary Get one STAR feed post visible to me
+ */
+export const GetStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const getStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const getStarFeedPostResponseMediaMax = 4;
+
+
+
+export const GetStarFeedPostResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(getStarFeedPostResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3017,23 +3611,29 @@ export const ListStarFeedPostsResponseItem = zod.object({
 })
 }))
 })
-export const ListStarFeedPostsResponse = zod.array(ListStarFeedPostsResponseItem)
 
 
 /**
- * @summary Create a FAN or official STAR feed post
+ * @summary Follow a public STAR profile
  */
-export const createStarFeedPostBodyKindDefault = `fan`;
-export const createStarFeedPostBodyTitleMax = 80;
+export const FollowStarProfileParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
 
-export const createStarFeedPostBodyBodyMax = 500;
+export const FollowStarProfileResponse = zod.object({
+  "following": zod.boolean()
+})
 
 
+/**
+ * @summary Unfollow a STAR profile
+ */
+export const UnfollowStarProfileParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
 
-export const CreateStarFeedPostBody = zod.object({
-  "kind": zod.enum(['fan', 'star']).default(createStarFeedPostBodyKindDefault),
-  "title": zod.string().max(createStarFeedPostBodyTitleMax).optional(),
-  "body": zod.string().min(1).max(createStarFeedPostBodyBodyMax)
+export const UnfollowStarProfileResponse = zod.object({
+  "following": zod.boolean()
 })
 
 
@@ -3044,12 +3644,24 @@ export const CheerStarFeedPostParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const cheerStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const cheerStarFeedPostResponseMediaMax = 4;
+
+
+
 export const CheerStarFeedPostResponse = zod.object({
   "id": zod.string(),
   "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(cheerStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(cheerStarFeedPostResponseMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3057,6 +3669,64 @@ export const CheerStarFeedPostResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+
+
+/**
+ * @summary Remove my active profile reaction from a STAR feed post
+ */
+export const UncheerStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const uncheerStarFeedPostResponseMediaItemAltTextMax = 160;
+
+export const uncheerStarFeedPostResponseMediaMax = 4;
+
+
+
+export const UncheerStarFeedPostResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(uncheerStarFeedPostResponseMediaItemAltTextMax).optional()
+})).max(uncheerStarFeedPostResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3086,6 +3756,189 @@ export const commentStarFeedPostBodyBodyMax = 240;
 
 export const CommentStarFeedPostBody = zod.object({
   "body": zod.string().min(1).max(commentStarFeedPostBodyBodyMax)
+})
+
+
+export const RepostStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const ReportStarFeedPostParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const reportStarFeedPostBodyDetailsMax = 500;
+
+
+
+export const ReportStarFeedPostBody = zod.object({
+  "reason": zod.enum(['spam', 'harassment', 'sexual', 'violence', 'copyright', 'other']),
+  "details": zod.string().max(reportStarFeedPostBodyDetailsMax).optional()
+})
+
+
+export const discoverStarFeedByHashtagQueryLimitMax = 100;
+
+
+
+export const DiscoverStarFeedByHashtagQueryParams = zod.object({
+  "tag": zod.coerce.string(),
+  "limit": zod.coerce.number().min(1).max(discoverStarFeedByHashtagQueryLimitMax).optional()
+})
+
+export const discoverStarFeedByHashtagResponseMediaItemAltTextMax = 160;
+
+export const discoverStarFeedByHashtagResponseMediaMax = 4;
+
+
+
+export const DiscoverStarFeedByHashtagResponseItem = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(discoverStarFeedByHashtagResponseMediaItemAltTextMax).optional()
+})).max(discoverStarFeedByHashtagResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+export const DiscoverStarFeedByHashtagResponse = zod.array(DiscoverStarFeedByHashtagResponseItem)
+
+
+export const ListStarResultDraftsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListStarResultDraftsResponse = zod.array(ListStarResultDraftsResponseItem)
+
+
+export const ApproveStarResultDraftParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const approveStarResultDraftResponseMediaItemAltTextMax = 160;
+
+export const approveStarResultDraftResponseMediaMax = 4;
+
+
+
+export const ApproveStarResultDraftResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(approveStarResultDraftResponseMediaItemAltTextMax).optional()
+})).max(approveStarResultDraftResponseMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})
+
+
+export const DiscardStarResultDraftParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const createFanCommunityBodyNameMax = 80;
+
+export const createFanCommunityBodyDescriptionMax = 500;
+
+
+
+export const CreateFanCommunityBody = zod.object({
+  "starProfileId": zod.string().uuid(),
+  "name": zod.string().max(createFanCommunityBodyNameMax),
+  "description": zod.string().max(createFanCommunityBodyDescriptionMax).optional()
+})
+
+
+export const JoinFanCommunityParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const LeaveFanCommunityParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+export const ListStarFeedReportsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "postId": zod.string().uuid(),
+  "reason": zod.string(),
+  "details": zod.string().nullish(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListStarFeedReportsResponse = zod.array(ListStarFeedReportsResponseItem)
+
+
+export const ResolveStarFeedReportParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ResolveStarFeedReportBody = zod.object({
+  "action": zod.enum(['keep', 'remove'])
 })
 
 
@@ -3128,6 +3981,12 @@ export const GetPublicStorageObjectParams = zod.object({
 /**
  * @summary Get my FAN or STAR play mode state
  */
+export const getMyPlayModeResponseSocialFollowerCountMin = 0;
+
+export const getMyPlayModeResponseSocialFollowingCountMin = 0;
+
+
+
 export const GetMyPlayModeResponse = zod.object({
   "currentMode": zod.enum(['fan', 'star']),
   "starUnlocked": zod.boolean(),
@@ -3140,6 +3999,10 @@ export const GetMyPlayModeResponse = zod.object({
   "empathy": zod.number(),
   "story": zod.number()
 })
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(getMyPlayModeResponseSocialFollowerCountMin),
+  "followingCount": zod.number().min(getMyPlayModeResponseSocialFollowingCountMin)
 }),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
@@ -3162,7 +4025,29 @@ export const GetMyPlayModeResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
 })
 
 
@@ -3172,6 +4057,12 @@ export const GetMyPlayModeResponse = zod.object({
 export const UpdateMyPlayModeBody = zod.object({
   "mode": zod.enum(['fan', 'star'])
 })
+
+export const updateMyPlayModeResponseSocialFollowerCountMin = 0;
+
+export const updateMyPlayModeResponseSocialFollowingCountMin = 0;
+
+
 
 export const UpdateMyPlayModeResponse = zod.object({
   "currentMode": zod.enum(['fan', 'star']),
@@ -3186,6 +4077,10 @@ export const UpdateMyPlayModeResponse = zod.object({
   "story": zod.number()
 })
 }),
+  "social": zod.object({
+  "followerCount": zod.number().min(updateMyPlayModeResponseSocialFollowerCountMin),
+  "followingCount": zod.number().min(updateMyPlayModeResponseSocialFollowingCountMin)
+}),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
   "starKey": zod.string(),
@@ -3207,7 +4102,732 @@ export const UpdateMyPlayModeResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary List the account's activity profiles and active profile
+ */
+
+export const getMyCharacterProfilesResponseActiveProfileTwoXpMin = 0;
+
+export const getMyCharacterProfilesResponseActiveProfileTwoJobStageMin = 0;
+
+
+export const getMyCharacterProfilesResponseProfilesItemTwoXpMin = 0;
+
+export const getMyCharacterProfilesResponseProfilesItemTwoJobStageMin = 0;
+
+
+
+export const GetMyCharacterProfilesResponse = zod.object({
+  "activeProfile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(getMyCharacterProfilesResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfilesResponseActiveProfileTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(getMyCharacterProfilesResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfilesResponseProfilesItemTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})))
+})
+
+
+/**
+ * @summary Resolve and verify the request's active character profile
+ */
+export const GetMyCharacterProfileContextHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+
+export const getMyCharacterProfileContextResponseTwoXpMin = 0;
+
+export const getMyCharacterProfileContextResponseTwoJobStageMin = 0;
+
+
+
+export const GetMyCharacterProfileContextResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(getMyCharacterProfileContextResponseTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getMyCharacterProfileContextResponseTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+}))
+
+
+/**
+ * @summary Customize the initial FAN or create an unlocked additional FAN
+ */
+export const createMyFanCharacterProfileBodyDisplayNameMax = 30;
+
+export const createMyFanCharacterProfileBodyHandleMin = 3;
+export const createMyFanCharacterProfileBodyHandleMax = 24;
+
+export const createMyFanCharacterProfileBodyProfileImageUrlMax = 1024;
+
+export const createMyFanCharacterProfileBodyCustomizeDefaultDefault = false;
+
+export const CreateMyFanCharacterProfileBody = zod.object({
+  "displayName": zod.string().min(1).max(createMyFanCharacterProfileBodyDisplayNameMax),
+  "handle": zod.string().min(createMyFanCharacterProfileBodyHandleMin).max(createMyFanCharacterProfileBodyHandleMax).optional(),
+  "profileImageUrl": zod.string().max(createMyFanCharacterProfileBodyProfileImageUrlMax).nullish(),
+  "customizeDefault": zod.boolean().default(createMyFanCharacterProfileBodyCustomizeDefaultDefault).describe('Onboarding-only flag. When true, an uncustomized default FAN is completed in place. Ordinary FAN-add flows must omit it so an existing profile is never overwritten.\n'),
+  "customization": zod.object({
+  "ageStyle": zod.string().optional(),
+  "hairStyle": zod.string().optional(),
+  "skinTone": zod.string().optional(),
+  "genderExpression": zod.string().optional(),
+  "gender": zod.enum(['man', 'woman']).optional(),
+  "baseKey": zod.string().optional(),
+  "headKey": zod.string().optional(),
+  "wearKey": zod.string().optional()
+})
+})
+
+
+/**
+ * @summary Select the activity profile used by feed and chat
+ */
+export const UpdateMyActiveCharacterProfileBody = zod.object({
+  "profileId": zod.string().uuid()
+})
+
+
+export const updateMyActiveCharacterProfileResponseActiveProfileTwoXpMin = 0;
+
+export const updateMyActiveCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
+
+export const updateMyActiveCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const updateMyActiveCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
+
+
+
+export const UpdateMyActiveCharacterProfileResponse = zod.object({
+  "activeProfile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateMyActiveCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyActiveCharacterProfileResponseActiveProfileTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateMyActiveCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyActiveCharacterProfileResponseProfilesItemTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})))
+})
+
+
+/**
+ * @summary Update one owned activity profile
+ */
+export const UpdateMyCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const updateMyCharacterProfileBodyDisplayNameMax = 30;
+
+export const updateMyCharacterProfileBodyProfileImageUrlMax = 1024;
+
+export const updateMyCharacterProfileBodyStatusMessageMax = 100;
+
+
+
+export const UpdateMyCharacterProfileBody = zod.object({
+  "displayName": zod.string().min(1).max(updateMyCharacterProfileBodyDisplayNameMax).optional(),
+  "profileImageUrl": zod.string().max(updateMyCharacterProfileBodyProfileImageUrlMax).nullish(),
+  "statusMessage": zod.string().max(updateMyCharacterProfileBodyStatusMessageMax).nullish()
+})
+
+
+export const updateMyCharacterProfileResponseActiveProfileTwoXpMin = 0;
+
+export const updateMyCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
+
+export const updateMyCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const updateMyCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
+
+
+
+export const UpdateMyCharacterProfileResponse = zod.object({
+  "activeProfile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateMyCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyCharacterProfileResponseActiveProfileTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateMyCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateMyCharacterProfileResponseProfilesItemTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})))
+})
+
+
+/**
+ * @summary Soft-delete an owned profile while preserving historical content
+ */
+export const ArchiveMyCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+
+export const archiveMyCharacterProfileResponseActiveProfileTwoXpMin = 0;
+
+export const archiveMyCharacterProfileResponseActiveProfileTwoJobStageMin = 0;
+
+
+export const archiveMyCharacterProfileResponseProfilesItemTwoXpMin = 0;
+
+export const archiveMyCharacterProfileResponseProfilesItemTwoJobStageMin = 0;
+
+
+
+export const ArchiveMyCharacterProfileResponse = zod.object({
+  "activeProfile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(archiveMyCharacterProfileResponseActiveProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(archiveMyCharacterProfileResponseActiveProfileTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(archiveMyCharacterProfileResponseProfilesItemTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(archiveMyCharacterProfileResponseProfilesItemTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+})))
+})
+
+
+/**
+ * @summary List inventory items owned by one character profile
+ */
+export const GetMyCharacterProfileInventoryParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const getMyCharacterProfileInventoryResponseItemsItemQuantityMin = 0;
+
+
+
+export const GetMyCharacterProfileInventoryResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "itemKey": zod.string(),
+  "itemType": zod.string(),
+  "quantity": zod.number().min(getMyCharacterProfileInventoryResponseItemsItemQuantityMin),
+  "equipped": zod.boolean(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get the current avatar appearance and compatible item catalog
+ */
+export const GetMyCharacterAvatarParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const getMyCharacterAvatarResponseAppearanceClassStageMin = 0;
+export const getMyCharacterAvatarResponseAppearanceClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseAppearanceLayersItemClassStageMin = 0;
+export const getMyCharacterAvatarResponseAppearanceLayersItemClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const getMyCharacterAvatarResponseItemsItemClassStageMin = 0;
+export const getMyCharacterAvatarResponseItemsItemClassStageMax = 3;
+
+export const getMyCharacterAvatarResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const GetMyCharacterAvatarResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseAppearanceClassStageMin).max(getMyCharacterAvatarResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseAppearanceLayersItemClassStageMin).max(getMyCharacterAvatarResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(getMyCharacterAvatarResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(getMyCharacterAvatarResponseItemsItemClassStageMin).max(getMyCharacterAvatarResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(getMyCharacterAvatarResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Purchase an avatar item with STAR Point
+ */
+export const PurchaseMyCharacterAvatarItemParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const PurchaseMyCharacterAvatarItemBody = zod.object({
+  "itemKey": zod.string()
+})
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseAppearanceClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const purchaseMyCharacterAvatarItemResponseItemsItemClassStageMin = 0;
+export const purchaseMyCharacterAvatarItemResponseItemsItemClassStageMax = 3;
+
+export const purchaseMyCharacterAvatarItemResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const PurchaseMyCharacterAvatarItemResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceClassStageMin).max(purchaseMyCharacterAvatarItemResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin).max(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(purchaseMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(purchaseMyCharacterAvatarItemResponseItemsItemClassStageMin).max(purchaseMyCharacterAvatarItemResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(purchaseMyCharacterAvatarItemResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Equip one owned avatar item in its slot
+ */
+export const EquipMyCharacterAvatarItemParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const EquipMyCharacterAvatarItemBody = zod.object({
+  "itemKey": zod.string()
+})
+
+export const equipMyCharacterAvatarItemResponseAppearanceClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseAppearanceClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin = 0;
+
+export const equipMyCharacterAvatarItemResponseItemsItemClassStageMin = 0;
+export const equipMyCharacterAvatarItemResponseItemsItemClassStageMax = 3;
+
+export const equipMyCharacterAvatarItemResponseItemsItemPriceStarPointMin = 0;
+
+
+
+export const EquipMyCharacterAvatarItemResponse = zod.object({
+  "appearance": zod.object({
+  "profileId": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star']),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceClassStageMin).max(equipMyCharacterAvatarItemResponseAppearanceClassStageMax),
+  "recipe": zod.string(),
+  "layers": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMin).max(equipMyCharacterAvatarItemResponseAppearanceLayersItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(equipMyCharacterAvatarItemResponseAppearanceLayersItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+})),
+  "loadout": zod.record(zod.string(), zod.unknown())
+}),
+  "items": zod.array(zod.object({
+  "itemKey": zod.string(),
+  "avatarType": zod.enum(['fan', 'star']),
+  "collectionKey": zod.string().nullish(),
+  "gender": zod.union([zod.literal('man'),zod.literal('woman'),zod.literal(null)]).nullish(),
+  "slot": zod.enum(['background', 'base', 'head', 'wear', 'effect', 'full_skin', 'star_form']),
+  "classStage": zod.number().min(equipMyCharacterAvatarItemResponseItemsItemClassStageMin).max(equipMyCharacterAvatarItemResponseItemsItemClassStageMax),
+  "jobKey": zod.string().nullish(),
+  "displayName": zod.string(),
+  "assetPath": zod.string(),
+  "layerOrder": zod.number(),
+  "priceStarPoint": zod.number().min(equipMyCharacterAvatarItemResponseItemsItemPriceStarPointMin),
+  "purchasable": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "status": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "owned": zod.boolean(),
+  "equipped": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary List notifications for the selected character profile
+ */
+export const GetMyCharacterProfileNotificationsHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+export const GetMyCharacterProfileNotificationsResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "actorProfileId": zod.string().uuid().nullish(),
+  "type": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+export const MarkMyCharacterProfileNotificationReadParams = zod.object({
+  "notificationId": zod.coerce.string().uuid()
+})
+
+export const MarkMyCharacterProfileNotificationReadResponse = zod.object({
+  "id": zod.string().uuid(),
+  "profileId": zod.string().uuid(),
+  "actorProfileId": zod.string().uuid().nullish(),
+  "type": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List followers or following profiles for the selected character profile
+ */
+export const getMyCharacterProfileSocialQueryScopeDefault = `followers`;
+
+export const GetMyCharacterProfileSocialQueryParams = zod.object({
+  "scope": zod.enum(['followers', 'following']).default(getMyCharacterProfileSocialQueryScopeDefault)
+})
+
+export const GetMyCharacterProfileSocialHeader = zod.object({
+  "X-Character-Profile-Id": zod.string().uuid().optional()
+})
+
+export const GetMyCharacterProfileSocialResponse = zod.object({
+  "profileId": zod.string().uuid(),
+  "scope": zod.enum(['followers', 'following']),
+  "profiles": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullable(),
+  "followedAt": zod.coerce.date()
+})))
+})
+
+
+/**
+ * @summary List published NFT collections available for STAR summon
+ */
+
+
+
+export const ListPublishedNftCollectionsResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "chainId": zod.number().min(1),
+  "contractAddress": zod.string(),
+  "name": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "officialUrl": zod.string().url().nullish(),
+  "roleName": zod.string().nullish(),
+  "worldStyle": zod.string().nullish(),
+  "status": zod.literal("published"),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPublishedNftCollectionsResponse = zod.array(ListPublishedNftCollectionsResponseItem)
+
+
+/**
+ * @summary List published avatar evolution stages for a collection
+ */
+export const ListPublishedNftEvolutionStagesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+export const ListPublishedNftEvolutionStagesResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "collectionId": zod.string().uuid(),
+  "stageKey": zod.string(),
+  "minLevel": zod.number().min(1),
+  "title": zod.string(),
+  "description": zod.string(),
+  "retainedTraits": zod.array(zod.string()).optional(),
+  "imageUrl": zod.string().nullish(),
+  "status": zod.literal("published"),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPublishedNftEvolutionStagesResponse = zod.array(ListPublishedNftEvolutionStagesResponseItem)
+
+
+/**
+ * @summary Get reviewed RPG mission content for a published collection
+ */
+export const GetPublishedNftRpgContentParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+
+
+export const GetPublishedNftRpgContentResponse = zod.object({
+  "collectionId": zod.string().uuid(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "roleName": zod.string(),
+  "worldStyle": zod.string(),
+  "missions": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "xp": zod.number().min(1)
+})),
+  "story": zod.object({
+  "opening": zod.string(),
+  "next": zod.string()
+})
 })
 
 
@@ -3232,10 +4852,13 @@ export const GetMyWalletStatusResponse = zod.object({
  */
 export const createWalletChallengeBodyWalletAddressMax = 120;
 
+export const createWalletChallengeBodyChainIdMax = 2147483647;
+
 
 
 export const CreateWalletChallengeBody = zod.object({
-  "walletAddress": zod.string().min(1).max(createWalletChallengeBodyWalletAddressMax)
+  "walletAddress": zod.string().min(1).max(createWalletChallengeBodyWalletAddressMax),
+  "chainId": zod.number().min(1).max(createWalletChallengeBodyChainIdMax).optional()
 })
 
 
@@ -3325,6 +4948,179 @@ export const GetMyStarProfileResponse = zod.object({
 
 
 /**
+ * @summary List my NFT-backed STAR profiles and the active STAR
+ */
+export const ListMyStarProfilesResponse = zod.object({
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Make one of my STAR profiles the active STAR identity
+ */
+export const ActivateMyStarProfileParams = zod.object({
+  "starProfileId": zod.coerce.string().uuid()
+})
+
+export const activateMyStarProfileResponseStateSocialFollowerCountMin = 0;
+
+export const activateMyStarProfileResponseStateSocialFollowingCountMin = 0;
+
+
+
+export const ActivateMyStarProfileResponse = zod.object({
+  "equippedStar": zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),
+  "state": zod.object({
+  "currentMode": zod.enum(['fan', 'star']),
+  "starUnlocked": zod.boolean(),
+  "fanProfile": zod.object({
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "fanPower": zod.number(),
+  "supportPower": zod.number(),
+  "empathy": zod.number(),
+  "story": zod.number()
+})
+}),
+  "social": zod.object({
+  "followerCount": zod.number().min(activateMyStarProfileResponseStateSocialFollowerCountMin),
+  "followingCount": zod.number().min(activateMyStarProfileResponseStateSocialFollowingCountMin)
+}),
+  "equippedStar": zod.union([zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
+})
+})
+
+
+/**
+ * @summary List eligible NFTs owned by my verified wallet
+ */
+export const getMyWalletNftInventoryResponseTotalOwnedMin = 0;
+
+export const getMyWalletNftInventoryResponseConfiguredCollectionCountMin = 0;
+
+export const getMyWalletNftInventoryResponseFailedCollectionCountMin = 0;
+
+
+
+export const GetMyWalletNftInventoryResponse = zod.object({
+  "walletAddress": zod.string(),
+  "collections": zod.array(zod.object({
+  "collectionId": zod.string().uuid(),
+  "chainId": zod.number(),
+  "contractAddress": zod.string(),
+  "collectionName": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "balance": zod.string(),
+  "enumerable": zod.boolean(),
+  "truncated": zod.boolean(),
+  "requiresTokenId": zod.boolean(),
+  "tokens": zod.array(zod.object({
+  "collectionId": zod.string().uuid(),
+  "chainId": zod.number(),
+  "contractAddress": zod.string(),
+  "collectionName": zod.string(),
+  "ipName": zod.string(),
+  "category": zod.string(),
+  "tokenId": zod.string()
+}))
+})),
+  "totalOwned": zod.number().min(getMyWalletNftInventoryResponseTotalOwnedMin),
+  "hasEligibleNft": zod.boolean(),
+  "configuredCollectionCount": zod.number().min(getMyWalletNftInventoryResponseConfiguredCollectionCountMin),
+  "failedCollectionCount": zod.number().min(getMyWalletNftInventoryResponseFailedCollectionCountMin),
+  "partial": zod.boolean(),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Equip an owned STAR NFT
  */
 export const equipStarNftBodyTokenIdMax = 80;
@@ -3332,8 +5128,15 @@ export const equipStarNftBodyTokenIdMax = 80;
 
 
 export const EquipStarNftBody = zod.object({
-  "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax)
+  "tokenId": zod.string().min(1).max(equipStarNftBodyTokenIdMax),
+  "collectionId": zod.string().uuid().optional()
 })
+
+export const equipStarNftResponseStateSocialFollowerCountMin = 0;
+
+export const equipStarNftResponseStateSocialFollowingCountMin = 0;
+
+
 
 export const EquipStarNftResponse = zod.object({
   "equippedStar": zod.object({
@@ -3371,6 +5174,10 @@ export const EquipStarNftResponse = zod.object({
   "story": zod.number()
 })
 }),
+  "social": zod.object({
+  "followerCount": zod.number().min(equipStarNftResponseStateSocialFollowerCountMin),
+  "followingCount": zod.number().min(equipStarNftResponseStateSocialFollowingCountMin)
+}),
   "equippedStar": zod.union([zod.object({
   "id": zod.string(),
   "starKey": zod.string(),
@@ -3392,7 +5199,29 @@ export const EquipStarNftResponse = zod.object({
   "verifiedAt": zod.coerce.date().nullish(),
   "torimiaOpenedAt": zod.coerce.date().nullish(),
   "promotedAt": zod.coerce.date().nullish()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "starProfiles": zod.array(zod.object({
+  "id": zod.string(),
+  "starKey": zod.string(),
+  "displayName": zod.string(),
+  "tokenId": zod.string(),
+  "contractAddress": zod.string(),
+  "chainId": zod.number(),
+  "imageUrl": zod.string().nullish(),
+  "stage": zod.enum(['aspiring', 'promoted']),
+  "level": zod.number(),
+  "xp": zod.number(),
+  "stats": zod.object({
+  "charm": zod.number(),
+  "stagePresence": zod.number(),
+  "bond": zod.number(),
+  "lore": zod.number()
+}),
+  "equippedAt": zod.coerce.date().nullish(),
+  "verifiedAt": zod.coerce.date().nullish(),
+  "torimiaOpenedAt": zod.coerce.date().nullish(),
+  "promotedAt": zod.coerce.date().nullish()
+}))
 })
 })
 
@@ -3530,6 +5359,12 @@ export const CreateBattleFeedPostBody = zod.object({
   "kind": zod.enum(['fan', 'star']).default(createBattleFeedPostBodyKindDefault)
 })
 
+export const createBattleFeedPostResponsePostMediaItemAltTextMax = 160;
+
+export const createBattleFeedPostResponsePostMediaMax = 4;
+
+
+
 export const CreateBattleFeedPostResponse = zod.object({
   "post": zod.object({
   "id": zod.string(),
@@ -3537,6 +5372,12 @@ export const CreateBattleFeedPostResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(createBattleFeedPostResponsePostMediaItemAltTextMax).optional()
+})).max(createBattleFeedPostResponsePostMediaMax),
   "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
   "createdAt": zod.coerce.date(),
   "author": zod.object({
@@ -3544,6 +5385,11 @@ export const CreateBattleFeedPostResponse = zod.object({
   "nickname": zod.string(),
   "profileImageUrl": zod.string().nullish()
 }),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
   "reactionCount": zod.number(),
   "commentCount": zod.number(),
   "reactedByMe": zod.boolean(),
@@ -3590,14 +5436,20 @@ export const FailCallParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const FailCallHeader = zod.object({
+  "X-Call-Attempt-Id": zod.string().uuid().optional().describe('UUID shared by every stage of one client call attempt.'),
+  "X-Idempotency-Key": zod.string().uuid().optional().describe('UUID that makes a terminal call-control operation replay-safe.')
+})
+
 export const FailCallResponse = zod.object({
   "id": zod.string(),
+  "attemptId": zod.string().uuid().nullish(),
   "roomName": zod.string(),
   "callerId": zod.string(),
   "calleeId": zod.string(),
   "chatRoomId": zod.string().nullish(),
   "media": zod.enum(['audio', 'video']),
-  "status": zod.enum(['ringing', 'active', 'accepted', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
+  "status": zod.enum(['ringing', 'active', 'declined', 'missed', 'cancelled', 'ended', 'failed']),
   "createdAt": zod.string(),
   "acceptedAt": zod.string().nullish(),
   "declinedAt": zod.string().nullish(),
@@ -3608,3 +5460,392 @@ export const FailCallResponse = zod.object({
 })
 
 
+/**
+ * @summary List a user's public feed posts with cursor pagination
+ */
+export const GetUsersUserIdPostsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdPostsQueryLimitDefault = 30;
+export const getUsersUserIdPostsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdPostsQueryParams = zod.object({
+  "starId": zod.coerce.string().uuid().optional(),
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdPostsQueryLimitMax).default(getUsersUserIdPostsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const getUsersUserIdPostsResponseItemsItemMediaItemAltTextMax = 160;
+
+export const getUsersUserIdPostsResponseItemsItemMediaMax = 4;
+
+
+
+export const GetUsersUserIdPostsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getUsersUserIdPostsResponseItemsItemMediaItemAltTextMax).optional()
+})).max(getUsersUserIdPostsResponseItemsItemMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary List public growth records with cursor pagination
+ */
+export const GetUsersUserIdGrowthRecordsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdGrowthRecordsQueryLimitDefault = 30;
+export const getUsersUserIdGrowthRecordsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdGrowthRecordsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdGrowthRecordsQueryLimitMax).default(getUsersUserIdGrowthRecordsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const GetUsersUserIdGrowthRecordsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "starProfileId": zod.string().uuid(),
+  "eventType": zod.string(),
+  "xpDelta": zod.number(),
+  "reason": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary List public battle results with cursor pagination
+ */
+export const GetUsersUserIdBattleResultsParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const getUsersUserIdBattleResultsQueryLimitDefault = 30;
+export const getUsersUserIdBattleResultsQueryLimitMax = 100;
+
+
+
+export const GetUsersUserIdBattleResultsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getUsersUserIdBattleResultsQueryLimitMax).default(getUsersUserIdBattleResultsQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+export const GetUsersUserIdBattleResultsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "roomId": zod.string().uuid(),
+  "topic": zod.string(),
+  "category": zod.string(),
+  "outcome": zod.enum(['win', 'loss', 'draw']),
+  "myScore": zod.number(),
+  "opponentScore": zod.number(),
+  "opponentName": zod.string(),
+  "completedAt": zod.coerce.date()
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Get one public activity profile and its posts
+ */
+export const GetPublicCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const getPublicCharacterProfileQueryLimitDefault = 30;
+export const getPublicCharacterProfileQueryLimitMax = 60;
+
+
+
+export const GetPublicCharacterProfileQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(getPublicCharacterProfileQueryLimitMax).default(getPublicCharacterProfileQueryLimitDefault),
+  "cursor": zod.date().optional()
+})
+
+
+export const getPublicCharacterProfileResponseProfileTwoXpMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoJobStageMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoFollowerCountMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoFollowingCountMin = 0;
+
+export const getPublicCharacterProfileResponseProfileTwoPostCountMin = 0;
+
+export const getPublicCharacterProfileResponsePostsItemsItemMediaItemAltTextMax = 160;
+
+export const getPublicCharacterProfileResponsePostsItemsItemMediaMax = 4;
+
+
+
+export const GetPublicCharacterProfileResponse = zod.object({
+  "profile": zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(getPublicCharacterProfileResponseProfileTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(getPublicCharacterProfileResponseProfileTwoJobStageMin),
+  "jobLabel": zod.string(),
+  "characterImageUrl": zod.string().nullish(),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isMine": zod.boolean(),
+  "followedByMe": zod.boolean(),
+  "followerCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoFollowerCountMin),
+  "followingCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoFollowingCountMin),
+  "postCount": zod.number().min(getPublicCharacterProfileResponseProfileTwoPostCountMin)
+})),
+  "posts": zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['official', 'event', 'fan', 'star', 'growth', 'profile_update', 'talk_diary']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "hashtags": zod.array(zod.string()),
+  "media": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "mediaType": zod.enum(['image', 'video']),
+  "altText": zod.string().max(getPublicCharacterProfileResponsePostsItemsItemMediaItemAltTextMax).optional()
+})).max(getPublicCharacterProfileResponsePostsItemsItemMediaMax),
+  "visibility": zod.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+}),
+  "targetStarProfile": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "displayName": zod.string(),
+  "imageUrl": zod.string().nullable()
+}),zod.null()]),
+  "reactionCount": zod.number(),
+  "commentCount": zod.number(),
+  "reactedByMe": zod.boolean(),
+  "recentComments": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.object({
+  "id": zod.string().nullish(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish()
+})
+}))
+})),
+  "nextCursor": zod.coerce.date().nullable()
+})
+})
+
+
+/**
+ * @summary Follow a public activity profile as the active profile
+ */
+export const FollowCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const FollowCharacterProfileResponse = zod.object({
+  "following": zod.boolean()
+})
+
+
+/**
+ * @summary Unfollow a public activity profile as the active profile
+ */
+export const UnfollowCharacterProfileParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const UnfollowCharacterProfileResponse = zod.object({
+  "following": zod.boolean()
+})
+
+
+/**
+ * @summary Get a public user profile
+ */
+export const GetUsersUserIdProfileParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const GetUsersUserIdProfileResponse = zod.object({
+  "id": zod.string().uuid(),
+  "nickname": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "statusMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional(),
+  "fan": zod.object({
+
+}).passthrough().optional(),
+  "stars": zod.array(zod.object({
+
+}).passthrough()),
+  "followerCount": zod.number(),
+  "followingCount": zod.number(),
+  "followedStarIds": zod.array(zod.string().uuid()).optional()
+})
+
+
+/**
+ * @summary List STAR feed activities
+ */
+export const GetStarFeedActivitiesResponseItem = zod.object({
+
+}).passthrough()
+export const GetStarFeedActivitiesResponse = zod.array(GetStarFeedActivitiesResponseItem)
+
+
+/**
+ * @summary List community broadcasts
+ */
+export const GetFanCommunitiesIdBroadcastsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetFanCommunitiesIdBroadcastsResponseItem = zod.object({
+
+}).passthrough()
+export const GetFanCommunitiesIdBroadcastsResponse = zod.array(GetFanCommunitiesIdBroadcastsResponseItem)
+
+
+/**
+ * @summary Create a community broadcast
+ */
+export const PostFanCommunitiesIdBroadcastsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const PostFanCommunitiesIdBroadcastsBody = zod.object({
+
+}).passthrough()
+
+
+/**
+ * @summary List community missions
+ */
+export const GetFanCommunitiesIdMissionsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const GetFanCommunitiesIdMissionsResponseItem = zod.object({
+
+}).passthrough()
+export const GetFanCommunitiesIdMissionsResponse = zod.array(GetFanCommunitiesIdMissionsResponseItem)
+
+
+/**
+ * @summary Create a community mission
+ */
+export const PostFanCommunitiesIdMissionsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const PostFanCommunitiesIdMissionsBody = zod.object({
+
+}).passthrough()
+
+
+/**
+ * @summary Join a fan mission
+ */
+export const PostFanMissionsIdJoinParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+
+/**
+ * @summary Lock or reactivate a character profile
+ */
+export const UpdateAdminCharacterProfileStatusParams = zod.object({
+  "profileId": zod.coerce.string().uuid()
+})
+
+export const updateAdminCharacterProfileStatusBodyReasonMin = 2;
+export const updateAdminCharacterProfileStatusBodyReasonMax = 300;
+
+
+
+export const UpdateAdminCharacterProfileStatusBody = zod.object({
+  "status": zod.enum(['active', 'locked']),
+  "reason": zod.string().min(updateAdminCharacterProfileStatusBodyReasonMin).max(updateAdminCharacterProfileStatusBodyReasonMax)
+})
+
+
+export const updateAdminCharacterProfileStatusResponseTwoXpMin = 0;
+
+export const updateAdminCharacterProfileStatusResponseTwoJobStageMin = 0;
+
+
+
+export const UpdateAdminCharacterProfileStatusResponse = zod.object({
+  "id": zod.string().uuid(),
+  "type": zod.enum(['fan', 'star', 'official_ai']),
+  "handle": zod.string(),
+  "displayName": zod.string(),
+  "profileImageUrl": zod.string().nullish(),
+  "activityProfile": zod.union([zod.unknown(),zod.null()]).optional()
+}).and(zod.object({
+  "statusMessage": zod.string().nullish(),
+  "status": zod.enum(['active', 'locked', 'torimia', 'archived']),
+  "level": zod.number().min(1),
+  "xp": zod.number().min(updateAdminCharacterProfileStatusResponseTwoXpMin),
+  "jobKey": zod.string().nullish(),
+  "jobStage": zod.number().min(updateAdminCharacterProfileStatusResponseTwoJobStageMin),
+  "stats": zod.record(zod.string(), zod.number()),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "isActive": zod.boolean()
+}))

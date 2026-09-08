@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useListBattlePersonas, useListFriends } from "@workspace/api-client-react";
 import { Avatar } from "@/components/Avatar";
 import { useColors } from "@/hooks/useColors";
+import { userDisplayName } from "@/lib/friendNames";
 
 type Mode = "ai" | "friend";
 
@@ -48,7 +49,7 @@ export default function BattleCreateScreen() {
       <View style={[styles.intro, { backgroundColor: colors.accent }]}>
         <Text style={styles.introEmoji}>⚔️</Text>
         <Text style={[styles.introText, { color: colors.foreground }]}>
-          찬반으로 나뉘어 3라운드 말싸움! AI 심판이 매 발언을 채점해 승자를 가립니다.
+          찬반으로 나뉘어 3라운드 찬반 토론! AI 심판이 매 발언을 채점해 승자를 가립니다.
         </Text>
       </View>
 
@@ -111,6 +112,7 @@ export default function BattleCreateScreen() {
             }
             renderItem={({ item }) => {
               const isSelected = selectedFriend === item.id;
+              const displayName = userDisplayName(item);
               return (
                 <Pressable
                   style={({ pressed }) => [
@@ -119,10 +121,10 @@ export default function BattleCreateScreen() {
                   ]}
                   onPress={() => setSelectedFriend(isSelected ? null : item.id)}
                 >
-                  <Avatar uri={item.profileImageUrl} name={item.nickname} size={46} />
+                  <Avatar uri={item.profileImageUrl} name={displayName} size={46} crop="face" characterType={item.profile?.type} />
                   <View style={styles.rowInfo}>
-                    <Text style={[styles.rowName, { color: colors.foreground }]}>{item.nickname}</Text>
-                    <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.email}</Text>
+                    <Text style={[styles.rowName, { color: colors.foreground }]}>{displayName}</Text>
+                    <Text style={[styles.rowEmail, { color: colors.mutedForeground }]}>{item.statusMessage || "AnotherMe 사용자"}</Text>
                   </View>
                   <View
                     style={[

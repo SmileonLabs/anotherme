@@ -135,6 +135,7 @@ export async function openTorimia(userId: string): Promise<TorimiaState> {
 
   await recordStarActivity({
     userId,
+    starProfileId: updated.id,
     sourceKey: `torimia_open:${updated.id}:${userId}`,
     eventType: "torimia_open",
     xp: 50,

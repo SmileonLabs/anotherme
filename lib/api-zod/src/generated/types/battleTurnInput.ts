@@ -7,5 +7,9 @@
  */
 
 export interface BattleTurnInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
   content: string;
 }

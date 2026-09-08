@@ -11,17 +11,17 @@ import {
   type LifeQuest,
   type LifeQuestChoice,
   type LifeQuestChooseResult,
-  type PersonaStatChanges,
 } from "@workspace/api-client-react";
 import { crossAlert } from "@/lib/crossAlert";
 import { useColors } from "@/hooks/useColors";
+import { usePlayMode } from "@/hooks/usePlayMode";
 import { RISK_META, statEntries, themeMeta } from "@/constants/lifeQuest";
 
 function StatDeltas({
   stats,
   color,
 }: {
-  stats: PersonaStatChanges | undefined | null;
+  stats: unknown;
   color: string;
 }) {
   const entries = statEntries(stats as Record<string, number | undefined> | undefined | null);
@@ -44,6 +44,9 @@ export default function LifeQuestPlayScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { equippedStar } = usePlayMode();
+  const promoted = equippedStar?.stage === "promoted";
+  const missionLabel = "성장 RPG";
 
   const { data: quest, error, isLoading, refetch } = useGetLifeQuest(id, {
     query: { queryKey: ["lifeQuest", id] },
@@ -67,7 +70,7 @@ export default function LifeQuestPlayScreen() {
       });
       setResult(res);
     } catch {
-      crossAlert("오류", "선택을 처리하지 못했어요. 다시 시도해주세요.");
+      crossAlert("오류", `${missionLabel} 선택을 처리하지 못했어요. 다시 시도해주세요.`);
     }
   };
 
@@ -77,7 +80,7 @@ export default function LifeQuestPlayScreen() {
   };
 
   const onAbandon = () => {
-    crossAlert("퀘스트 그만두기", "지금 그만두면 이 퀘스트는 종료돼요. 계속할까요?", [
+    crossAlert("미션 그만두기", `지금 그만두면 이 ${missionLabel}은 종료돼요. 계속할까요?`, [
       { text: "취소", style: "cancel" },
       {
         text: "그만두기",
@@ -97,7 +100,7 @@ export default function LifeQuestPlayScreen() {
   const renderHeader = (title: string) => (
     <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
       <Pressable onPress={goBack} hitSlop={10} style={styles.headerBtn}>
-        <Feather name="chevron-left" size={26} color={colors.foreground} />
+        <Feather name="chevron-left" size={26} color={colors.primary} />
       </Pressable>
       <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
         {title}
@@ -111,7 +114,7 @@ export default function LifeQuestPlayScreen() {
       <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-          상황을 준비하고 있어요…
+          {missionLabel}을 준비하고 있어요...
         </Text>
       </View>
     );
@@ -120,11 +123,11 @@ export default function LifeQuestPlayScreen() {
   if (error || !quest) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {renderHeader("라이프 퀘스트")}
+        {renderHeader(missionLabel)}
         <View style={[styles.center, { flex: 1, gap: 12 }]}>
           <Feather name="alert-circle" size={36} color={colors.mutedForeground} />
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            퀘스트를 불러오지 못했어요.
+            {missionLabel}을 불러오지 못했어요.
           </Text>
           <Pressable onPress={goBack} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}>
             <Text style={styles.primaryBtnText}>돌아가기</Text>
@@ -134,7 +137,7 @@ export default function LifeQuestPlayScreen() {
     );
   }
 
-  const tMeta = themeMeta(quest.theme);
+  const tMeta = themeMeta(quest.theme, promoted);
   const isDone = quest.status !== "active" || quest.currentStageIndex >= quest.stages.length;
 
   if (isDone) {
@@ -145,6 +148,7 @@ export default function LifeQuestPlayScreen() {
         insets={insets}
         renderHeader={renderHeader}
         onClose={goBack}
+        promoted={promoted}
       />
     );
   }
@@ -168,7 +172,7 @@ export default function LifeQuestPlayScreen() {
           </Text>
         </View>
 
-        <Text style={[styles.goalLabel, { color: colors.mutedForeground }]}>목표</Text>
+        <Text style={[styles.goalLabel, { color: colors.mutedForeground }]}>미션 목표</Text>
         <Text style={[styles.goalText, { color: colors.foreground }]}>{quest.goal}</Text>
 
         <View style={[styles.stageCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -177,7 +181,7 @@ export default function LifeQuestPlayScreen() {
         </View>
 
         <Text style={[styles.chooseLabel, { color: colors.mutedForeground }]}>
-          어떻게 할까요?
+          {"장착한 NFT 캐릭터로 어떤 선택을 해볼까요?"}
         </Text>
 
         {stage.choices.map((c) => {
@@ -210,7 +214,7 @@ export default function LifeQuestPlayScreen() {
         })}
 
         <Pressable onPress={onAbandon} disabled={abandon.isPending} style={styles.abandonBtn}>
-          <Text style={[styles.abandonText, { color: colors.mutedForeground }]}>퀘스트 그만두기</Text>
+          <Text style={[styles.abandonText, { color: colors.mutedForeground }]}>미션 그만두기</Text>
         </Pressable>
       </CustomScrollView>
 
@@ -238,6 +242,7 @@ export default function LifeQuestPlayScreen() {
           renderHeader={renderHeader}
           onClose={goBack}
           lastResult={result}
+          promoted={promoted}
         />
       ) : null}
     </View>
@@ -273,7 +278,7 @@ function ResultSheet({
         <StatDeltas stats={result.statChanges} color={themeColor} />
         {result.expEarned > 0 ? (
           <Text style={[styles.expText, { color: colors.mutedForeground }]}>
-            +{result.expEarned} XP
+            +{result.expEarned} STAR XP
           </Text>
         ) : null}
         <Pressable onPress={onContinue} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}>
@@ -291,6 +296,7 @@ function CompletionView({
   renderHeader,
   onClose,
   lastResult,
+  promoted,
 }: {
   quest: LifeQuest;
   colors: ReturnType<typeof useColors>;
@@ -298,9 +304,11 @@ function CompletionView({
   renderHeader: (title: string) => React.ReactNode;
   onClose: () => void;
   lastResult?: LifeQuestChooseResult;
+  promoted: boolean;
 }) {
-  const tMeta = themeMeta(quest.theme);
+  const tMeta = themeMeta(quest.theme, promoted);
   const succeeded = quest.status === "completed";
+  const missionLabel = "성장 RPG";
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader("완료")}
@@ -313,7 +321,7 @@ function CompletionView({
             <Feather name={succeeded ? "award" : "flag"} size={34} color={tMeta.color} />
           </View>
           <Text style={[styles.completeTitle, { color: colors.foreground }]}>
-            {succeeded ? "퀘스트 완료!" : "퀘스트 종료"}
+            {succeeded ? `${missionLabel} 완료!` : `${missionLabel} 종료`}
           </Text>
           <Text style={[styles.completeSub, { color: colors.mutedForeground }]}>{quest.title}</Text>
         </View>

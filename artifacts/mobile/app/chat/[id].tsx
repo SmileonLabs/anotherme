@@ -4,77 +4,106 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getFetchRoomMessagesQueryKey,
   getGetDungeonStateQueryKey,
+  getGetRoomQueryKey,
   getListRoomsQueryKey,
-  useFetchRoomMessages,
   useGetDungeonState,
   useGetMe,
   useGetRoom,
   useGetTypingUsers,
   useLeaveRoom,
-  useSendMessage,
-  useSetTyping,
-  useMarkRoomRead,
+  useListRooms,
+  setTyping as signalTyping,
   type Message,
+  type MessageStickerBadge,
 } from "@workspace/api-client-react";
 import { MessageBubble } from "@/components/MessageBubble";
-import { DungeonPartyStrip } from "@/components/DungeonPartyStrip";
+import { ChatRoomContextBar } from "@/components/chat/ChatRoomContextBar";
+import { ChatRoomSheets } from "@/components/chat/ChatRoomSheets";
 import { FadeInView } from "@/components/FadeInView";
 import { EmptyState } from "@/components/EmptyState";
-import { Avatar } from "@/components/Avatar";
+import { ChatRoomHeader } from "@/components/chat/ChatRoomHeader";
 import { MessageComposer } from "@/components/MessageComposer";
 import { useColors } from "@/hooks/useColors";
+import { useChatPolling } from "@/hooks/useChatPolling";
+import { useChatSendHandlers } from "@/hooks/useChatSendHandlers";
+import { useReliableRoomMessages } from "@/hooks/useReliableRoomMessages";
+import { useEphemeralSignal } from "@/hooks/useEphemeralSignal";
+import { useInvertedChatListController } from "@/hooks/useInvertedChatListController";
+import { useChatRoomIdentity } from "@/hooks/useChatRoomIdentity";
+import {
+  useAnotherMeRoomSettings,
+  useAnotherMeSummonStatus,
+  useDismissAnotherMeSession,
+  useSummonAnotherMe,
+  useUpdateAnotherMeRoomSettings,
+} from "@/hooks/useAnotherMe";
 import { useCall } from "@/components/CallProvider";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import { useCharacterProfiles } from "@/hooks/useCharacterProfiles";
 import { crossAlert } from "@/lib/crossAlert";
 import { mediaUri } from "@/lib/apiBase";
-import { pickAndUploadImage, PermissionDeniedError } from "@/lib/uploadImage";
-import { pickAndUploadFile, FileTooLargeError } from "@/lib/uploadFile";
-import { encodeFileContent } from "@/lib/fileMessage";
+import { userDisplayName } from "@/lib/friendNames";
+import {
+  formatDayLabel,
+  formatMsgTime,
+  isReadReceiptParticipant,
+  isSystemAccount,
+  isSameDay,
+  summarizeMessage,
+} from "@/lib/chatScreenUtils";
+import {
+  addMessageStickerBadge,
+  deleteMessage,
+  forwardMessage,
+  pinMessage,
+  unpinMessage,
+  type DeleteMessageScope,
+} from "@/lib/messageActions";
+import { chatDiagnosticVariantEnabled } from "@/lib/chatPerformanceDiagnostics";
 
-const DM_EMAIL = "dungeon-master@todotalk.system";
+const EMPTY_STICKER_BADGES: MessageStickerBadge[] = [];
 
 // Delay between each staggered dungeon line ("당~ 당~ 당~").
 const REVEAL_INTERVAL = 480;
 
 // Rotating flavor text shown while the AI dungeon master generates a turn.
 const DM_THINKING_LINES = [
-  "던전 마스터가 주사위를 굴리는 중...",
+  "성장RPG 마스터가 주사위를 굴리는 중...",
   "운명의 실을 엮는 중...",
   "어둠 속에서 무언가 움직인다...",
   "다음 장면을 그리는 중...",
   "주변의 공기가 무거워진다...",
 ];
 
-function formatMsgTime(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDayLabel(dateStr: string) {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
-  if (diffDays === 0) return "오늘";
-  if (diffDays === 1) return "어제";
-  return d.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
-}
-
-function isSameDay(a: string, b: string) {
-  return new Date(a).toDateString() === new Date(b).toDateString();
+function getIsIOSStandalonePwa() {
+  if (Platform.OS !== "web" || typeof window === "undefined") return false;
+  const nav = window.navigator as unknown as {
+    standalone?: boolean;
+    userAgent: string;
+    platform?: string;
+    maxTouchPoints?: number;
+  };
+  const isIOS =
+    /iPad|iPhone|iPod/.test(nav.userAgent) ||
+    (nav.platform === "MacIntel" && (nav.maxTouchPoints ?? 0) > 1);
+  const standalone =
+    nav.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  return isIOS && standalone;
 }
 
 export default function ChatScreen() {
@@ -82,44 +111,38 @@ export default function ChatScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const colors = useColors();
-  const insets = useSafeAreaInsets();
+  const { width: viewportWidth } = useWindowDimensions();
+  const [isIOSStandalonePwa, setIsIOSStandalonePwa] = useState(() => getIsIOSStandalonePwa());
+  const shouldAnimatePanel = Platform.OS === "web" && !isIOSStandalonePwa;
+
+  const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
 
   const { data: me } = useGetMe();
+  const { activeProfile } = useCharacterProfiles();
   const { data: room } = useGetRoom(id);
-  const { data: messages = [], refetch } = useFetchRoomMessages(id);
+  const { data: roomsForForward = [] } = useListRooms({
+    query: { enabled: !!forwardTarget, queryKey: getListRoomsQueryKey() },
+  });
+  const { data: messages = [], refetch } = useReliableRoomMessages(id, {
+    userId: me?.id,
+    profileId: activeProfile?.id,
+  });
   const { data: typingUsers = [], refetch: refetchTyping } = useGetTypingUsers(id);
-  const sendMessage = useSendMessage();
-  const setTyping = useSetTyping();
-  const markRead = useMarkRoomRead();
   const leaveRoom = useLeaveRoom();
+  const summonAnotherMe = useSummonAnotherMe();
+  const dismissAnotherMe = useDismissAnotherMeSession();
+  const updateRoomAnotherMeSettings = useUpdateAnotherMeRoomSettings(id);
   const { startCall, joinFromCard, supported: callSupported } = useCall();
 
-  const [uploading, setUploading] = useState<"image" | "file" | null>(null);
-  const [listReady, setListReady] = useState(false);
-  const [showScrollDown, setShowScrollDown] = useState(false);
-  const flatRef = useRef<FlatList>(null);
-  const didInitialScrollRef = useRef(false);
-  // Custom scroll indicator: a slim thumb that appears instantly while scrolling
-  // and fades out shortly after the user stops. Driven entirely by setValue on
-  // these Animated values (no per-frame re-render); only the opacity is animated.
-  const [scrollTrack, setScrollTrack] = useState({ top: 0, height: 0 });
-  const scrollThumbHeight = useRef(new Animated.Value(0)).current;
-  const scrollThumbY = useRef(new Animated.Value(0)).current;
-  const scrollbarOpacity = useRef(new Animated.Value(0)).current;
-  const scrollbarVisibleRef = useRef(false);
-  const scrollbarHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Telegram-style "stick to bottom": only auto-follow new content when the user
-  // is already near the bottom. If they've scrolled up to read history, never yank
-  // them down — show a scroll-to-bottom pill instead. Defaults true so a fresh
-  // room opens pinned to the latest message.
-  const stickToBottomRef = useRef(true);
-  // On re-entry, anchor the view at the first unread message (with a "새 메시지"
-  // divider) instead of always snapping to the latest — captured once per room
-  // BEFORE markRead advances the server pointer. anchorMsgId is the id of the
-  // first unread message; null means "no unread → open at the bottom".
-  const entryCapturedRef = useRef(false);
-  const [captured, setCaptured] = useState(false);
-  const [anchorMsgId, setAnchorMsgId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [roomOptionsVisible, setRoomOptionsVisible] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [stickerBadgeTarget, setStickerBadgeTarget] = useState<Message | null>(null);
+  const [panelReady, setPanelReady] = useState(!shouldAnimatePanel);
+  const panelTranslateX = useRef(
+    new Animated.Value(shouldAnimatePanel ? Math.max(48, viewportWidth || 360) : 0),
+  ).current;
 
   // --- Dungeon: sequential message reveal + DM "thinking" loader ---
   const [dmThinking, setDmThinking] = useState(false);
@@ -169,7 +192,9 @@ export default function ChatScreen() {
   const isGroupRoom = room?.type === "group";
   const isDungeon = room?.type === "dungeon";
   const isMultiParty = isGroupRoom || isDungeon;
-  const otherCount = Math.max(0, ((room?.members as any[])?.length ?? 1) - 1);
+  const readReceiptOtherCount = ((room?.members as any[]) ?? []).filter(
+    (member) => member.id !== me?.id && isReadReceiptParticipant(member),
+  ).length;
 
   const { data: dungeon, refetch: refetchDungeon } = useGetDungeonState(id, {
     query: { enabled: isDungeon, queryKey: getGetDungeonStateQueryKey(id) },
@@ -194,9 +219,24 @@ export default function ChatScreen() {
       revealTimerRef.current = null;
     }
     initializedRef.current = false;
+    setReplyTo(null);
+    setActionMessage(null);
+    setSelectedMessageId(null);
+    setForwardTarget(null);
+    setStickerBadgeTarget(null);
     setRevealTick((t) => t + 1);
     clearDmThinking();
   }, [id, clearDmThinking]);
+
+  // The API only keeps the latest message window in this screen. Do not retain
+  // optimistic React keys for messages that have already fallen out of that
+  // window during a long-running room session.
+  useEffect(() => {
+    const activeIds = new Set(messages.map((message) => message.id));
+    for (const messageId of clientKeyRef.current.keys()) {
+      if (!activeIds.has(messageId)) clientKeyRef.current.delete(messageId);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!isDungeon) return;
@@ -259,6 +299,7 @@ export default function ChatScreen() {
 
   const handleLeave = React.useCallback(() => {
     if (leaveRoom.isPending) return;
+    setRoomOptionsVisible(false);
     const isGroup = room?.type === "group";
     const message = isGroup
       ? "이 그룹 채팅방에서 나가시겠습니까?\n다시 들어오려면 초대가 필요합니다."
@@ -292,22 +333,26 @@ export default function ChatScreen() {
     }
   }, [id, leaveRoom, room?.type, router, queryClient]);
 
-  useEffect(() => {
-    const timer = setInterval(() => refetch(), 3000);
-    return () => clearInterval(timer);
-  }, [refetch]);
-
-  useEffect(() => {
-    const timer = setInterval(() => refetchTyping(), 2000);
-    return () => clearInterval(timer);
-  }, [refetchTyping]);
+  useChatPolling({
+    isDungeon,
+    dungeonThinking: dmThinking,
+    refetchMessages: refetch,
+    refetchTyping,
+    refetchDungeon,
+  });
 
   // Progressive reveal: the first load shows existing history at once; after
   // that, new dungeon DM/system lines stagger in one by one while the player's
   // own messages (and every non-dungeon message) appear immediately.
   useEffect(() => {
+    if (!isDungeon) return;
     if (messages.length === 0) return;
     const revealed = revealedIdsRef.current;
+    const activeIds = new Set(messages.map((message) => message.id));
+    for (const messageId of revealed) {
+      if (!activeIds.has(messageId)) revealed.delete(messageId);
+    }
+    revealQueueRef.current = revealQueueRef.current.filter((messageId) => activeIds.has(messageId));
     if (!initializedRef.current) {
       for (const m of messages) revealed.add(m.id);
       initializedRef.current = true;
@@ -318,16 +363,16 @@ export default function ChatScreen() {
     let queuedAny = false;
     for (const m of messages) {
       if (revealed.has(m.id) || queued.has(m.id)) continue;
-      const isDM = (m.sender as any)?.email === DM_EMAIL;
+      const isDM = isSystemAccount(m.sender);
       const isTemp = String(m.id).startsWith("temp-");
-      if (isDungeon && isDM && !isTemp) {
+      if (isDM && !isTemp) {
         revealQueueRef.current.push(m.id);
         queuedAny = true;
       } else {
         revealed.add(m.id);
       }
     }
-    setRevealTick((t) => t + 1);
+    if (queuedAny) setRevealTick((t) => t + 1);
     if (queuedAny) pumpReveal();
   }, [messages, isDungeon, pumpReveal]);
 
@@ -341,16 +386,6 @@ export default function ChatScreen() {
     );
     return () => clearInterval(t);
   }, [dmThinking]);
-
-  // Poll faster while waiting on the DM so the turn feels responsive.
-  useEffect(() => {
-    if (!isDungeon || !dmThinking) return;
-    const t = setInterval(() => {
-      void refetch();
-      void refetchDungeon();
-    }, 1200);
-    return () => clearInterval(t);
-  }, [isDungeon, dmThinking, refetch, refetchDungeon]);
 
   // Clear pending timers on unmount.
   useEffect(
@@ -373,7 +408,7 @@ export default function ChatScreen() {
       if (!isDungeon) return messages;
       return messages.filter((m) => {
         if (revealedIdsRef.current.has(m.id)) return true;
-        const isDM = (m.sender as any)?.email === DM_EMAIL;
+        const isDM = isSystemAccount(m.sender);
         const isTemp = String(m.id).startsWith("temp-");
         return !(isDM && !isTemp);
       });
@@ -381,6 +416,13 @@ export default function ChatScreen() {
     // revealTick re-derives the list as queued items are revealed.
     [messages, isDungeon, revealTick],
   );
+
+  // Inverted FlatList wants newest-first data. This makes the latest message live
+  // at offset 0, so long/late-measured bubbles grow upward instead of forcing an
+  // entry-time scroll correction.
+  const listMessages = React.useMemo(() => [...visibleMessages].reverse(), [visibleMessages]);
+  const listMessagesRef = useRef(listMessages);
+  listMessagesRef.current = listMessages;
 
   // Choices must never appear before the current turn's story. The dungeon-state
   // poll and the messages poll are independent, so a new turn's `choices` can
@@ -395,7 +437,7 @@ export default function ChatScreen() {
   const narrativeLanded =
     !!lastVisible &&
     lastVisible.type === "text" &&
-    (lastVisible.sender as any)?.email === DM_EMAIL;
+    isSystemAccount(lastVisible.sender);
   const choicesSynced = dungeon?.lastNarrativeMessageId
     ? lastVisible?.id === dungeon.lastNarrativeMessageId
     : narrativeLanded;
@@ -405,198 +447,182 @@ export default function ChatScreen() {
     else router.replace("/(tabs)/chats");
   }, [router]);
 
-  const isDirect = room?.type === "direct";
-  const otherMember = isDirect
-    ? (room?.members as any[])?.find((m) => m.id !== me?.id)
-    : null;
-  const headerTitle =
-    room?.name || (isDirect ? otherMember?.nickname ?? "채팅" : "채팅");
-  const canCall = isDirect && callSupported && !!otherMember;
-  const memberCount = (room?.members as any[])?.length ?? 0;
-  const headerSubtitle = isGroupRoom
-    ? `멤버 ${memberCount}명`
-    : isDungeon
-      ? "🎲 AI 던전 마스터"
-      : "온라인";
+  const { isDirect, otherMember, otherDisplayName, isOtherOnline, headerTitle, headerSubtitle } = useChatRoomIdentity({
+    room,
+    meId: me?.id,
+    isGroupRoom,
+    isDungeon,
+  });
+  const { equippedStar } = usePlayMode();
+  const myChatIdentity = equippedStar ? `내 프로필 · STAR ${equippedStar.displayName}` : "내 프로필 · FAN";
+  const { data: targetAnotherMeStatus, refetch: refetchTargetAnotherMeStatus } = useAnotherMeSummonStatus(
+    isDirect ? id : undefined,
+    otherMember?.id,
+    isDirect && !!otherMember,
+  );
+  const { data: myAnotherMeStatus, refetch: refetchMyAnotherMeStatus } = useAnotherMeSummonStatus(
+    isDirect ? id : undefined,
+    me?.id,
+    isDirect && !!me,
+  );
+  const { data: roomAnotherMeSettings, refetch: refetchRoomAnotherMeSettings } = useAnotherMeRoomSettings(
+    isDirect ? id : undefined,
+  );
+  const activeAnotherMeSession = myAnotherMeStatus?.activeSession ?? targetAnotherMeStatus?.activeSession ?? null;
+  const canSummonAnotherMe = !!targetAnotherMeStatus?.canSummon && !activeAnotherMeSession;
+  const roomSummonOverride = roomAnotherMeSettings?.summonEnabled ?? null;
+  const roomSummonExplicitlyEnabled = roomSummonOverride === true;
+  const roomSummonStatusLabel = roomSummonOverride == null
+    ? "전역 설정 사용"
+    : roomSummonOverride
+      ? "이 방에서 허용"
+      : "이 방에서 차단";
+  const refreshAnotherMeRoomState = React.useCallback(async () => {
+    await Promise.all([
+      refetchRoomAnotherMeSettings(),
+      refetchTargetAnotherMeStatus(),
+      refetchMyAnotherMeStatus(),
+    ]);
+  }, [refetchMyAnotherMeStatus, refetchRoomAnotherMeSettings, refetchTargetAnotherMeStatus]);
 
-  // Robustly pin the view to the newest message. scrollToEnd can fire before the
-  // final layout settles (web especially, and when image bubbles resize on load),
-  // leaving the latest message clipped — a double rAF runs it after paint.
-  const scrollToBottom = React.useCallback((animated = false) => {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => flatRef.current?.scrollToEnd({ animated })),
-    );
+  const handleRoomAnotherMeToggle = React.useCallback(
+    async (value: boolean) => {
+      if (!isDirect || updateRoomAnotherMeSettings.isPending) return;
+      try {
+        await updateRoomAnotherMeSettings.mutateAsync({ summonEnabled: value });
+        await refreshAnotherMeRoomState();
+      } catch {
+        crossAlert("오류", "이 방의 Another Me 설정을 변경하지 못했습니다.");
+      }
+    },
+    [isDirect, refreshAnotherMeRoomState, updateRoomAnotherMeSettings],
+  );
+
+  const handleRoomAnotherMeUseGlobal = React.useCallback(async () => {
+    if (!isDirect || updateRoomAnotherMeSettings.isPending) return;
+    try {
+      await updateRoomAnotherMeSettings.mutateAsync({ summonEnabled: null });
+      await refreshAnotherMeRoomState();
+    } catch {
+      crossAlert("오류", "이 방의 Another Me 설정을 변경하지 못했습니다.");
+    }
+  }, [isDirect, refreshAnotherMeRoomState, updateRoomAnotherMeSettings]);
+
+  const canCall = isDirect && callSupported && !!otherMember;
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const update = () => setIsIOSStandalonePwa(getIsIOSStandalonePwa());
+    const mq = window.matchMedia("(display-mode: standalone)");
+    update();
+    mq.addEventListener?.("change", update);
+    window.addEventListener("pageshow", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      mq.removeEventListener?.("change", update);
+      window.removeEventListener("pageshow", update);
+      document.removeEventListener("visibilitychange", update);
+    };
   }, []);
 
-  // Drive the custom scroll thumb from onScroll. Web/PWA is the primary target and
-  // react-native-web's ScrollView only emits onScroll (no onScrollBeginDrag /
-  // onMomentumScrollEnd), so an idle-timer is the only cross-platform way to detect
-  // "scrolling stopped". Thumb appears instantly (opacity → 1, no fade-in) while
-  // moving and fades out shortly after the last frame. Geometry is set directly
-  // (no re-render); only opacity is animated.
-  const SCROLLBAR_PAD = 4;
-  const SCROLLBAR_MIN_THUMB = 36;
-  const hideScrollbarNow = React.useCallback(
-    (animated: boolean) => {
-      if (scrollbarHideTimer.current) {
-        clearTimeout(scrollbarHideTimer.current);
-        scrollbarHideTimer.current = null;
-      }
-      scrollbarVisibleRef.current = false;
-      scrollbarOpacity.stopAnimation();
-      if (animated) {
-        Animated.timing(scrollbarOpacity, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-      } else {
-        scrollbarOpacity.setValue(0);
-      }
-    },
-    [scrollbarOpacity],
-  );
-  const updateScrollbar = React.useCallback(
-    (offsetY: number, contentH: number, viewH: number) => {
-      if (contentH <= viewH + 1 || viewH <= 0) {
-        // Content no longer scrollable — clear any lingering thumb immediately.
-        if (scrollbarVisibleRef.current) hideScrollbarNow(false);
-        return;
-      }
-      const trackH = Math.max(0, viewH - SCROLLBAR_PAD * 2);
-      const thumbH = Math.max(SCROLLBAR_MIN_THUMB, (viewH / contentH) * trackH);
-      const maxOffset = contentH - viewH;
-      const maxThumbY = Math.max(0, trackH - thumbH);
-      const ratio = maxOffset > 0 ? Math.min(1, Math.max(0, offsetY / maxOffset)) : 0;
-      scrollThumbHeight.setValue(thumbH);
-      scrollThumbY.setValue(SCROLLBAR_PAD + ratio * maxThumbY);
-      if (!scrollbarVisibleRef.current) {
-        scrollbarVisibleRef.current = true;
-        scrollbarOpacity.stopAnimation();
-        scrollbarOpacity.setValue(1);
-      }
-      if (scrollbarHideTimer.current) clearTimeout(scrollbarHideTimer.current);
-      scrollbarHideTimer.current = setTimeout(() => hideScrollbarNow(true), 250);
-    },
-    [scrollThumbHeight, scrollThumbY, scrollbarOpacity, hideScrollbarNow],
-  );
-
-  useEffect(
-    () => () => {
-      if (scrollbarHideTimer.current) clearTimeout(scrollbarHideTimer.current);
-    },
-    [],
-  );
-
-  // On entering a room, keep the list hidden until the first jump-to-bottom has
-  // painted, so the user never sees it snap from top to bottom. A timeout is a
-  // safety net in case the size/layout callbacks don't fire (e.g. empty room).
   useEffect(() => {
-    didInitialScrollRef.current = false;
-    stickToBottomRef.current = true;
-    entryCapturedRef.current = false;
-    setCaptured(false);
-    setAnchorMsgId(null);
-    setShowScrollDown(false);
-    setListReady(false);
-    hideScrollbarNow(false);
-    const t = setTimeout(() => setListReady(true), 1500);
-    return () => clearTimeout(t);
-  }, [id, hideScrollbarNow]);
+    if (shouldAnimatePanel) return;
+    panelTranslateX.stopAnimation();
+    panelTranslateX.setValue(0);
+    setPanelReady(true);
+  }, [panelTranslateX, shouldAnimatePanel]);
 
-  // Capture the entry read-position ONCE, before markRead advances the pointer.
-  // The first unread message id becomes the anchor; null means open at bottom.
   useEffect(() => {
-    if (entryCapturedRef.current) return;
-    if (!room || visibleMessages.length === 0) return;
-    entryCapturedRef.current = true;
-    const unread = room.unreadCount ?? 0;
-    let anchor: string | null = null;
-    if (!isDungeon && unread > 0) {
-      const fid = room.firstUnreadMessageId ?? null;
-      if (fid && visibleMessages.some((m) => m.id === fid)) {
-        // Exact first-unread id is in the loaded window — anchor on it.
-        anchor = fid;
-      } else if (fid) {
-        // First unread is older than the loaded window ⇒ everything visible is
-        // unread, so anchor at the very first loaded message.
-        anchor = visibleMessages[0]?.id ?? null;
-      }
+    if (!shouldAnimatePanel) return;
+    if (!panelReady) return;
+    Animated.timing(panelTranslateX, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [panelReady, panelTranslateX, shouldAnimatePanel]);
+
+  useEffect(() => {
+    if (shouldAnimatePanel) {
+      panelTranslateX.stopAnimation();
+      panelTranslateX.setValue(Math.max(48, viewportWidth || 360));
+      setPanelReady(false);
+    } else {
+      panelTranslateX.stopAnimation();
+      panelTranslateX.setValue(0);
+      setPanelReady(true);
     }
-    setAnchorMsgId(anchor);
-    setCaptured(true);
-  }, [room, visibleMessages, isDungeon]);
+  }, [id, panelTranslateX, shouldAnimatePanel, viewportWidth]);
 
-  // Position the (still-invisible) list at the anchor BEFORE revealing it, so the
-  // user never sees a jump from bottom to the unread line. Runs once capture is
-  // done; reveals the list only after the scroll has settled.
-  useEffect(() => {
-    if (!captured || didInitialScrollRef.current) return;
-    if (visibleMessages.length === 0) return;
-    didInitialScrollRef.current = true;
-    // aIdx >= 0 means we have a real unread anchor (index 0 is valid — the first
-    // loaded message itself can be the first unread). Only a null anchorMsgId
-    // (no unread) means "open at the bottom".
-    const aIdx = anchorMsgId
-      ? visibleMessages.findIndex((m) => m.id === anchorMsgId)
-      : -1;
-    const hasAnchor = aIdx >= 0;
-    // Decide stickiness synchronously (before any paint) so a content-size event
-    // firing in this window can't yank the anchored view down to the bottom.
-    stickToBottomRef.current = !hasAnchor;
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (hasAnchor) {
-          try {
-            flatRef.current?.scrollToIndex({ index: aIdx, animated: false, viewPosition: 0.2 });
-          } catch {
-            flatRef.current?.scrollToEnd({ animated: false });
-          }
-          setShowScrollDown(true);
-        } else {
-          flatRef.current?.scrollToEnd({ animated: false });
-        }
-        requestAnimationFrame(() => setListReady(true));
-      }),
-    );
-  }, [captured, anchorMsgId, visibleMessages]);
+  const revealPanelAfterInitialScroll = React.useCallback(() => {
+    if (shouldAnimatePanel) setPanelReady(true);
+  }, [shouldAnimatePanel]);
 
-  useEffect(() => {
-    // Follow new messages only when the user is parked near the bottom; if they've
-    // scrolled up to read history, leave their position alone (Telegram behavior).
-    // Skip until the initial anchor positioning is done so we never override it.
-    if (!didInitialScrollRef.current) return;
-    if (visibleMessages.length > 0 && stickToBottomRef.current) scrollToBottom(false);
-  }, [visibleMessages.length, scrollToBottom]);
+  const {
+    listRef,
+    listReady,
+    showScrollDown,
+    scrollToBottom,
+    scrollToMessage: scrollToListMessage,
+    forceStickToBottom,
+    jumpToBottom,
+    lastRealMessageId,
+    anchorMsgId,
+    entryUnreadCount,
+    clearEntryUnread,
+    onScroll,
+    onLayout,
+    onContentSizeChange,
+    onScrollToIndexFailed,
+    onViewableItemsChanged,
+    viewabilityConfig,
+    scrollbar,
+  } = useInvertedChatListController({
+    roomId: id,
+    room,
+    viewerId: me?.id,
+    messages,
+    visibleMessages,
+    listMessages,
+    isDungeon,
+    onInitialScrollReady: revealPanelAfterInitialScroll,
+  });
 
-  // The newest persisted (non-temp) message id. Marking read off THIS — not just
-  // messages.length — is what keeps the read receipt in sync: length can stay
-  // flat when an optimistic temp message is swapped for its real row, which used
-  // to skip marking the freshly-arrived message read. Temp ids are excluded
-  // because they don't exist server-side and would corrupt the read pointer.
-  const lastRealMessageId = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (!String(messages[i].id).startsWith("temp-")) return messages[i].id;
-    }
-    return null;
-  }, [messages]);
+  const beginDungeonThinking = React.useCallback(() => {
+    setDmThinking(true);
+    if (dmThinkTimeoutRef.current) clearTimeout(dmThinkTimeoutRef.current);
+    dmThinkTimeoutRef.current = setTimeout(() => setDmThinking(false), 30000);
+  }, []);
+
+  const scrollToMessage = React.useCallback(
+    (messageId: string) => {
+      if (!scrollToListMessage(messageId)) {
+        crossAlert("안내", "현재 화면에 불러온 메시지에서 찾을 수 없습니다.");
+        return false;
+      }
+      setSelectedMessageId(messageId);
+      setTimeout(() => setSelectedMessageId((current) => (current === messageId ? null : current)), 1400);
+      return true;
+    },
+    [scrollToListMessage],
+  );
 
   useEffect(() => {
-    if (!me || !lastRealMessageId) return;
-    markRead.mutate(
-      { id, data: { messageId: lastRealMessageId } },
-      {
-        onSuccess: () => {
-          // Reading a room advances the server read pointer, but — unlike sending
-          // a message — nothing refreshes the rooms list, so the unread "1" badge
-          // would linger until the next 5s poll (it only cleared instantly when
-          // the user sent something). Invalidate the list so it clears on read.
-          void queryClient.invalidateQueries({ queryKey: getListRoomsQueryKey() });
-        },
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastRealMessageId, id, me?.id]);
+    if (!isDirect || !otherMember?.id || !lastRealMessageId) return;
+    void refetchTargetAnotherMeStatus();
+    void refetchMyAnotherMeStatus();
+  }, [isDirect, lastRealMessageId, otherMember?.id, refetchMyAnotherMeStatus, refetchTargetAnotherMeStatus]);
+
+  useEffect(() => {
+    if (!isDirect || targetAnotherMeStatus?.reason !== "waiting") return;
+    const remainingSeconds = targetAnotherMeStatus.remainingSeconds ?? 0;
+    const delayMs = Math.min(Math.max(remainingSeconds * 1000 + 250, 500), 60_000);
+    const timer = setTimeout(() => {
+      void refetchTargetAnotherMeStatus();
+    }, delayMs);
+    return () => clearTimeout(timer);
+  }, [isDirect, refetchTargetAnotherMeStatus, targetAnotherMeStatus?.reason, targetAnotherMeStatus?.remainingSeconds]);
 
   // On web/PWA the OS push fires the instant a message is inserted, but this
   // screen only polls every 3s — so the banner/sound would beat the on-screen
@@ -620,203 +646,181 @@ export default function ChatScreen() {
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, [id, refetch, isDungeon, refetchDungeon]);
 
-  // Sending any of my own messages (text/sticker/image/file) always snaps me
-  // back to the bottom, regardless of where I'd scrolled — matches Telegram.
-  const forceStickToBottom = React.useCallback(() => {
-    stickToBottomRef.current = true;
-    setShowScrollDown(false);
+  const clearReply = React.useCallback(() => {
+    setReplyTo(null);
   }, []);
 
-  // Sends a text message (also used by dungeon choice buttons). Returns true on
-  // success; the composer restores its input on false so the user never loses a
-  // message. Text state itself lives in <MessageComposer> so typing doesn't
-  // re-render this screen (and its message list) on every keystroke.
-  const sendText = React.useCallback(
-    async (content: string): Promise<boolean> => {
-      const trimmed = content.trim();
-      if (!trimmed || sendMessage.isPending) return false;
-      forceStickToBottom();
+  const {
+    isSending,
+    uploadTask,
+    isWebDraggingUpload,
+    sendText,
+    handleSendSticker,
+    handlePickImage,
+    handlePickFile,
+    handleCancelUpload,
+    retryMessage,
+  } = useChatSendHandlers({
+    roomId: id,
+    me,
+    senderProfile: activeProfile,
+    replyTo,
+    clearReply,
+    clientKeyRef,
+    forceStickToBottom,
+    isDungeon,
+    beginDungeonThinking,
+    clearDungeonThinking: clearDmThinking,
+  });
 
-      if (isDungeon) {
-        setDmThinking(true);
-        if (dmThinkTimeoutRef.current) clearTimeout(dmThinkTimeoutRef.current);
-        dmThinkTimeoutRef.current = setTimeout(() => setDmThinking(false), 30000);
-
-        // No premature "strike" effect here. Enemy HP is server-authoritative, so
-        // flashing/shaking the enemy on tap (before the AI resolves the turn) shows
-        // a hit with no HP change, then a *second* hit when the turn lands — the
-        // jarring double-strike. Responsiveness comes from the instant optimistic
-        // user message + the "DM thinking" indicator; the single combat beat (flash
-        // + shake + HP drain) fires once on turn resolve, when damage is real.
-      }
-
-      const key = getFetchRoomMessagesQueryKey(id);
-      const tempId = `temp-${Date.now()}`;
-      const optimistic: Message & { _pending?: boolean } = {
-        id: tempId,
-        roomId: id,
-        senderId: me?.id ?? "",
-        type: "text",
-        content: trimmed,
-        createdAt: new Date().toISOString(),
-        readCount: 0,
-        sender: (me as any) ?? null,
-        _pending: true,
-      };
-      queryClient.setQueryData<Message[]>(key, (old = []) => [...old, optimistic]);
-
-      try {
-        const created = await sendMessage.mutateAsync({ id, data: { content: trimmed, type: "text" } });
-        if (created?.id) clientKeyRef.current.set(created.id, tempId);
-        await refetch();
-        return true;
-      } catch {
-        clearDmThinking();
-        queryClient.setQueryData<Message[]>(key, (old = []) =>
-          old.filter((m) => m.id !== tempId),
-        );
-        crossAlert("오류", "메시지를 보내지 못했습니다. 다시 시도해주세요.");
-        return false;
-      }
+  // Typing is a disposable heartbeat: never queue stale signals, never allow
+  // more than one request in flight, and abandon a stalled cellular request.
+  const handleTyping = useEphemeralSignal(
+    (signal) =>
+      chatDiagnosticVariantEnabled("disableTyping")
+        ? Promise.resolve()
+        : signalTyping(id, { signal }),
+    {
+      minIntervalMs: 2_000,
+      timeoutMs: 4_000,
+      operationKey: id,
+      diagnosticName: "typing",
     },
-    [id, isDungeon, me, queryClient, refetch, sendMessage, forceStickToBottom, clearDmThinking],
   );
 
-  // Fired by the composer (already throttled there) while the user types.
-  const handleTyping = React.useCallback(() => {
-    setTyping.mutate({ id });
-  }, [id, setTyping]);
-
-  const handleSendSticker = async (code: string) => {
-    if (sendMessage.isPending) return;
-    forceStickToBottom();
-    const key = getFetchRoomMessagesQueryKey(id);
-    const tempId = `temp-${Date.now()}`;
-    const optimistic: Message & { _pending?: boolean } = {
-      id: tempId,
-      roomId: id,
-      senderId: me?.id ?? "",
-      type: "sticker",
-      content: code,
-      createdAt: new Date().toISOString(),
-      readCount: 0,
-      sender: (me as any) ?? null,
-      _pending: true,
-    };
-    queryClient.setQueryData<Message[]>(key, (old = []) => [...old, optimistic]);
-
+  const handleSummonAnotherMe = React.useCallback(async () => {
+    if (!otherMember?.id || summonAnotherMe.isPending) return;
     try {
-      const created = await sendMessage.mutateAsync({ id, data: { content: code, type: "sticker" } });
-      if (created?.id) clientKeyRef.current.set(created.id, tempId);
-      await refetch();
+      await summonAnotherMe.mutateAsync({ roomId: id, targetUserId: otherMember.id });
+      await Promise.all([refetch(), refetchTargetAnotherMeStatus(), refetchMyAnotherMeStatus()]);
     } catch {
-      queryClient.setQueryData<Message[]>(key, (old = []) =>
-        old.filter((m) => m.id !== tempId),
-      );
-      crossAlert("오류", "스티커를 보내지 못했습니다. 다시 시도해주세요.");
+      crossAlert("소환 실패", "아직 Another Me를 소환할 수 없거나 상대가 허용하지 않았어요.");
     }
-  };
+  }, [id, otherMember?.id, refetch, refetchMyAnotherMeStatus, refetchTargetAnotherMeStatus, summonAnotherMe]);
 
-  const handlePickImage = async () => {
-    if (uploading || sendMessage.isPending) return;
-    setUploading("image");
+  const handleDismissAnotherMe = React.useCallback(async () => {
+    if (!activeAnotherMeSession || dismissAnotherMe.isPending) return;
     try {
-      const picked = await pickAndUploadImage();
-      if (!picked) return;
-
-      forceStickToBottom();
-      const key = getFetchRoomMessagesQueryKey(id);
-      const tempId = `temp-${Date.now()}`;
-      const optimistic: Message & { _pending?: boolean } = {
-        id: tempId,
-        roomId: id,
-        senderId: me?.id ?? "",
-        type: "image",
-        content: picked.objectPath,
-        createdAt: new Date().toISOString(),
-        readCount: 0,
-        sender: (me as any) ?? null,
-        _pending: true,
-      };
-      queryClient.setQueryData<Message[]>(key, (old = []) => [...old, optimistic]);
-
-      try {
-        const created = await sendMessage.mutateAsync({ id, data: { content: picked.objectPath, type: "image" } });
-        if (created?.id) clientKeyRef.current.set(created.id, tempId);
-        await refetch();
-      } catch {
-        queryClient.setQueryData<Message[]>(key, (old = []) =>
-          old.filter((m) => m.id !== tempId),
-        );
-        crossAlert("오류", "사진을 보내지 못했습니다. 다시 시도해주세요.");
-      }
-    } catch (e) {
-      if (e instanceof PermissionDeniedError) {
-        crossAlert("권한 필요", "사진을 보내려면 사진 접근 권한을 허용해주세요.");
-      } else {
-        crossAlert("오류", "사진을 보내지 못했습니다. 다시 시도해주세요.");
-      }
-    } finally {
-      setUploading(null);
+      await dismissAnotherMe.mutateAsync(activeAnotherMeSession.id);
+      await Promise.all([refetch(), refetchTargetAnotherMeStatus(), refetchMyAnotherMeStatus()]);
+    } catch {
+      crossAlert("오류", "Another Me를 퇴장시키지 못했습니다.");
     }
-  };
-
-  const handlePickFile = async () => {
-    if (uploading || sendMessage.isPending) return;
-    setUploading("file");
-    try {
-      const picked = await pickAndUploadFile();
-      if (!picked) return;
-
-      const content = encodeFileContent({
-        path: picked.objectPath,
-        name: picked.name,
-        size: picked.size,
-        mime: picked.mimeType,
-      });
-
-      forceStickToBottom();
-      const key = getFetchRoomMessagesQueryKey(id);
-      const tempId = `temp-${Date.now()}`;
-      const optimistic: Message & { _pending?: boolean } = {
-        id: tempId,
-        roomId: id,
-        senderId: me?.id ?? "",
-        type: "file",
-        content,
-        createdAt: new Date().toISOString(),
-        readCount: 0,
-        sender: (me as any) ?? null,
-        _pending: true,
-      };
-      queryClient.setQueryData<Message[]>(key, (old = []) => [...old, optimistic]);
-
-      try {
-        const created = await sendMessage.mutateAsync({ id, data: { content, type: "file" } });
-        if (created?.id) clientKeyRef.current.set(created.id, tempId);
-        await refetch();
-      } catch {
-        queryClient.setQueryData<Message[]>(key, (old = []) =>
-          old.filter((m) => m.id !== tempId),
-        );
-        crossAlert("오류", "파일을 보내지 못했습니다. 다시 시도해주세요.");
-      }
-    } catch (e) {
-      if (e instanceof FileTooLargeError) {
-        crossAlert("파일 크기 초과", "파일 크기는 25MB를 초과할 수 없습니다.");
-      } else {
-        crossAlert("오류", "파일을 보내지 못했습니다. 다시 시도해주세요.");
-      }
-    } finally {
-      setUploading(null);
-    }
-  };
+  }, [activeAnotherMeSession, dismissAnotherMe, refetch, refetchMyAnotherMeStatus, refetchTargetAnotherMeStatus]);
 
   // Stable handler for the in-chat call card so memoized message bubbles don't
   // re-render every poll.
   const handleJoinCall = React.useCallback(
-    (cid: string) => joinFromCard(cid, otherMember?.nickname ?? "상대방"),
-    [joinFromCard, otherMember?.nickname],
+    (cid: string, media: "audio" | "video") =>
+      joinFromCard(cid, otherDisplayName, media),
+    [joinFromCard, otherDisplayName],
+  );
+
+  const refreshCurrentRoom = React.useCallback(async () => {
+    await Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: getGetRoomQueryKey(id) }),
+      queryClient.invalidateQueries({ queryKey: getListRoomsQueryKey() }),
+    ]);
+  }, [id, queryClient, refetch]);
+
+  const handleCopyMessage = React.useCallback(async (message: Message) => {
+    if ((message as any).deletedAt) return;
+    const text = message.type === "text" ? message.content : summarizeMessage(message);
+    try {
+      const Clipboard = await import("expo-clipboard");
+      await Clipboard.setStringAsync(text);
+      crossAlert("복사됨", "메시지를 복사했습니다.");
+    } catch {
+      crossAlert("오류", "메시지를 복사하지 못했습니다.");
+    }
+  }, []);
+
+  const performDelete = React.useCallback(
+    async (message: Message, scope: DeleteMessageScope) => {
+      try {
+        setActionMessage(null);
+        await deleteMessage(id, message.id, scope);
+        if (replyTo?.id === message.id) setReplyTo(null);
+        await refreshCurrentRoom();
+      } catch {
+        crossAlert("오류", "메시지를 삭제하지 못했습니다. 다시 시도해주세요.");
+      }
+    },
+    [id, refreshCurrentRoom, replyTo?.id],
+  );
+
+  const performPin = React.useCallback(
+    async (message: Message) => {
+      const doPin = async () => {
+        try {
+          setActionMessage(null);
+          await pinMessage(id, message.id);
+          await refreshCurrentRoom();
+        } catch {
+          crossAlert("오류", "메시지를 고정하지 못했습니다.");
+        }
+      };
+
+      const currentPinnedId = (room as any)?.pinnedMessageId as string | null | undefined;
+      if (currentPinnedId && currentPinnedId !== message.id) {
+        const prompt = "이미 고정된 메시지가 있습니다. 이 메시지로 교체할까요?";
+        if (Platform.OS === "web") {
+          if (window.confirm(prompt)) await doPin();
+        } else {
+          Alert.alert("고정 메시지 교체", prompt, [
+            { text: "취소", style: "cancel" },
+            { text: "교체", onPress: () => void doPin() },
+          ]);
+        }
+        return;
+      }
+      await doPin();
+    },
+    [id, refreshCurrentRoom, room],
+  );
+
+  const performUnpin = React.useCallback(async () => {
+    try {
+      setActionMessage(null);
+      await unpinMessage(id);
+      await refreshCurrentRoom();
+    } catch {
+      crossAlert("오류", "고정을 해제하지 못했습니다.");
+    }
+  }, [id, refreshCurrentRoom]);
+
+  const performForward = React.useCallback(
+    async (targetRoomId: string) => {
+      if (!forwardTarget) return;
+      try {
+        const created = await forwardMessage(id, forwardTarget.id, targetRoomId);
+        setForwardTarget(null);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getFetchRoomMessagesQueryKey(targetRoomId) }),
+          queryClient.invalidateQueries({ queryKey: getGetRoomQueryKey(targetRoomId) }),
+          queryClient.invalidateQueries({ queryKey: getListRoomsQueryKey() }),
+        ]);
+        if (targetRoomId === id && created?.id) scrollToBottom(true);
+      } catch {
+        crossAlert("오류", "메시지를 전달하지 못했습니다.");
+      }
+    },
+    [forwardTarget, id, queryClient, scrollToBottom],
+  );
+
+  const performStickerBadge = React.useCallback(
+    async (code: string) => {
+      if (!stickerBadgeTarget) return;
+      try {
+        await addMessageStickerBadge(id, stickerBadgeTarget.id, code);
+        setStickerBadgeTarget(null);
+        await refreshCurrentRoom();
+      } catch {
+        crossAlert("오류", "스티커를 붙이지 못했습니다.");
+      }
+    },
+    [id, refreshCurrentRoom, stickerBadgeTarget],
   );
 
   const typingLabel =
@@ -825,189 +829,217 @@ export default function ChatScreen() {
       : typingUsers.length === 1
         ? `${typingUsers[0].nickname}님이 입력 중...`
         : `${typingUsers[0].nickname}님 외 ${typingUsers.length - 1}명이 입력 중...`;
+  const pinnedMessageId = ((room as any)?.pinnedMessageId ?? null) as string | null;
+  const actionIsMine = !!actionMessage && actionMessage.senderId === me?.id;
+  const actionIsDeleted = !!(actionMessage as any)?.deletedAt;
+  const actionIsPinned = !!actionMessage && pinnedMessageId === actionMessage.id;
+  const composerReplyPreview = React.useMemo(
+    () => replyTo ? { senderName: userDisplayName(replyTo.sender as any, ""), content: summarizeMessage(replyTo) } : null,
+    [replyTo],
+  );
+  const handleCancelReply = React.useCallback(() => setReplyTo(null), []);
+  const handleMessageLongPress = React.useCallback((messageId: string) => {
+    const message = listMessagesRef.current.find((item) => item.id === messageId);
+    if (message) setActionMessage(message);
+  }, []);
+
+  const renderMessageItem = React.useCallback(
+    ({ item, index }: { item: Message; index: number }) => {
+      const authorKind = ((item as any).authorKind ?? "user") as string;
+      const isUserMessage = authorKind === "user";
+      const isAnotherMe = authorKind === "another_me";
+      const isMe = item.senderId === me?.id;
+      const isDM = isSystemAccount(item.sender);
+      const prevMsg = listMessages[index + 1];
+      const anotherMeOwnerName = ((item as any).metadata?.ownerName as string | undefined) ?? userDisplayName(item.sender as any, "상대");
+      const showSender = isAnotherMe || (isMultiParty && !isMe && !isDM && prevMsg?.senderId !== item.senderId);
+      const showDate = !prevMsg || !isSameDay(prevMsg.createdAt, item.createdAt);
+      let readLabel: string | undefined;
+      const deliveryState = (item as any)._deliveryState as
+        | "pending"
+        | "failed"
+        | undefined;
+      if (isMe && isUserMessage) {
+        if (deliveryState === "failed") {
+          readLabel = "전송 실패";
+        } else if (deliveryState === "pending" || (item as any)._pending) {
+          readLabel = "전송 중";
+        } else if (!isDungeon && readReceiptOtherCount > 0) {
+          const readCount = item.readCount ?? 0;
+          if (isGroupRoom) {
+            const unread = Math.max(0, readReceiptOtherCount - readCount);
+            readLabel = unread > 0 ? `안읽음 ${unread}` : "읽음";
+          } else {
+            readLabel = readCount >= 1 ? "읽음" : "안읽음";
+          }
+        }
+      }
+      const canActOnMessage =
+        !String(item.id).startsWith("temp-") && item.type !== "system" && !isDM && !isAnotherMe;
+      const bubble = (
+        <>
+          {item.id === anchorMsgId ? (
+            <View style={styles.unreadDivider}>
+              <View style={[styles.unreadLine, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.unreadText, { color: colors.primary }]}>새 메시지</Text>
+              <View style={[styles.unreadLine, { backgroundColor: colors.primary }]} />
+            </View>
+          ) : null}
+          {showDate ? (
+            <View style={styles.dateRow}>
+              <View style={[styles.datePill, { backgroundColor: colors.muted }]}>
+                <Text style={[styles.dateText, { color: colors.mutedForeground }]}>
+                  {formatDayLabel(item.createdAt)}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          <MessageBubble
+            messageId={item.id}
+            content={item.content}
+            isMe={isMe}
+            isDM={isDM}
+            isAnotherMe={isAnotherMe}
+            senderName={isAnotherMe ? anotherMeOwnerName : (item.senderProfile?.displayName ?? userDisplayName(item.sender as any, ""))}
+            senderAvatar={item.senderProfile?.profileImageUrl ?? null}
+            senderCharacterType={item.senderProfile?.type as "fan" | "star" | "official_ai" | undefined}
+            time={formatMsgTime(item.createdAt)}
+            type={item.type}
+            imageUri={item.type === "image" ? item.content : undefined}
+            showSender={showSender}
+            readLabel={readLabel}
+            onJoinCall={handleJoinCall}
+            onLongPress={canActOnMessage ? handleMessageLongPress : undefined}
+            selected={selectedMessageId === item.id}
+            deletedAt={(item as any).deletedAt ?? null}
+            replyTo={(item as any).replyTo ?? null}
+            stickerBadges={(item as any).stickerBadges ?? EMPTY_STICKER_BADGES}
+            linkPreview={(item as any).linkPreview ?? null}
+            onPressReply={scrollToMessage}
+            retryClientMessageId={
+              deliveryState === "failed" ? item.clientMessageId : null
+            }
+            onRetryMessage={retryMessage}
+          />
+        </>
+      );
+      // In dungeons, freshly-revealed lines fade/slide in; history and
+      // non-dungeon messages render instantly.
+      return isDungeon ? (
+        <FadeInView animate={staggeredIdsRef.current.has(item.id)}>{bubble}</FadeInView>
+      ) : (
+        <View>{bubble}</View>
+      );
+    },
+    [
+      anchorMsgId,
+      colors.muted,
+      colors.mutedForeground,
+      colors.primary,
+      handleJoinCall,
+      handleMessageLongPress,
+      isDungeon,
+      isGroupRoom,
+      isMultiParty,
+      listMessages,
+      me?.id,
+      readReceiptOtherCount,
+      retryMessage,
+      scrollToMessage,
+      selectedMessageId,
+    ],
+  );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top + 6, borderBottomColor: colors.border },
-        ]}
-      >
-        <Pressable
-          onPress={goBack}
-          hitSlop={10}
-          style={({ pressed }) => [styles.headerBack, { opacity: pressed ? 0.6 : 1 }]}
-        >
-          <Feather name="chevron-left" size={28} color={colors.foreground} />
-        </Pressable>
-
-        <View style={styles.headerCenter}>
-          <View>
-            {isGroupRoom || isDungeon ? (
-              <View style={[styles.headerIconAvatar, { backgroundColor: colors.accent }]}>
-                <Feather
-                  name={isDungeon ? "compass" : "users"}
-                  size={19}
-                  color={colors.primary}
-                />
-              </View>
-            ) : (
-              <Avatar uri={otherMember?.profileImageUrl} name={headerTitle} size={40} />
-            )}
-            {isDirect ? (
-              <View
-                style={[
-                  styles.onlineDot,
-                  { backgroundColor: colors.online, borderColor: colors.background },
-                ]}
-              />
-            ) : null}
-          </View>
-          <View style={styles.headerTextWrap}>
-            <View style={styles.headerNameRow}>
-              <Text
-                style={[styles.headerName, { color: colors.foreground }]}
-                numberOfLines={1}
-              >
-                {headerTitle}
-              </Text>
-              {isDirect ? (
-                <View style={[styles.nameDot, { backgroundColor: colors.online }]} />
-              ) : null}
-            </View>
-            <Text
-              style={[styles.headerSubtitle, { color: colors.mutedForeground }]}
-              numberOfLines={1}
-            >
-              {headerSubtitle}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.headerActions}>
-          {canCall ? (
-            <Pressable
-              hitSlop={10}
-              onPress={() => startCall(otherMember.id, otherMember.nickname ?? "상대방", id)}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            >
-              <Feather name="phone" size={22} color={colors.foreground} />
-            </Pressable>
-          ) : null}
-          {isGroupRoom ? (
-            <Pressable
-              hitSlop={10}
-              onPress={() => router.push({ pathname: "/group/invite", params: { id } })}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            >
-              <Feather name="user-plus" size={22} color={colors.foreground} />
-            </Pressable>
-          ) : null}
-          <Pressable
-            hitSlop={10}
-            onPress={handleLeave}
-            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-          >
-            <Feather name="more-horizontal" size={24} color={colors.foreground} />
-          </Pressable>
-        </View>
-      </View>
+    <Animated.View
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+        shouldAnimatePanel
+          ? { transform: [{ translateX: panelTranslateX }] }
+          : null,
+      ]}
+    >
+      <ChatRoomHeader
+        title={headerTitle}
+        subtitle={`${headerSubtitle} · ${myChatIdentity}`}
+        avatarUri={otherMember?.profileImageUrl}
+        avatarCharacterType={otherMember?.profile?.type}
+        isDirect={isDirect}
+        isGroupRoom={isGroupRoom}
+        isDungeon={isDungeon}
+        isOtherOnline={isOtherOnline}
+        canCall={canCall}
+        showAnotherMeToggle={isDirect && !!otherMember}
+        anotherMeEnabled={roomSummonExplicitlyEnabled}
+        anotherMePending={updateRoomAnotherMeSettings.isPending}
+        onBack={goBack}
+        onToggleAnotherMe={(enabled) => void handleRoomAnotherMeToggle(enabled)}
+        onStartCall={(media) => {
+          if (otherMember) startCall(otherMember.id, otherDisplayName, id, media);
+        }}
+        onInvite={() => router.push({ pathname: "/group/invite", params: { id } })}
+        onOpenOptions={() => setRoomOptionsVisible(true)}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
-      {isDungeon ? (
-        <DungeonPartyStrip data={dungeon} enemyShakeToken={enemyShakeToken} />
-      ) : null}
+      <View pointerEvents="none" style={styles.wallpaper}>
+        <View style={[styles.wallpaperOrb, styles.wallpaperOrbOne, { backgroundColor: colors.primary }]} />
+        <View style={[styles.wallpaperOrb, styles.wallpaperOrbTwo, { backgroundColor: colors.accent }]} />
+        <View style={[styles.wallpaperGrid, { borderColor: colors.border }]} />
+      </View>
+      <ChatRoomContextBar
+        pinnedMessage={(room as any)?.pinnedMessage ?? null}
+        onOpenPinnedMessage={scrollToMessage}
+        onUnpin={() => void performUnpin()}
+        isDungeon={isDungeon}
+        dungeon={dungeon}
+        enemyShakeToken={enemyShakeToken}
+        activeAnotherMeSession={activeAnotherMeSession}
+        otherDisplayName={otherDisplayName}
+        anotherMeDismissPending={dismissAnotherMe.isPending}
+        onDismissAnotherMe={() => void handleDismissAnotherMe()}
+        canSummonAnotherMe={canSummonAnotherMe}
+        anotherMeSummonPending={summonAnotherMe.isPending}
+        onSummonAnotherMe={() => void handleSummonAnotherMe()}
+      />
       <FlatList
-        ref={flatRef}
-        data={visibleMessages}
-        keyExtractor={(item) => clientKeyRef.current.get(item.id) ?? item.id}
-        style={[styles.flex, { opacity: listReady ? 1 : 0 }]}
-        contentContainerStyle={[styles.messageList, { paddingBottom: 16 }]}
-        ListEmptyComponent={
-          isDungeon ? (
-            <EmptyState
-              icon="compass"
-              title="던전의 문이 열리는 중..."
-              subtitle="던전 마스터가 첫 장면을 준비하고 있습니다."
-            />
-          ) : (
-            <EmptyState
-              icon="message-circle"
-              title="아직 메시지가 없습니다"
-              subtitle="첫 번째 메시지를 보내보세요"
-            />
-          )
+        key={id}
+        ref={listRef}
+        data={listMessages}
+        inverted
+        keyExtractor={(item) =>
+          clientKeyRef.current.get(item.id) ?? item.clientMessageId ?? item.id
         }
-        renderItem={({ item, index }) => {
-          const isMe = item.senderId === me?.id;
-          const isDM = (item.sender as any)?.email === DM_EMAIL;
-          const prevMsg = visibleMessages[index - 1];
-          const showSender = isMultiParty && !isMe && !isDM && prevMsg?.senderId !== item.senderId;
-          const showDate =
-            !prevMsg || !isSameDay(prevMsg.createdAt, item.createdAt);
-          let readLabel: string | undefined;
-          if (isMe && !isDungeon) {
-            if ((item as any)._pending) {
-              readLabel = "전송 중";
-            } else if (otherCount > 0) {
-              const readCount = item.readCount ?? 0;
-              if (isGroupRoom) {
-                const unread = Math.max(0, otherCount - readCount);
-                readLabel = unread > 0 ? `안읽음 ${unread}` : "읽음";
-              } else {
-                readLabel = readCount >= 1 ? "읽음" : "안읽음";
-              }
-            }
-          }
-          const bubble = (
-            <>
-              {item.id === anchorMsgId ? (
-                <View style={styles.unreadDivider}>
-                  <View style={[styles.unreadLine, { backgroundColor: colors.primary }]} />
-                  <Text style={[styles.unreadText, { color: colors.primary }]}>
-                    새 메시지
-                  </Text>
-                  <View style={[styles.unreadLine, { backgroundColor: colors.primary }]} />
-                </View>
-              ) : null}
-              {showDate ? (
-                <View style={styles.dateRow}>
-                  <View style={[styles.datePill, { backgroundColor: colors.muted }]}>
-                    <Text style={[styles.dateText, { color: colors.mutedForeground }]}>
-                      {formatDayLabel(item.createdAt)}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-              <MessageBubble
-                content={item.content}
-                isMe={isMe}
-                isDM={isDM}
-                senderName={(item.sender as any)?.nickname}
-                senderAvatar={(item.sender as any)?.profileImageUrl}
-                time={formatMsgTime(item.createdAt)}
-                type={item.type}
-                imageUri={item.type === "image" ? mediaUri(item.content) : undefined}
-                showSender={showSender}
-                readLabel={readLabel}
-                onJoinCall={handleJoinCall}
+        style={[styles.flex, { opacity: listReady ? 1 : 0 }]}
+        contentContainerStyle={styles.messageList}
+        ListEmptyComponent={
+          <View style={styles.emptyInvertedFix}>
+            {isDungeon ? (
+              <EmptyState
+                icon="compass"
+                title="성장RPG가 시작되는 중..."
+                subtitle="성장RPG 마스터가 첫 장면을 준비하고 있습니다."
               />
-            </>
-          );
-          // In dungeons, freshly-revealed lines fade/slide in; history and
-          // non-dungeon messages render instantly.
-          return isDungeon ? (
-            <FadeInView animate={staggeredIdsRef.current.has(item.id)}>{bubble}</FadeInView>
-          ) : (
-            <View>{bubble}</View>
-          );
-        }}
-        ListFooterComponent={
+            ) : (
+              <EmptyState
+                icon="message-circle"
+                title="아직 메시지가 없습니다"
+                subtitle="첫 번째 메시지를 보내보세요"
+              />
+            )}
+          </View>
+        }
+        renderItem={renderMessageItem}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={40}
+        windowSize={5}
+        ListHeaderComponent={
           isDungeon ? (
             <View style={styles.footerWrap}>
               {dmThinking ? (
@@ -1028,13 +1060,13 @@ export default function ChatScreen() {
                     <FadeInView key={`${i}-${c}`} delay={i * 160}>
                       <Pressable
                         onPress={() => void sendText(c)}
-                        disabled={sendMessage.isPending}
+                        disabled={isSending}
                         style={({ pressed }) => [
                           styles.choiceLine,
                           {
                             backgroundColor: colors.card,
                             borderColor: colors.border,
-                            opacity: pressed || sendMessage.isPending ? 0.55 : 1,
+                            opacity: pressed || isSending ? 0.55 : 1,
                           },
                         ]}
                       >
@@ -1048,61 +1080,28 @@ export default function ChatScreen() {
             </View>
           ) : null
         }
-        onScrollToIndexFailed={(info) => {
-          // Variable row heights can make the target index unmeasured on first
-          // try. Retry after layout settles; fall back to the bottom if it still
-          // fails, then reveal so the user is never stuck on a hidden list.
-          setTimeout(() => {
-            try {
-              flatRef.current?.scrollToIndex({
-                index: info.index,
-                animated: false,
-                viewPosition: 0.2,
-              });
-            } catch {
-              flatRef.current?.scrollToEnd({ animated: false });
-            }
-            requestAnimationFrame(() => setListReady(true));
-          }, 60);
-        }}
-        onContentSizeChange={() => {
-          // Initial positioning is owned by the anchor effect (it may target the
-          // first unread message, not the bottom). Here we only re-pin to the
-          // bottom on content growth when the user is already near it — otherwise
-          // polling/label changes would yank them down mid-read (the "팅김").
-          if (didInitialScrollRef.current && stickToBottomRef.current) {
-            scrollToBottom(false);
-          }
-        }}
+        onScrollToIndexFailed={onScrollToIndexFailed}
+        onContentSizeChange={onContentSizeChange}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         showsVerticalScrollIndicator={false}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          const distanceFromBottom =
-            contentSize.height - (contentOffset.y + layoutMeasurement.height);
-          const nearBottom = distanceFromBottom < 120;
-          stickToBottomRef.current = nearBottom;
-          setShowScrollDown((prev) => (prev === !nearBottom ? prev : !nearBottom));
-          // Only after the list is revealed — keeps the entry positioning scroll
-          // (still-hidden list) from flashing the thumb.
-          if (listReady)
-            updateScrollbar(contentOffset.y, contentSize.height, layoutMeasurement.height);
-        }}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
+        onScroll={onScroll}
         scrollEventThrottle={16}
-        onLayout={(e) => {
-          const { y, height } = e.nativeEvent.layout;
-          setScrollTrack((prev) =>
-            prev.top === y && prev.height === height ? prev : { top: y, height },
-          );
-          if (stickToBottomRef.current) scrollToBottom(false);
-        }}
+        onLayout={onLayout}
       />
 
-      {scrollTrack.height > 0 ? (
+      {scrollbar.track.height > 0 ? (
         <Animated.View
           pointerEvents="none"
           style={[
             styles.scrollbarTrack,
-            { top: scrollTrack.top, height: scrollTrack.height, opacity: scrollbarOpacity },
+            {
+              top: scrollbar.track.top,
+              height: scrollbar.track.height,
+              opacity: scrollbar.opacity,
+            },
           ]}
         >
           <Animated.View
@@ -1110,21 +1109,35 @@ export default function ChatScreen() {
               styles.scrollbarThumb,
               {
                 backgroundColor: colors.mutedForeground,
-                height: scrollThumbHeight,
-                transform: [{ translateY: scrollThumbY }],
+                height: scrollbar.thumbHeight,
+                transform: [{ translateY: scrollbar.thumbY }],
               },
             ]}
           />
         </Animated.View>
       ) : null}
 
-      {showScrollDown ? (
+      {entryUnreadCount > 0 && anchorMsgId ? (
         <Pressable
           onPress={() => {
-            stickToBottomRef.current = true;
-            setShowScrollDown(false);
-            scrollToBottom(true);
+            if (scrollToMessage(anchorMsgId)) clearEntryUnread();
           }}
+          style={[
+            styles.unreadJumpBtn,
+            { backgroundColor: colors.card, borderColor: colors.primary },
+          ]}
+          hitSlop={8}
+        >
+          <Feather name="arrow-up" size={15} color={colors.primary} />
+          <Text style={[styles.unreadJumpText, { color: colors.foreground }]} numberOfLines={1}>
+            새 메시지 {entryUnreadCount}개
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {showScrollDown ? (
+        <Pressable
+          onPress={jumpToBottom}
           style={[
             styles.scrollDownBtn,
             { backgroundColor: colors.card, borderColor: colors.border },
@@ -1133,6 +1146,16 @@ export default function ChatScreen() {
         >
           <Feather name="chevron-down" size={22} color={colors.foreground} />
         </Pressable>
+      ) : null}
+
+      {isWebDraggingUpload && !isDungeon ? (
+        <View pointerEvents="none" style={styles.dropOverlay}>
+          <View style={[styles.dropCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+            <Feather name="upload-cloud" size={34} color={colors.primary} />
+            <Text style={[styles.dropTitle, { color: colors.foreground }]}>여기에 놓아 전송</Text>
+            <Text style={[styles.dropSubtitle, { color: colors.mutedForeground }]}>이미지는 사진으로, 그 외 파일은 파일로 전송됩니다</Text>
+          </View>
+        </View>
       ) : null}
 
       {typingLabel ? (
@@ -1151,15 +1174,79 @@ export default function ChatScreen() {
           own text state so typing never re-renders this screen / message list. */}
       {!isDungeon ? (
         <MessageComposer
-          sending={sendMessage.isPending}
-          uploading={uploading}
+          sending={isSending}
+          uploading={uploadTask?.kind ?? null}
+          uploadProgress={uploadTask?.progress ?? null}
+          onCancelUpload={uploadTask ? handleCancelUpload : undefined}
           onSend={sendText}
           onTyping={handleTyping}
           onPickImage={handlePickImage}
           onPickFile={handlePickFile}
           onSendSticker={handleSendSticker}
+          replyPreview={composerReplyPreview}
+          onCancelReply={handleCancelReply}
         />
       ) : null}
+
+      <ChatRoomSheets
+        roomOptions={{
+          visible: roomOptionsVisible,
+          title: headerTitle,
+          isDirect,
+          anotherMeEnabled: roomSummonExplicitlyEnabled,
+          anotherMeStatusLabel: roomSummonStatusLabel,
+          anotherMeUsesOverride: roomSummonOverride != null,
+          anotherMePending: updateRoomAnotherMeSettings.isPending,
+          onClose: () => setRoomOptionsVisible(false),
+          onToggleAnotherMe: (enabled) => void handleRoomAnotherMeToggle(enabled),
+          onUseGlobalAnotherMe: () => void handleRoomAnotherMeUseGlobal(),
+          onLeave: handleLeave,
+        }}
+        messageActions={{
+          message: actionMessage,
+          isDeleted: actionIsDeleted,
+          isMine: actionIsMine,
+          isPinned: actionIsPinned,
+          onClose: () => setActionMessage(null),
+          onReply: (message) => {
+            setReplyTo(message);
+            setActionMessage(null);
+          },
+          onCopy: (message) => {
+            setActionMessage(null);
+            void handleCopyMessage(message);
+          },
+          onSelect: (message) => {
+            setSelectedMessageId(message.id);
+            setActionMessage(null);
+          },
+          onTogglePin: (message) => {
+            if (actionIsPinned) void performUnpin();
+            else void performPin(message);
+          },
+          onForward: (message) => {
+            setForwardTarget(message);
+            setActionMessage(null);
+          },
+          onSticker: (message) => {
+            setStickerBadgeTarget(message);
+            setActionMessage(null);
+          },
+          onDelete: (message, scope) => void performDelete(message, scope),
+        }}
+        stickerBadge={{
+          target: stickerBadgeTarget,
+          onClose: () => setStickerBadgeTarget(null),
+          onSelect: (code) => void performStickerBadge(code),
+        }}
+        forward={{
+          target: forwardTarget,
+          rooms: roomsForForward,
+          viewerId: me?.id,
+          onClose: () => setForwardTarget(null),
+          onForward: (roomId) => void performForward(roomId),
+        }}
+      />
       </KeyboardAvoidingView>
       <Animated.View
         pointerEvents="none"
@@ -1169,76 +1256,53 @@ export default function ChatScreen() {
         pointerEvents="none"
         style={[styles.flashEnemy, { opacity: enemyFlashOpacity }]}
       />
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingBottom: 10,
-    gap: 2,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  wallpaper: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
   },
-  headerBack: {
-    padding: 4,
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  headerIconAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  onlineDot: {
+  wallpaperOrb: {
     position: "absolute",
-    right: -1,
-    bottom: -1,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    opacity: 0.08,
   },
-  headerTextWrap: {
+  wallpaperOrbOne: {
+    right: -80,
+    top: 60,
+  },
+  wallpaperOrbTwo: {
+    left: -120,
+    bottom: 120,
+  },
+  wallpaperGrid: {
+    position: "absolute",
+    left: 22,
+    right: 22,
+    top: 32,
+    bottom: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 28,
+    opacity: 0.18,
+    transform: [{ rotate: "-1.5deg" }],
+  },
+  messageList: {
+    paddingTop: 16,
+    paddingBottom: 12,
+    flexGrow: 1,
+    justifyContent: "flex-start",
+  },
+  emptyInvertedFix: {
     flex: 1,
-    gap: 1,
+    transform: [{ scaleY: -1 }],
   },
-  headerNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  headerName: {
-    fontSize: 17,
-    fontFamily: "Inter_600SemiBold",
-    flexShrink: 1,
-  },
-  nameDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
-    paddingHorizontal: 8,
-  },
-  messageList: { paddingTop: 12, flexGrow: 1, justifyContent: "flex-end" },
   dateRow: {
     alignItems: "center",
     marginVertical: 12,
@@ -1305,6 +1369,63 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
+  },
+  unreadJumpBtn: {
+    position: "absolute",
+    left: 72,
+    right: 72,
+    bottom: 86,
+    minHeight: 38,
+    borderRadius: 19,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  unreadJumpText: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
+  dropOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 70,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  dropCard: {
+    alignItems: "center",
+    gap: 8,
+    maxWidth: 360,
+    width: "100%",
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  dropTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_700Bold",
+  },
+  dropSubtitle: {
+    textAlign: "center",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Inter_400Regular",
   },
   flash: {
     ...StyleSheet.absoluteFillObject,

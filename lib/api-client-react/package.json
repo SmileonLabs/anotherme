@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test:reliability": "node --experimental-strip-types --test src/custom-fetch.test.mjs"
+  },
   "exports": {
     ".": "./src/index.ts"
   },

@@ -3,9 +3,13 @@ import { useAuth } from "@clerk/expo";
 import { useGetMe, useRegisterPushToken } from "@workspace/api-client-react";
 import {
   ensureWebPushIfGranted,
+  getCurrentWebPushSubscriptionToken,
   registerPushServiceWorker,
+  setWebPushOwner,
   webPushSupported,
 } from "@/lib/webPush";
+import { revokePushRegistrationWithBearer } from "@/lib/pushOwnership";
+import { pushRegistrationCoordinator } from "@/lib/pushRegistrationCoordinator";
 
 /**
  * Web-only: silently re-subscribes to web push on load when the user is signed
@@ -13,10 +17,17 @@ import {
  * prompts — the prompt is triggered from the notification settings toggle.
  */
 export function PushRegistrar() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
   const { data: me } = useGetMe();
   const registerPushToken = useRegisterPushToken();
-  const done = useRef(false);
+  const ownerId = isSignedIn ? (me?.id ?? null) : null;
+  const registeredOwnerRef = useRef<string | null>(null);
+  const ownerRef = useRef(ownerId);
+  ownerRef.current = ownerId;
+  const ownerTokenRef = useRef(pushRegistrationCoordinator.setOwner(ownerId));
+  ownerTokenRef.current = pushRegistrationCoordinator.setOwner(ownerId);
+  const notificationEnabledRef = useRef(me?.notificationEnabled === true);
+  notificationEnabledRef.current = me?.notificationEnabled === true;
 
   // Hold the latest mutate fn in a ref so the registration effect does NOT
   // depend on the (unstable) mutation object. Each mutateAsync call flips the
@@ -25,12 +36,6 @@ export function PushRegistrar() {
   // call, creating an infinite push-token registration loop.
   const registerRef = useRef(registerPushToken.mutateAsync);
   registerRef.current = registerPushToken.mutateAsync;
-
-  // Reset the one-shot guard when the user signs out so a later sign-in
-  // (possibly a different account) re-registers.
-  useEffect(() => {
-    if (!isSignedIn) done.current = false;
-  }, [isSignedIn]);
 
   // Register the push service worker once on load. Web push (and `.ready`, which
   // several components await) only works once a SW controls the page, and the
@@ -51,35 +56,92 @@ export function PushRegistrar() {
     const onMessage = (e: MessageEvent) => {
       const data = e.data;
       if (data?.type === "push-subscription-changed" && typeof data.subscription === "string") {
-        void registerRef.current({ data: { token: data.subscription } }).catch(() => {});
+        if (!ownerRef.current || !notificationEnabledRef.current) return;
+        const ownerToken = ownerTokenRef.current;
+        if (!ownerToken) return;
+        void pushRegistrationCoordinator
+          .enqueue(ownerToken, () =>
+            registerRef.current({ data: { token: data.subscription } }),
+          )
+          .catch(() => false);
       }
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, []);
 
+  // Bind background display to the active account. The old bearer is captured
+  // before logout/account switch; cleanup never consults the new global auth
+  // context and the server removes the credential only from that old owner.
   useEffect(() => {
     if (!webPushSupported) return;
-    if (!isSignedIn || !me?.notificationEnabled) return;
-    if (done.current) return;
+    if (!ownerId) {
+      registeredOwnerRef.current = null;
+      void setWebPushOwner(null);
+      return;
+    }
+
+    const effectOwnerToken = ownerTokenRef.current;
+    if (!effectOwnerToken || effectOwnerToken.ownerId !== ownerId) return;
+    const capturedBearer = getToken().catch(() => null);
+    const refreshOwnerLease = () => void setWebPushOwner(ownerId);
+    refreshOwnerLease();
+    const ownerLeaseTimer = setInterval(refreshOwnerLease, 6 * 60 * 60 * 1_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshOwnerLease();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      clearInterval(ownerLeaseTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (registeredOwnerRef.current === ownerId) {
+        registeredOwnerRef.current = null;
+      }
+      pushRegistrationCoordinator.clearIfCurrent(effectOwnerToken);
+      void setWebPushOwner(null);
+      void pushRegistrationCoordinator
+        .enqueueCleanup(async () => {
+          const [bearer, token] = await Promise.all([
+            capturedBearer,
+            getCurrentWebPushSubscriptionToken(),
+          ]);
+          await revokePushRegistrationWithBearer(token, bearer);
+        })
+        .catch(() => undefined);
+    };
+  }, [getToken, ownerId]);
+
+  useEffect(() => {
+    if (!webPushSupported) return;
+    if (!ownerId || !me?.notificationEnabled) {
+      if (registeredOwnerRef.current === ownerId) registeredOwnerRef.current = null;
+      return;
+    }
+    if (registeredOwnerRef.current === ownerId) return;
     // Claim the one-shot up-front so this never runs more than once per
     // sign-in / enable, even across rapid re-renders.
-    done.current = true;
+    registeredOwnerRef.current = ownerId;
     let cancelled = false;
     void (async () => {
       try {
+        const ownerToken = ownerTokenRef.current;
+        if (!ownerToken || ownerToken.ownerId !== ownerId) return;
         await ensureWebPushIfGranted((token) =>
-          registerRef.current({ data: { token } }),
+          pushRegistrationCoordinator.enqueue(ownerToken, () =>
+            registerRef.current({ data: { token } }),
+          ),
         );
       } catch {
         // Transient failure — drop the guard so a later dependency change retries.
-        if (!cancelled) done.current = false;
+        if (!cancelled && registeredOwnerRef.current === ownerId) {
+          registeredOwnerRef.current = null;
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isSignedIn, me?.notificationEnabled]);
+  }, [me?.notificationEnabled, ownerId]);
 
   return null;
 }

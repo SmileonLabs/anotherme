@@ -16,6 +16,7 @@ import {
 import { battleLevelInfo } from "./battleRules";
 import { computeLevel } from "./growth";
 import { computeIdentity } from "./personaIdentity";
+import { getActiveCharacterIdentityMap } from "./characterProfiles";
 
 type StatKey = keyof PersonaStats;
 
@@ -232,11 +233,11 @@ export async function getRankings(opts: {
       xp: personasTable.xp,
       stats: personasTable.stats,
       nickname: usersTable.nickname,
-      avatarUrl: usersTable.profileImageUrl,
     })
     .from(personasTable)
     .innerJoin(usersTable, eq(personasTable.userId, usersTable.id));
 
+  const identities = await getActiveCharacterIdentityMap(rows.map((row) => row.userId));
   const enriched: EnrichedRow[] = rows.map((r) => {
     const stats: PersonaStats = { ...DEFAULT_PERSONA_STATS, ...r.stats };
     const level = computeLevel(r.xp);
@@ -245,7 +246,7 @@ export async function getRankings(opts: {
     return {
       userId: r.userId,
       displayName: `${r.nickname?.trim() || "나"}의 어나더 미`,
-      avatarUrl: r.avatarUrl ?? null,
+      avatarUrl: identities.get(r.userId)?.profileImageUrl ?? null,
       stats,
       level,
       archetypeKey: identity.archetypeKey,
@@ -372,7 +373,7 @@ function fanScore(stats: FanStats, type: ServiceRankingType, level: number, xp: 
 function fanPrimary(stats: FanStats, type: ServiceRankingType): { label: string; value: number } {
   switch (type) {
     case "fan_power":
-      return { label: "팬 파워", value: stats.fanPower };
+      return { label: "매력", value: stats.fanPower };
     case "support_power":
       return { label: "응원력", value: stats.supportPower };
     case "empathy":
@@ -406,11 +407,11 @@ function starPrimary(stats: StarStats, type: ServiceRankingType): { label: strin
     case "charm":
       return { label: "매력", value: stats.charm };
     case "stage_presence":
-      return { label: "무대감", value: stats.stagePresence };
+      return { label: "스타성", value: stats.stagePresence };
     case "bond":
-      return { label: "유대", value: stats.bond };
+      return { label: "유대감", value: stats.bond };
     case "lore":
-      return { label: "세계관", value: stats.lore };
+      return { label: "영향력", value: stats.lore };
     case "overall":
     default:
       return { label: "STAR XP", value: 0 };
@@ -518,10 +519,10 @@ async function getFanServiceRankings(opts: {
       xp: fanProfilesTable.xp,
       stats: fanProfilesTable.stats,
       nickname: usersTable.nickname,
-      avatarUrl: usersTable.profileImageUrl,
     })
     .from(fanProfilesTable)
     .innerJoin(usersTable, eq(fanProfilesTable.userId, usersTable.id));
+  const identities = await getActiveCharacterIdentityMap(rows.map((row) => row.userId));
   const ranked: Row[] = rows.map((row) => {
     const stats: FanStats = { ...DEFAULT_FAN_STATS, ...row.stats };
     const score = fanScore(stats, opts.type, row.level, row.xp);
@@ -529,7 +530,7 @@ async function getFanServiceRankings(opts: {
       id: row.userId,
       userId: row.userId,
       displayName: `${row.nickname?.trim() || "나"} FAN`,
-      avatarUrl: row.avatarUrl ?? null,
+      avatarUrl: identities.get(row.userId)?.profileImageUrl ?? null,
       level: row.level,
       xp: row.xp,
       stats,
@@ -584,7 +585,6 @@ async function getStarServiceRankings(opts: {
       xp: starProfilesTable.xp,
       stats: starProfilesTable.stats,
       nickname: usersTable.nickname,
-      avatarUrl: usersTable.profileImageUrl,
     })
     .from(starProfilesTable)
     .innerJoin(usersTable, eq(starProfilesTable.userId, usersTable.id))
@@ -597,7 +597,7 @@ async function getStarServiceRankings(opts: {
       id: row.id,
       userId: row.userId,
       displayName: row.displayName || `${row.nickname?.trim() || "나"} STAR`,
-      avatarUrl: row.imageUrl ?? row.avatarUrl ?? null,
+      avatarUrl: row.imageUrl ?? null,
       level: row.level,
       xp: row.xp,
       stage: row.stage,
@@ -655,17 +655,17 @@ async function getBattleServiceRankings(opts: {
       bestStreak: userBattleStatsTable.bestStreak,
       mp: userBattleStatsTable.mp,
       nickname: usersTable.nickname,
-      avatarUrl: usersTable.profileImageUrl,
     })
     .from(userBattleStatsTable)
     .innerJoin(usersTable, eq(userBattleStatsTable.userId, usersTable.id));
+  const identities = await getActiveCharacterIdentityMap(rows.map((row) => row.userId));
   const ranked: Row[] = rows.map((row) => {
     const level = battleLevelInfo(row.mp);
     return {
       id: row.userId,
       userId: row.userId,
       displayName: row.nickname?.trim() || "참가자",
-      avatarUrl: row.avatarUrl ?? null,
+      avatarUrl: identities.get(row.userId)?.profileImageUrl ?? null,
       level: level.level,
       title: level.title,
       mp: row.mp,

@@ -39,7 +39,7 @@ export default function ClanWarCreateScreen() {
     } catch (err) {
       const message =
         (err as { message?: string })?.message ??
-        "가문전을 만들지 못했어요. 잠시 후 다시 시도해 주세요.";
+        "팬클럽전을 만들지 못했어요. 잠시 후 다시 시도해 주세요.";
       crossAlert("오류", message);
     }
   };
@@ -50,7 +50,7 @@ export default function ClanWarCreateScreen() {
         <View style={[styles.notice, { backgroundColor: `${colors.primary}12` }]}>
           <Feather name="info" size={15} color={colors.primary} />
           <Text style={[styles.noticeText, { color: colors.primary }]}>
-            공개 도전으로 등록돼요. 다른 가문의 가문장·원로가 수락하면 시작됩니다.
+            공개 도전으로 등록돼요. 다른 팬클럽의 팬클럽장·원로가 수락하면 시작됩니다.
           </Text>
         </View>
 

@@ -55,7 +55,7 @@ const ARCHETYPE_LABEL: Record<string, string> = {
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  owner: "가문장",
+  owner: "팬클럽장",
   elder: "원로",
   member: "멤버",
 };
@@ -98,13 +98,13 @@ export default function ClanHomeScreen() {
     if (!hasMemories) {
       crossAlert(
         "기억이 필요해요",
-        "가문 기억이 있어야 지혜를 생성할 수 있어요. 먼저 기억을 남겨주세요.",
+        "팬클럽 기억이 있어야 지혜를 생성할 수 있어요. 먼저 기억을 남겨주세요.",
       );
       return;
     }
     crossAlert(
-      wisdom ? "가문 지혜 갱신" : "가문 지혜 생성",
-      "가문 기억과 정체성을 바탕으로 가문의 지혜를 정리할까요? 잠시 시간이 걸릴 수 있어요.",
+      wisdom ? "팬클럽 지혜 갱신" : "팬클럽 지혜 생성",
+      "팬클럽 기억과 정체성을 바탕으로 팬클럽의 지혜를 정리할까요? 잠시 시간이 걸릴 수 있어요.",
       [
         { text: "취소", style: "cancel" },
         {
@@ -116,7 +116,7 @@ export default function ClanHomeScreen() {
                 queryKey: getGetClanWisdomQueryKey(clanId),
               });
             } catch {
-              crossAlert("오류", "가문의 지혜를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.");
+              crossAlert("오류", "팬클럽의 지혜를 생성하지 못했어요. 잠시 후 다시 시도해 주세요.");
             }
           },
         },
@@ -144,13 +144,13 @@ export default function ClanHomeScreen() {
     if (!myClan) return;
     const isOwnerWithMembers =
       myClan.myRole === "owner" && myClan.memberCount > 1;
-    const title = isOwnerWithMembers ? "탈퇴할 수 없음" : "가문 탈퇴";
+    const title = isOwnerWithMembers ? "탈퇴할 수 없음" : "팬클럽 탈퇴";
     const message =
       myClan.myRole === "owner" && myClan.memberCount <= 1
-        ? "가문에 혼자 남아 있어요. 탈퇴하면 가문이 삭제됩니다. 계속할까요?"
+        ? "팬클럽에 혼자 남아 있어요. 탈퇴하면 팬클럽이 삭제됩니다. 계속할까요?"
         : isOwnerWithMembers
-          ? "가문장은 다른 멤버에게 권한을 넘긴 후 탈퇴할 수 있습니다."
-          : "정말 이 가문에서 탈퇴할까요?";
+          ? "팬클럽장은 다른 멤버에게 권한을 넘긴 후 탈퇴할 수 있습니다."
+          : "정말 이 팬클럽에서 탈퇴할까요?";
 
     if (isOwnerWithMembers) {
       crossAlert(title, message);
@@ -168,7 +168,7 @@ export default function ClanHomeScreen() {
             await queryClient.invalidateQueries({ queryKey: getGetMyClanQueryKey() });
             await refetch();
           } catch {
-            crossAlert("오류", "가문 탈퇴에 실패했어요.");
+            crossAlert("오류", "팬클럽 탈퇴에 실패했어요.");
           }
         },
       },
@@ -185,7 +185,7 @@ export default function ClanHomeScreen() {
         ) : isError ? (
           <View style={styles.center}>
             <Text style={[styles.bodyText, { color: colors.mutedForeground }]}>
-              가문 정보를 불러오지 못했어요.
+              팬클럽 정보를 불러오지 못했어요.
             </Text>
             <Pressable
               onPress={() => refetch()}
@@ -218,7 +218,7 @@ export default function ClanHomeScreen() {
               <View style={styles.statRow}>
                 <Stat label="레벨" value={`Lv.${identity?.level ?? myClan.clan.level}`} colors={colors} />
                 <Stat
-                  label="가문 전투력"
+                  label="팬클럽 전투력"
                   value={(identity?.clanPower ?? 0).toLocaleString()}
                   colors={colors}
                 />
@@ -244,7 +244,7 @@ export default function ClanHomeScreen() {
               />
             ) : null}
             {myClan.clan.clanValues ? (
-              <InfoCard colors={colors} icon="heart" title="가문 가치관" body={myClan.clan.clanValues} />
+              <InfoCard colors={colors} icon="heart" title="팬클럽 가치관" body={myClan.clan.clanValues} />
             ) : null}
 
             {topContributors.length > 0 ? (
@@ -262,7 +262,7 @@ export default function ClanHomeScreen() {
 
             <View style={styles.memHead}>
               <Text style={[styles.sectionTitle, styles.memHeadTitle, { color: colors.mutedForeground }]}>
-                가문 기억
+                팬클럽 기억
               </Text>
               <Pressable
                 onPress={() => router.push({ pathname: "/clan/memories", params: { clanId: myClan.clan.id } })}
@@ -284,7 +284,7 @@ export default function ClanHomeScreen() {
               >
                 <Feather name="book-open" size={18} color={colors.mutedForeground} />
                 <Text style={[styles.memEmptyText, { color: colors.mutedForeground }]}>
-                  아직 가문 기억이 없습니다. 첫 기억을 남겨보세요.
+                  아직 팬클럽 기억이 없습니다. 첫 기억을 남겨보세요.
                 </Text>
               </Pressable>
             )}
@@ -309,7 +309,7 @@ export default function ClanHomeScreen() {
               style={[styles.rankingBtn, { backgroundColor: colors.primary }]}
             >
               <Feather name="zap" size={16} color="#fff" />
-              <Text style={[styles.rankingText, { color: "#fff" }]}>가문전</Text>
+              <Text style={[styles.rankingText, { color: "#fff" }]}>팬클럽전</Text>
             </Pressable>
 
             <Pressable
@@ -317,7 +317,7 @@ export default function ClanHomeScreen() {
               style={[styles.rankingBtn, { backgroundColor: colors.foreground }]}
             >
               <Feather name="award" size={16} color={colors.background} />
-              <Text style={[styles.rankingText, { color: colors.background }]}>가문 랭킹 보기</Text>
+              <Text style={[styles.rankingText, { color: colors.background }]}>팬클럽 랭킹 보기</Text>
             </Pressable>
 
             <Pressable
@@ -326,7 +326,7 @@ export default function ClanHomeScreen() {
               style={[styles.leaveBtn, { borderColor: colors.destructive }]}
             >
               <Feather name="log-out" size={15} color={colors.destructive} />
-              <Text style={[styles.leaveText, { color: colors.destructive }]}>가문 탈퇴</Text>
+              <Text style={[styles.leaveText, { color: colors.destructive }]}>팬클럽 탈퇴</Text>
             </Pressable>
           </View>
         )}
@@ -356,7 +356,7 @@ function EmptyState({
           <Feather name="shield" size={26} color={colors.primary} />
         </View>
         <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-          아직 소속된 가문이 없습니다.
+          아직 소속된 팬클럽이 없습니다.
         </Text>
         <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
           비슷한 정체성을 가진 Another Me들과 함께 성장해보세요.
@@ -369,14 +369,14 @@ function EmptyState({
           style={[styles.primaryBtn, { backgroundColor: colors.foreground }]}
         >
           <Feather name="plus" size={16} color={colors.background} />
-          <Text style={[styles.primaryBtnText, { color: colors.background }]}>가문 만들기</Text>
+          <Text style={[styles.primaryBtnText, { color: colors.background }]}>팬클럽 만들기</Text>
         </Pressable>
         <Pressable
           onPress={() => router.push("/clan/browse")}
           style={[styles.outlineBtn, { borderColor: colors.border }]}
         >
           <Feather name="search" size={16} color={colors.foreground} />
-          <Text style={[styles.outlineBtnText, { color: colors.foreground }]}>가문 찾아보기</Text>
+          <Text style={[styles.outlineBtnText, { color: colors.foreground }]}>팬클럽 찾아보기</Text>
         </Pressable>
       </View>
     </View>
@@ -401,7 +401,7 @@ function ExpBar({
           다음 레벨까지
         </Text>
         <Text style={[styles.expLabel, { color: colors.mutedForeground }]}>
-          {identity.expIntoLevel.toLocaleString()} / {span.toLocaleString()} EXP
+          {identity.expIntoLevel.toLocaleString()} / {span.toLocaleString()} Clan EXP
         </Text>
       </View>
       <View
@@ -432,10 +432,10 @@ function IdentityCard({
     <View style={[styles.infoCard, { backgroundColor: colors.background }]}>
       <View style={styles.infoHead}>
         <Feather name="users" size={14} color={colors.primary} />
-        <Text style={[styles.infoTitle, { color: colors.mutedForeground }]}>가문 정체성</Text>
+        <Text style={[styles.infoTitle, { color: colors.mutedForeground }]}>팬클럽 정체성</Text>
       </View>
       <Text style={[styles.identityArchetype, { color: colors.foreground }]}>
-        {identity.dominantArchetypeLabel} 가문
+        {identity.dominantArchetypeLabel} 팬클럽
       </Text>
       <View style={styles.identityMetaRow}>
         <Text style={[styles.identityMeta, { color: colors.mutedForeground }]}>
@@ -480,7 +480,7 @@ function ContributorRow({
       <Text style={[styles.rankNum, { color: rank <= 3 ? colors.primary : colors.mutedForeground }]}>
         {rank}
       </Text>
-      <Avatar uri={member.avatarUrl} name={member.displayName} size={36} />
+      <Avatar uri={member.avatarUrl} name={member.displayName} size={36} crop="face" characterType="fan" />
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {member.displayName}
@@ -562,7 +562,7 @@ function WisdomSection({
     <View>
       <View style={styles.memHead}>
         <Text style={[styles.sectionTitle, styles.memHeadTitle, { color: colors.mutedForeground }]}>
-          가문의 지혜
+          팬클럽의 지혜
         </Text>
         {canManage ? (
           <Pressable onPress={onGenerate} disabled={isGenerating} hitSlop={8}>
@@ -622,8 +622,8 @@ function WisdomSection({
           <Feather name="award" size={18} color={colors.mutedForeground} />
           <Text style={[styles.memEmptyText, { color: colors.mutedForeground }]}>
             {canManage
-              ? "아직 가문의 지혜가 없습니다. 가문 기억을 모아 지혜를 정리해보세요."
-              : "아직 가문의 지혜가 없습니다. 가문장·원로가 정리할 수 있어요."}
+              ? "아직 팬클럽의 지혜가 없습니다. 팬클럽 기억을 모아 지혜를 정리해보세요."
+              : "아직 팬클럽의 지혜가 없습니다. 팬클럽장·원로가 정리할 수 있어요."}
           </Text>
         </View>
       )}
@@ -689,7 +689,7 @@ function MemberRow({
         },
       ]}
     >
-      <Avatar uri={member.avatarUrl} name={member.displayName} size={40} />
+      <Avatar uri={member.avatarUrl} name={member.displayName} size={40} crop="face" characterType="fan" />
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {member.displayName}

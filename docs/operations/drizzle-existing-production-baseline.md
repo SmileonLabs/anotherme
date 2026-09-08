@@ -67,3 +67,23 @@ immutable app image and records the result in `.deploy-history.log`. It does not
 back database migrations: stop promotion, inspect application logs, and restore the
 documented backup or apply a reviewed corrective migration. Do not rerun the baseline
 registration script.
+
+## Call Hardening Migration
+
+`0001_call-hardening` is a forward migration from the registered baseline. Test it
+against the restored staging copy before production. Drain API replicas that run code
+older than this migration before applying it: older replicas do not acquire the new
+`call_user_locks` concurrency guard.
+
+The migration keeps the newest active call for each participant (then the newest
+ringing call), marks conflicting live calls as `failed`, and backfills one lock row per
+participant. It stops with an explicit error if historical `room_name` values are not
+unique; reconcile those records manually rather than allowing ambiguous LiveKit room
+ownership. The status, media, and distinct-participant checks are added `NOT VALID` so
+they protect new writes without rejecting historic rows. Audit and validate them in a
+separate reviewed migration after legacy data has been corrected.
+
+After promotion, leave the call lifecycle worker enabled (the default). It expires
+unanswered calls and retries LiveKit room deletion for terminal calls. The worker can
+be disabled only with `CALL_LIFECYCLE_WORKER_ENABLED=false` during controlled
+maintenance.

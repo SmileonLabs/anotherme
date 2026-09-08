@@ -9,7 +9,7 @@
 export interface FriendAliasInput {
   /**
      * Null or an empty string clears the saved name.
-     * @maxLength 50
+     * @maxLength 30
      * @nullable
      */
   alias: string | null;

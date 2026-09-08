@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify:ontology": "tsx ../artifacts/api-server/src/scripts/verifyOntologyRuntime.ts",
     "openapi:check": "tsx ./src/checkOpenApiGenerated.ts",
-    "openapi:coverage": "tsx ./src/checkOpenApiRouteCoverage.ts"
+    "openapi:coverage": "tsx ./src/checkOpenApiRouteCoverage.ts",
+    "security:tracked-files": "tsx ./src/checkSensitiveTrackedFiles.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -8,4 +8,10 @@
 
 export interface ForwardMessageInput {
   targetRoomId: string;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     * @nullable
+     */
+  clientMessageId?: string | null;
 }

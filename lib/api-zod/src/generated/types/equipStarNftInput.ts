@@ -12,4 +12,5 @@ export interface EquipStarNftInput {
      * @maxLength 80
      */
   tokenId: string;
+  collectionId?: string;
 }

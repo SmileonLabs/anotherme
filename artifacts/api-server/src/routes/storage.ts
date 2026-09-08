@@ -5,13 +5,60 @@ import {
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission } from "../lib/objectAcl";
 import { requireAuth } from "../lib/auth";
+import { and, eq, isNull, like, or } from "drizzle-orm";
+import { chatRoomMembersTable, db, messagesTable, nftEvolutionStagesTable, starProfilesTable, usersTable } from "@workspace/db";
+import { rateLimit } from "../lib/rateLimit";
+import { hasReadableObjectReference } from "../lib/objectAccessPolicy";
+import { issueMediaTicket, validateMediaTicket } from "../lib/mediaTicket";
+import { canReadStarFeedMedia } from "../lib/starFeed";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+export async function canReadPrivateObject(userId: string, objectPath: string): Promise<boolean> {
+  const [profileReference] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.profileImageUrl, objectPath))
+    .limit(1);
+  const [nftStageReference] = await db
+    .select({ id: nftEvolutionStagesTable.id })
+    .from(nftEvolutionStagesTable)
+    .where(eq(nftEvolutionStagesTable.imageUrl, objectPath))
+    .limit(1);
+  const [starProfileReference] = await db
+    .select({ id: starProfilesTable.id })
+    .from(starProfilesTable)
+    .where(eq(starProfilesTable.imageUrl, objectPath))
+    .limit(1);
+  if (nftStageReference || starProfileReference) return true;
+  if (await canReadStarFeedMedia(userId, objectPath)) return true;
+  const candidates = await db
+    .select({ roomId: messagesTable.roomId, type: messagesTable.type, content: messagesTable.content })
+    .from(messagesTable)
+    .innerJoin(
+      chatRoomMembersTable,
+      and(
+        eq(chatRoomMembersTable.roomId, messagesTable.roomId),
+        eq(chatRoomMembersTable.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        isNull(messagesTable.deletedAt),
+        or(
+          and(eq(messagesTable.type, "image"), eq(messagesTable.content, objectPath)),
+          and(eq(messagesTable.type, "file"), like(messagesTable.content, `%${objectPath}%`)),
+        ),
+      ),
+    )
+    .limit(20);
+
+  return hasReadableObjectReference(objectPath, Boolean(profileReference), candidates);
+}
 
 function maxUploadBytes(contentType: string): number {
   return contentType.startsWith("image/") ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
@@ -24,7 +71,7 @@ function maxUploadBytes(contentType: string): number {
  * The client sends JSON metadata (name, size, contentType) — NOT the file.
  * Then uploads the file directly to the returned presigned URL.
  */
-router.post("/storage/uploads/request-url", requireAuth, async (req: Request, res: Response) => {
+router.post("/storage/uploads/request-url", requireAuth, rateLimit({ name: "upload-url", limit: 30, windowSeconds: 60 }), async (req: Request, res: Response) => {
   const parsed = RequestUploadUrlBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Missing or invalid required fields" });
@@ -73,6 +120,7 @@ router.post("/storage/uploads/request-url", requireAuth, async (req: Request, re
 router.post(
   "/storage/uploads/object",
   requireAuth,
+  rateLimit({ name: "upload-object", limit: 20, windowSeconds: 60 }),
   express.raw({ type: "*/*", limit: MAX_FILE_BYTES }),
   async (req: Request, res: Response) => {
     const size = Number(req.query.size);
@@ -157,27 +205,34 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  * These are served from a separate path from /public-objects and can optionally
  * be protected with authentication or ACL checks based on the use case.
  */
+router.post("/storage/media-url", requireAuth, rateLimit({ name: "media-url", limit: 120, windowSeconds: 60 }), async (req: Request, res: Response) => {
+  const objectPath = typeof req.body?.objectPath === "string" ? req.body.objectPath : "";
+  if (objectPath.length > 1_024 || !objectPath.startsWith("/objects/") || !(await canReadPrivateObject(req.dbUser!.id, objectPath))) {
+    res.status(404).json({ error: "Object not found" });
+    return;
+  }
+  try {
+    const ticket = await issueMediaTicket(req.dbUser!.id, objectPath);
+    const suffix = objectPath.slice("/objects/".length);
+    res.set("Cache-Control", "no-store");
+    res.json({ url: `/api/storage/objects/${suffix}?ticket=${encodeURIComponent(ticket)}` });
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to issue media ticket");
+    res.status(503).json({ error: "Media access is temporarily unavailable" });
+  }
+});
+
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
+    const ticket = typeof req.query.ticket === "string" ? req.query.ticket : "";
+    if (!(await validateMediaTicket(ticket, objectPath))) {
+      res.status(404).json({ error: "Object not found" });
+      return;
+    }
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
 
     const response = await objectStorageService.downloadObject(objectFile);
 

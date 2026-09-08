@@ -5,11 +5,13 @@
  * TodoTalk messenger API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicCharacterIdentity } from './publicCharacterIdentity';
+import type { PublicUserAccountKind } from './publicUserAccountKind';
 
 export interface PublicUser {
   id: string;
   nickname: string;
-  email: string;
+  accountKind: PublicUserAccountKind;
   /**
      * Current viewer's saved name for this user, when available.
      * @nullable
@@ -17,8 +19,12 @@ export interface PublicUser {
   friendAlias?: string | null;
   /** friendAlias when set, otherwise nickname. */
   displayName?: string;
-  /** @nullable */
+  /**
+     * Active character avatar. The legacy member account photo is never exposed.
+     * @nullable
+     */
   profileImageUrl?: string | null;
   /** @nullable */
   statusMessage?: string | null;
+  profile?: PublicCharacterIdentity | null;
 }

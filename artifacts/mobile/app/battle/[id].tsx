@@ -15,6 +15,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  customFetch,
   getListRoomsQueryKey,
   useCancelBattle,
   useFetchRoomMessages,
@@ -31,8 +32,35 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "@/components/MessageBubble";
 import { crossAlert } from "@/lib/crossAlert";
 import { useColors } from "@/hooks/useColors";
+import { usePlayMode } from "@/hooks/usePlayMode";
+import { starFeedQueryKey } from "@/hooks/useStarFeed";
 
 const MAX_UTTERANCE = 1000;
+
+type BattleFeedKind = "fan" | "star";
+type BattleOutcome = "win" | "loss" | "draw";
+
+interface BattleResultSummary {
+  outcome: BattleOutcome;
+  outcomeLabel: string;
+  myScore: number;
+  opponentScore: number;
+  opponentName: string;
+  vibe: {
+    key: string;
+    label: string;
+    description: string;
+  };
+  rewards: { label: string; value: string }[];
+}
+
+type BattleWithResultSummary = BattleState & { resultSummary?: BattleResultSummary };
+
+interface BattleFeedPostResponse {
+  duplicate: boolean;
+  summary: BattleResultSummary;
+  draft: { id: string; status: string };
+}
 
 function sideLabel(side: string): string {
   if (side === "pro") return "찬성";
@@ -43,6 +71,42 @@ function sideLabel(side: string): string {
 function formatMsgTime(dateStr: string) {
   const d = new Date(dateStr);
   return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fallbackRewards(outcome: BattleOutcome): { label: string; value: string }[] {
+  const tp = outcome === "win" ? 50 : outcome === "draw" ? 20 : 10;
+  const xp = outcome === "win" ? 30 : outcome === "draw" ? 15 : 10;
+  return [
+    { label: "TP", value: `+${tp}` },
+    { label: "FAN XP", value: `+${xp}` },
+    { label: "자아 프로필", value: "표현 패턴 반영" },
+  ];
+}
+
+function fallbackVibe(outcome: BattleOutcome): BattleResultSummary["vibe"] {
+  if (outcome === "win") {
+    return {
+      key: "winner_flow",
+      label: "승부 완성형",
+      description: "이번 배틀의 승리 흐름이 기록됐어요.",
+    };
+  }
+  if (outcome === "draw") {
+    return {
+      key: "balanced_flow",
+      label: "균형형 논객",
+      description: "팽팽한 흐름을 끝까지 이어간 배틀이었어요.",
+    };
+  }
+  return {
+    key: "growth_flow",
+    label: "성장형 스피커",
+    description: "다음 배틀을 위한 표현 경험이 쌓였어요.",
+  };
+}
+
+function feedErrorMessage(err: unknown, fallback: string): string {
+  return (err as { data?: { message?: string } } | null)?.data?.message ?? fallback;
 }
 
 export default function BattleScreen() {
@@ -67,6 +131,9 @@ export default function BattleScreen() {
   const cancel = useCancelBattle();
   const markRead = useMarkRoomRead();
   const queryClient = useQueryClient();
+  const { equippedStar } = usePlayMode();
+  const canPostOfficialStar = equippedStar?.stage === "promoted";
+  const [feedPostPendingKind, setFeedPostPendingKind] = useState<BattleFeedKind | null>(null);
 
   // The newest persisted (non-temp) message id. Battle rooms appear in the chat
   // list with an unread badge, but this screen never advanced the read pointer —
@@ -161,6 +228,32 @@ export default function BattleScreen() {
     }
   };
 
+  const createBattleFeedPost = async (kind: BattleFeedKind) => {
+    if (!id || feedPostPendingKind) return;
+    setFeedPostPendingKind(kind);
+    try {
+      const result = await customFetch<BattleFeedPostResponse>(`/api/battles/${id}/feed-post`, {
+        method: "POST",
+        responseType: "json",
+        body: JSON.stringify({ kind }),
+      });
+      await queryClient.invalidateQueries({ queryKey: starFeedQueryKey });
+      const successMessage = result.duplicate
+        ? "이미 이 배틀을 피드에 남겼어요."
+        : kind === "star"
+          ? "공식 STAR 기록으로 남겼어요."
+          : "FAN 응원글로 남겼어요.";
+      crossAlert("피드 기록", successMessage, [
+        { text: "닫기", style: "cancel" },
+        { text: "피드 보기", onPress: () => router.push("/(tabs)/feed" as never) },
+      ]);
+    } catch (err) {
+      crossAlert("피드 기록", feedErrorMessage(err, "피드에 남기지 못했습니다."));
+    } finally {
+      setFeedPostPendingKind(null);
+    }
+  };
+
   // Auto-submit the current draft (or forfeit) when my turn's clock runs out.
   useEffect(() => {
     if (!isMyTurn || !battle) return;
@@ -192,14 +285,14 @@ export default function BattleScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
         <Pressable onPress={goBack} hitSlop={8} style={styles.backBtn}>
-          <Feather name="chevron-left" size={26} color={colors.foreground} />
+          <Feather name="chevron-left" size={26} color={colors.primary} />
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
             ⚔️ 토크배틀
           </Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {battle.topic}
+            {battle.topic} · {equippedStar ? `STAR ${equippedStar.displayName}` : "FAN"}
           </Text>
         </View>
         <View style={styles.backBtn} />
@@ -256,11 +349,13 @@ export default function BattleScreen() {
               return (
                 <MessageBubble
                   key={m.id}
+                  messageId={m.id}
                   content={m.content}
                   type={m.type}
                   isMe={isMe}
                   senderName={m.sender?.nickname}
-                  senderAvatar={m.sender?.profileImageUrl ?? null}
+                  senderAvatar={(m as any).senderProfile?.profileImageUrl ?? null}
+                  senderCharacterType={(m as any).senderProfile?.type}
                   showSender={!isMe && m.type !== "system"}
                   time={formatMsgTime(m.createdAt)}
                   isDM={m.type === "system"}
@@ -276,6 +371,9 @@ export default function BattleScreen() {
               colors={colors}
               insets={insets}
               pending={restart.isPending}
+              canPostOfficialStar={canPostOfficialStar}
+              feedPostPendingKind={feedPostPendingKind}
+              onCreateFeedPost={createBattleFeedPost}
               onRestart={async () => {
                 try {
                   await restart.mutateAsync({ id });
@@ -557,6 +655,9 @@ function ResultBar({
   colors,
   insets,
   pending,
+  canPostOfficialStar,
+  feedPostPendingKind,
+  onCreateFeedPost,
   onRestart,
   onExit,
 }: {
@@ -565,13 +666,20 @@ function ResultBar({
   colors: Colors;
   insets: { bottom: number };
   pending: boolean;
+  canPostOfficialStar?: boolean;
+  feedPostPendingKind: BattleFeedKind | null;
+  onCreateFeedPost: (kind: BattleFeedKind) => void;
   onRestart: () => void;
   onExit: () => void;
 }) {
   const isDraw = !battle.winnerUserId;
-  const iWon = battle.winnerUserId && battle.winnerUserId === myId;
+  const iWon = !!battle.winnerUserId && battle.winnerUserId === myId;
+  const outcome: BattleOutcome = isDraw ? "draw" : iWon ? "win" : "loss";
   const title = isDraw ? "🤝 무승부!" : iWon ? "🏆 승리!" : "😢 패배";
   const winnerName = battle.participants.find((p) => p.userId === battle.winnerUserId)?.name;
+  const summary = (battle as BattleWithResultSummary).resultSummary;
+  const vibe = summary?.vibe ?? fallbackVibe(outcome);
+  const rewards = summary?.rewards ?? fallbackRewards(outcome);
   return (
     <View
       style={[
@@ -593,6 +701,55 @@ function ResultBar({
           </Text>
         ))}
       </View>
+
+      <View style={[styles.vibeCard, { backgroundColor: colors.accent }]}>
+        <Text style={[styles.vibeKicker, { color: colors.mutedForeground }]}>오늘의 바이브</Text>
+        <Text style={[styles.vibeTitle, { color: colors.foreground }]}>{vibe.label}</Text>
+        <Text style={[styles.vibeDesc, { color: colors.mutedForeground }]}>{vibe.description}</Text>
+      </View>
+
+      <View style={styles.rewardRow}>
+        {rewards.map((reward) => (
+          <View key={reward.label} style={[styles.rewardChip, { backgroundColor: colors.muted }]}>
+            <Text style={[styles.rewardValue, { color: colors.primary }]}>{reward.value}</Text>
+            <Text style={[styles.rewardLabel, { color: colors.mutedForeground }]}>{reward.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.feedBtns}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.feedBtn,
+            { backgroundColor: colors.muted, opacity: pressed ? 0.8 : 1 },
+          ]}
+          onPress={() => onCreateFeedPost("fan")}
+          disabled={!!feedPostPendingKind}
+        >
+          {feedPostPendingKind === "fan" ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <Text style={[styles.feedBtnText, { color: colors.foreground }]}>FAN 응원글로 남기기</Text>
+          )}
+        </Pressable>
+        {canPostOfficialStar && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.feedBtn,
+              { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
+            ]}
+            onPress={() => onCreateFeedPost("star")}
+            disabled={!!feedPostPendingKind}
+          >
+            {feedPostPendingKind === "star" ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={[styles.feedBtnText, { color: "#fff" }]}>공식 STAR 기록으로 남기기</Text>
+            )}
+          </Pressable>
+        )}
+      </View>
+
       <View style={styles.resultBtns}>
         <Pressable
           style={({ pressed }) => [
@@ -700,6 +857,17 @@ const styles = StyleSheet.create({
   resultSub: { fontSize: 14, fontFamily: "Inter_500Medium", textAlign: "center" },
   resultScores: { gap: 3, marginVertical: 8, alignItems: "center" },
   resultScore: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  vibeCard: { borderRadius: 14, padding: 12, gap: 3 },
+  vibeKicker: { fontSize: 11, fontFamily: "Inter_700Bold", letterSpacing: 0.4 },
+  vibeTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  vibeDesc: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  rewardRow: { flexDirection: "row", gap: 8 },
+  rewardChip: { flex: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center", gap: 2 },
+  rewardValue: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  rewardLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  feedBtns: { gap: 8, marginTop: 2 },
+  feedBtn: { minHeight: 44, borderRadius: 13, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  feedBtnText: { fontSize: 14, fontFamily: "Inter_700Bold", textAlign: "center" },
   resultBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
   resultBtn: { flex: 1, height: 50, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   resultBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },

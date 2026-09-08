@@ -3,17 +3,46 @@ import {
   RoomEvent,
   Track,
   type LocalAudioTrack,
+  type LocalVideoTrack,
   type RemoteTrack,
 } from "livekit-client";
+import NoSleep from "nosleep.js";
 
 export const voiceCallSupported = true;
+export type CallMedia = "audio" | "video";
+export type CallDiagnostic = (phase: string, details?: Record<string, unknown>) => void;
+export interface CallJoinResult {
+  room: Room;
+  media: CallMedia;
+  microphonePublished: boolean;
+  cameraPublished: boolean;
+  cameraPending?: boolean;
+}
 
 let room: Room | null = null;
+let roomGeneration = 0;
+const roomDisconnects = new WeakMap<Room, Promise<void>>();
 let unlockHandler: (() => void) | null = null;
 let visibilityHandler: (() => void) | null = null;
 let micTrack: MediaStreamTrack | null = null;
+let removeMicTrackListeners: (() => void) | null = null;
 let micRestarting = false;
 let micLost = false;
+let cameraTrack: MediaStreamTrack | null = null;
+let removeCameraTrackListeners: (() => void) | null = null;
+let cameraRestartOperation: { room: Room; captureGeneration: number; promise: Promise<boolean> } | null = null;
+let cameraLost = false;
+let cameraEnabledIntent = false;
+let cameraRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let cameraFacingMode: "user" | "environment" = "user";
+let videoPreparePromise: Promise<void> | null = null;
+let preparedVideoTrack: MediaStreamTrack | null = null;
+let videoPrepareGeneration = 0;
+let cameraCaptureInFlight: Promise<MediaStream> | null = null;
+let cameraPublishInFlight: { room: Room; promise: Promise<unknown> } | null = null;
+let cameraEnableOperation: { room: Room; captureGeneration: number; promise: Promise<boolean> } | null = null;
+let cameraDisableOperation: { room: Room; promise: Promise<unknown> } | null = null;
+let callDiagnostic: CallDiagnostic = () => {};
 
 // Mobile browsers route WebRTC remote audio through the quiet earpiece/call
 // channel and an <audio> element's `volume` is hard-capped at 1.0, so on a phone
@@ -29,7 +58,7 @@ let audioCtx: AudioContext | null = null;
 // gain so we can push perceived loudness up hard without the makeup gain clipping
 // into distortion on louder speech.
 const gainNodes = new Map<
-  string,
+  RemoteTrack,
   {
     src: MediaStreamAudioSourceNode;
     compressor: DynamicsCompressorNode;
@@ -41,10 +70,91 @@ const gainNodes = new Map<
 // sound source); whenever the context is suspended they are un-muted so the call
 // is never fully silent — the #1 cause of "한쪽은 안 들림".
 const boostedEls = new Set<HTMLAudioElement>();
+const audioElementRooms = new WeakMap<HTMLAudioElement, Room>();
 // Makeup gain applied AFTER compression. With the compressor taming peaks this
 // can be pushed past the old 1.0 element cap for a genuinely louder phone call
 // without the distortion a raw 2x+ gain would cause.
 const REMOTE_GAIN = 3.0;
+const ROOM_DISCONNECT_TIMEOUT_MS = 4_000;
+const CAMERA_CAPTURE_TIMEOUT_MS = 12_000;
+const CAMERA_PUBLISH_TIMEOUT_MS = 12_000;
+const MICROPHONE_PUBLISH_TIMEOUT_MS = 20_000;
+
+function mediaDeadline<T>(operation: Promise<T>, timeoutMs: number, name: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(name);
+      error.name = name;
+      reject(error);
+    }, timeoutMs);
+    operation.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.then(() => true, () => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function stopRoomMediaTracks(r: Room): void {
+  for (const publication of r.localParticipant.trackPublications.values()) {
+    try {
+      publication.track?.mediaStreamTrack?.stop();
+    } catch {}
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function micDiagnosticDetails(track: MediaStreamTrack | null = micTrack): Record<string, unknown> {
+  if (!track) return { hasMicTrack: false };
+  return {
+    hasMicTrack: true,
+    micEnabled: track.enabled,
+    micMuted: track.muted,
+    micReadyState: track.readyState,
+  };
+}
+
+function cameraDiagnosticDetails(
+  track: MediaStreamTrack | null = cameraTrack,
+): Record<string, unknown> {
+  if (!track) return { hasCameraTrack: false, cameraEnabledIntent };
+  return {
+    hasCameraTrack: true,
+    cameraEnabledIntent,
+    cameraEnabled: track.enabled,
+    cameraMuted: track.muted,
+    cameraReadyState: track.readyState,
+  };
+}
+
+function callStateDetails(): Record<string, unknown> {
+  return {
+    audioContextState: audioCtx?.state,
+    canPlaybackAudio: room?.canPlaybackAudio,
+    hidden: document.hidden,
+    microphoneEnabled: room?.localParticipant.isMicrophoneEnabled,
+    cameraEnabled: room?.localParticipant.isCameraEnabled,
+    visibilityState: document.visibilityState,
+    ...micDiagnosticDetails(),
+    ...cameraDiagnosticDetails(),
+  };
+}
 
 // The (un-)muted state of every boosted element tracks the context's run state:
 // muted while running (graph is the sound source), audible while suspended (graph
@@ -79,12 +189,6 @@ function getAudioCtx(): AudioContext | null {
   }
 }
 
-// A stable per-track key for the gain map. `sid` is the natural choice but is
-// typed optional, so fall back to the underlying MediaStreamTrack id.
-function trackKey(track: RemoteTrack): string {
-  return track.sid ?? track.mediaStreamTrack?.id ?? "";
-}
-
 // Build src -> gain -> destination for a remote audio track. Returns true only
 // if the graph was wired up, so the caller knows it's safe to mute the element
 // (muting it when this returns false would leave the call silent).
@@ -94,13 +198,11 @@ function attachGain(track: RemoteTrack): boolean {
     if (!ctx) return false;
     const mst = track.mediaStreamTrack;
     if (!mst) return false;
-    const key = trackKey(track);
-    if (!key) return false;
     // A network reconnect can re-fire TrackSubscribed for a track we already
     // wired up. Tear the old nodes down first so we never stack two src->gain
     // chains on the destination (which would double the audio, drift the volume,
     // and leak the orphaned nodes).
-    detachGain(key);
+    detachGain(track);
     const src = ctx.createMediaStreamSource(new MediaStream([mst]));
     // Compress first so loud speech is reined in, then apply makeup gain — this
     // raises perceived loudness far more than a bare gain could before the
@@ -111,15 +213,15 @@ function attachGain(track: RemoteTrack): boolean {
     src.connect(compressor);
     compressor.connect(gain);
     gain.connect(ctx.destination);
-    gainNodes.set(key, { src, compressor, gain });
+    gainNodes.set(track, { src, compressor, gain });
     return true;
   } catch {
     return false;
   }
 }
 
-function detachGain(sid: string): void {
-  const node = gainNodes.get(sid);
+function detachGain(track: RemoteTrack): void {
+  const node = gainNodes.get(track);
   if (!node) return;
   try {
     node.src.disconnect();
@@ -128,7 +230,7 @@ function detachGain(sid: string): void {
   } catch {
     // already torn down
   }
-  gainNodes.delete(sid);
+  gainNodes.delete(track);
 }
 
 function teardownAudioGraph(): void {
@@ -148,7 +250,7 @@ function teardownAudioGraph(): void {
   // the instant the remote track subscribes — no extra tap required. Between
   // calls it is harmless: no nodes are connected, so it produces no sound, and
   // its statechange listener is a no-op while boostedEls is empty.
-  gainNodes.forEach((_node, sid) => detachGain(sid));
+  [...gainNodes.keys()].forEach((track) => detachGain(track));
   gainNodes.clear();
   boostedEls.clear();
 }
@@ -164,10 +266,26 @@ type WakeLockLike = {
   addEventListener?: (type: "release", cb: () => void) => void;
 };
 let wakeLock: WakeLockLike | null = null;
+let noSleep: NoSleep | null = null;
 // Bumped on every release/invalidate so an in-flight request() that resolves
 // after teardown (or is superseded by a newer request) drops its sentinel
 // instead of leaking it.
 let wakeLockGen = 0;
+
+function enableNoSleepFallback(): void {
+  try {
+    noSleep ??= new NoSleep();
+    if (!noSleep.isEnabled) void noSleep.enable().catch(() => {});
+  } catch {
+    // Unsupported or blocked. Screen Wake Lock remains as the primary path.
+  }
+}
+
+function disableNoSleepFallback(): void {
+  try {
+    noSleep?.disable();
+  } catch {}
+}
 
 async function requestWakeLock(): Promise<void> {
   const wl = (
@@ -223,6 +341,10 @@ let primeEl: HTMLAudioElement | null = null;
 // button press) before any await. Best-effort; silently no-ops if blocked.
 export function primeAudioPlayback(): void {
   try {
+    // NoSleep's video fallback must be started from the same real user gesture
+    // as the call button. It only prevents auto-lock; it cannot keep WebRTC alive
+    // after a manual lock or iOS background suspension.
+    enableNoSleepFallback();
     if (!primeEl) {
       primeEl = document.createElement("audio");
       primeEl.setAttribute("playsinline", "true");
@@ -449,15 +571,19 @@ export function stopRingtone(): void {
 
 const AUDIO_ATTR = "data-livekit-audio";
 
-function getAudioElements(): HTMLAudioElement[] {
-  return Array.from(
+function getAudioElements(targetRoom?: Room): HTMLAudioElement[] {
+  const elements = Array.from(
     document.querySelectorAll<HTMLAudioElement>(`[${AUDIO_ATTR}="true"]`),
   );
+  return targetRoom
+    ? elements.filter((element) => audioElementRooms.get(element) === targetRoom)
+    : elements;
 }
 
-function clearAudioElements() {
-  getAudioElements().forEach((el) => {
+function clearAudioElements(targetRoom?: Room) {
+  getAudioElements(targetRoom).forEach((el) => {
     boostedEls.delete(el);
+    audioElementRooms.delete(el);
     el.pause();
     el.srcObject = null;
     el.remove();
@@ -469,12 +595,7 @@ function clearAudioElements() {
 function installUnlockHandler(r: Room) {
   if (unlockHandler) return;
   unlockHandler = () => {
-    // A real gesture is also the moment iOS lets us resume a suspended Web Audio
-    // context, so unlock both the LiveKit playback and the gain graph at once.
-    if (audioCtx && audioCtx.state === "suspended") {
-      void audioCtx.resume().catch(() => {});
-    }
-    void r.startAudio().then(removeUnlockHandler).catch(() => {});
+    void resumeRoomAudio(r);
   };
   document.addEventListener("click", unlockHandler, true);
   document.addEventListener("touchend", unlockHandler, true);
@@ -487,17 +608,78 @@ function removeUnlockHandler() {
   unlockHandler = null;
 }
 
+async function resumeRoomAudio(r: Room): Promise<boolean> {
+  if (room !== r) return false;
+  const diagnostic = callDiagnostic;
+  try {
+    if (audioCtx?.state === "suspended") await audioCtx.resume();
+    if (room !== r) return false;
+    await r.startAudio();
+    if (room !== r) return false;
+    await Promise.all(getAudioElements(r).map((el) => el.play()));
+    if (room !== r) return false;
+    const playing = r.canPlaybackAudio && getAudioElements(r).every((el) => !el.paused);
+    if (playing) {
+      diagnostic("web_audio_unlocked", callStateDetails());
+      removeUnlockHandler();
+    } else {
+      diagnostic("web_audio_unlock_incomplete", callStateDetails());
+      diagnostic("web_audio_playback_blocked", {
+        source: "resume_incomplete",
+        ...callStateDetails(),
+      });
+      installUnlockHandler(r);
+    }
+    return playing;
+  } catch (err) {
+    if (room !== r) return false;
+    diagnostic("web_audio_unlock_failed", {
+      errorName: err instanceof Error ? err.name : "unknown",
+      ...callStateDetails(),
+    });
+    diagnostic("web_audio_playback_blocked", {
+      source: "resume_rejected",
+      errorName: err instanceof Error ? err.name : "unknown",
+      ...callStateDetails(),
+    });
+    installUnlockHandler(r);
+    return false;
+  }
+}
+
+/** Must be invoked from a visible user gesture when Safari blocks autoplay. */
+export async function resumeCallAudio(): Promise<boolean> {
+  const current = room;
+  return current ? resumeRoomAudio(current) : false;
+}
+
 // iOS Safari pauses WebRTC <audio> elements mid-call on any interruption —
 // screen lock, an incoming system sound, or briefly switching apps — and often
 // does NOT fire AudioPlaybackStatusChanged, so the element silently stays paused
 // for the rest of the call (the user thinks the call "went mute"). Fight back:
 // whenever something pauses the element while the call is still live, replay it.
-function keepPlaying(el: HTMLAudioElement) {
+function keepPlaying(el: HTMLAudioElement, owningRoom: Room) {
   el.addEventListener("pause", () => {
     // Only resume while the call is active and the element is still attached;
     // during teardown `room` is nulled first so we don't resurrect dead audio.
-    if (room && el.isConnected) {
-      void el.play().catch(() => {});
+    if (
+      room === owningRoom &&
+      audioElementRooms.get(el) === owningRoom &&
+      el.isConnected
+    ) {
+      void el.play().catch((err) => {
+        if (
+          room !== owningRoom ||
+          audioElementRooms.get(el) !== owningRoom ||
+          !el.isConnected
+        ) return;
+        callDiagnostic("web_audio_playback_blocked", {
+          source: "audio_element_paused",
+          errorName: err instanceof Error ? err.name : "unknown",
+          ...callStateDetails(),
+        });
+        installUnlockHandler(owningRoom);
+      });
     }
   });
 }
@@ -506,19 +688,11 @@ function keepPlaying(el: HTMLAudioElement) {
 // foreground (iOS suspends the audio while backgrounded) or playback is allowed
 // again.
 function resumeAllAudio() {
-  if (!room) return;
-  if (!room.canPlaybackAudio) {
-    void room.startAudio().catch(() => {});
-  }
-  // iOS suspends the Web Audio context whenever the call is interrupted; without
-  // resuming it the amplified remote audio (which now flows through the gain
-  // graph, not the element) would stay silent after a screen-lock/app-switch.
-  if (audioCtx && audioCtx.state === "suspended") {
-    void audioCtx.resume().catch(() => {});
-  }
-  getAudioElements().forEach((el) => {
-    if (el.paused) void el.play().catch(() => {});
-  });
+  const currentRoom = room;
+  if (!currentRoom) return;
+  // resumeRoomAudio reports a blocked path and installs the gesture handler on
+  // every rejection, including Safari's silent foreground-resume failure.
+  void resumeRoomAudio(currentRoom);
 }
 
 // The OTHER half of the iOS problem: when iOS interrupts the audio session it
@@ -528,21 +702,40 @@ function resumeAllAudio() {
 // the live mic track for those events and re-acquire it via restartTrack().
 function armMicRecovery() {
   if (!room) return;
-  const pub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+  const armedRoom = room;
+  const armedGeneration = roomGeneration;
+  const pub = armedRoom.localParticipant.getTrackPublication(Track.Source.Microphone);
   const mst = pub?.track?.mediaStreamTrack ?? null;
   if (mst === micTrack) return;
+  removeMicTrackListeners?.();
+  removeMicTrackListeners = null;
   micTrack = mst;
   if (!mst) return;
-  const onLost = () => {
+  callDiagnostic("web_microphone_track_armed", micDiagnosticDetails(mst));
+  const onLost = (event: Event) => {
+    if (
+      room !== armedRoom ||
+      roomGeneration !== armedGeneration ||
+      micTrack !== mst
+    ) return;
     micLost = true;
+    callDiagnostic("web_microphone_track_lost", {
+      eventType: event.type,
+      ...callStateDetails(),
+      ...micDiagnosticDetails(mst),
+    });
     // Only recover if the user still intends the mic to be on (don't override a
     // deliberate mute).
-    if (room && room.localParticipant.isMicrophoneEnabled) {
+    if (armedRoom.localParticipant.isMicrophoneEnabled) {
       void restartMic();
     }
   };
   mst.addEventListener("mute", onLost);
   mst.addEventListener("ended", onLost);
+  removeMicTrackListeners = () => {
+    mst.removeEventListener("mute", onLost);
+    mst.removeEventListener("ended", onLost);
+  };
 }
 
 // True only when the mic actually looks dead — so a plain app-switch return that
@@ -556,10 +749,15 @@ function micNeedsRecovery(): boolean {
 
 async function restartMic() {
   if (!room || micRestarting) return;
-  if (!room.localParticipant.isMicrophoneEnabled) return;
+  const activeRoom = room;
+  const generation = roomGeneration;
+  const diagnostic = callDiagnostic;
+  if (!activeRoom.localParticipant.isMicrophoneEnabled) return;
   micRestarting = true;
+  let succeeded = false;
+  diagnostic("web_microphone_restart_start", callStateDetails());
   try {
-    const pub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const pub = activeRoom.localParticipant.getTrackPublication(Track.Source.Microphone);
     const track = pub?.track as LocalAudioTrack | undefined;
     if (track && typeof track.restartTrack === "function") {
       // Re-runs getUserMedia with the same constraints and swaps in a fresh
@@ -568,33 +766,190 @@ async function restartMic() {
       await track.restartTrack();
     } else {
       // Fallback: unpublish + republish forces a new getUserMedia.
-      await room.localParticipant.setMicrophoneEnabled(false);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      await activeRoom.localParticipant.setMicrophoneEnabled(false);
+      if (room !== activeRoom || generation !== roomGeneration) return;
+      await activeRoom.localParticipant.setMicrophoneEnabled(true);
     }
-  } catch {
+    succeeded = true;
+  } catch (err) {
+    if (room === activeRoom && generation === roomGeneration) {
+      diagnostic("web_microphone_restart_failed", {
+        message: errorMessage(err),
+        ...callStateDetails(),
+      });
+    }
     // best effort
   } finally {
-    micRestarting = false;
-    micLost = false;
-    // The underlying track changed; re-arm listeners on the fresh one.
-    micTrack = null;
-    armMicRecovery();
+    if (room === activeRoom && generation === roomGeneration) {
+      micRestarting = false;
+      micLost = false;
+      // The underlying track changed; re-arm listeners on the fresh one.
+      micTrack = null;
+      armMicRecovery();
+      if (succeeded) diagnostic("web_microphone_restart_succeeded", callStateDetails());
+    }
+  }
+}
+
+function armCameraRecovery() {
+  if (!room) return;
+  const armedRoom = room;
+  const armedGeneration = roomGeneration;
+  const pub = armedRoom.localParticipant.getTrackPublication(Track.Source.Camera);
+  const mst = pub?.track?.mediaStreamTrack ?? null;
+  if (mst === cameraTrack) return;
+  removeCameraTrackListeners?.();
+  removeCameraTrackListeners = null;
+  cameraTrack = mst;
+  if (!mst) return;
+  callDiagnostic("web_camera_track_armed", cameraDiagnosticDetails(mst));
+  const onLost = (event: Event) => {
+    if (
+      room !== armedRoom ||
+      roomGeneration !== armedGeneration ||
+      cameraTrack !== mst
+    ) return;
+    cameraLost = true;
+    callDiagnostic("web_camera_track_lost", {
+      eventType: event.type,
+      ...callStateDetails(),
+      ...cameraDiagnosticDetails(mst),
+    });
+    // A brief mute is normal while WebKit changes capture state. Wait before
+    // replacing the track, and never re-acquire while the PWA is hidden.
+    if (cameraRecoveryTimer) clearTimeout(cameraRecoveryTimer);
+    cameraRecoveryTimer = setTimeout(() => {
+      cameraRecoveryTimer = null;
+      if (
+        room === armedRoom &&
+        roomGeneration === armedGeneration &&
+        cameraTrack === mst &&
+        cameraEnabledIntent &&
+        document.visibilityState === "visible" &&
+        (mst.muted || mst.readyState === "ended")
+      ) {
+        void restartCamera();
+      }
+    }, 750);
+  };
+  const onRecovered = () => {
+    if (
+      room !== armedRoom ||
+      roomGeneration !== armedGeneration ||
+      cameraTrack !== mst
+    ) return;
+    cameraLost = false;
+    if (cameraRecoveryTimer) {
+      clearTimeout(cameraRecoveryTimer);
+      cameraRecoveryTimer = null;
+    }
+    callDiagnostic("web_camera_track_recovered", cameraDiagnosticDetails(mst));
+  };
+  mst.addEventListener("mute", onLost);
+  mst.addEventListener("ended", onLost);
+  mst.addEventListener("unmute", onRecovered);
+  removeCameraTrackListeners = () => {
+    mst.removeEventListener("mute", onLost);
+    mst.removeEventListener("ended", onLost);
+    mst.removeEventListener("unmute", onRecovered);
+  };
+}
+
+function cameraNeedsRecovery(): boolean {
+  if (!cameraEnabledIntent) return false;
+  if (cameraLost) return true;
+  if (!cameraTrack) return true;
+  return cameraTrack.readyState === "ended" || cameraTrack.muted;
+}
+
+async function restartCamera(): Promise<boolean> {
+  if (!room || !cameraEnabledIntent) return false;
+  const activeRoom = room;
+  const generation = roomGeneration;
+  const captureGeneration = videoPrepareGeneration;
+  const diagnostic = callDiagnostic;
+  const isCurrent = () => room === activeRoom && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const existing = cameraRestartOperation;
+  if (existing?.room === activeRoom) {
+    if (existing.captureGeneration === captureGeneration) return existing.promise;
+    await existing.promise.catch(() => false);
+    if (!isCurrent()) return false;
+    if (cameraRestartOperation?.room === activeRoom && cameraRestartOperation.captureGeneration === captureGeneration) {
+      return cameraRestartOperation.promise;
+    }
+  }
+  const operation = (async () => {
+    let succeeded = false;
+    diagnostic("web_camera_restart_start", callStateDetails());
+    try {
+      const pub = activeRoom.localParticipant.getTrackPublication(Track.Source.Camera);
+      const track = pub?.track as LocalVideoTrack | undefined;
+      if (track) {
+        // Keep every acquisition in the bounded coordinator. SDK restartTrack()
+        // would start a separate unbounded getUserMedia operation internally.
+        track.mediaStreamTrack.stop();
+        await mediaDeadline(
+          activeRoom.localParticipant.unpublishTrack(track, true),
+          CAMERA_PUBLISH_TIMEOUT_MS,
+          "CameraUnpublishTimeout",
+        );
+      }
+      if (!isCurrent()) return false;
+      releasePreparedVideoTrack();
+      succeeded = await enableCameraForRoom(activeRoom, generation);
+      if (!succeeded) throw new Error("camera_republish_failed");
+    } catch (error) {
+      if (isCurrent()) {
+        diagnostic("web_camera_restart_failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+          ...callStateDetails(),
+        });
+      }
+    } finally {
+      if (isCurrent()) {
+        cameraLost = false;
+        cameraTrack = null;
+        armCameraRecovery();
+        if (succeeded) diagnostic("web_camera_restart_succeeded", callStateDetails());
+      }
+    }
+    return succeeded && isCurrent();
+  })();
+  const current = { room: activeRoom, captureGeneration, promise: operation };
+  cameraRestartOperation = current;
+  try {
+    return await operation;
+  } finally {
+    if (cameraRestartOperation === current) cameraRestartOperation = null;
   }
 }
 
 function installVisibilityHandler() {
   if (visibilityHandler) return;
-  visibilityHandler = () => {
+  visibilityHandler = (event?: Event) => {
+    if (room) {
+      callDiagnostic("web_visibility_change", {
+        eventType: event?.type,
+        ...callStateDetails(),
+      });
+    }
     if (document.visibilityState === "visible") {
       resumeAllAudio();
       // The OS releases the wake lock whenever the page is hidden, so re-acquire
       // it every time we return to the foreground while a call is live.
-      if (room) void requestWakeLock();
+      if (room) {
+        enableNoSleepFallback();
+        void requestWakeLock();
+      }
       // Coming back to the foreground is the most reliable moment to rescue a
       // mic the OS suspended while we were away — but only if it actually looks
       // dead, so a healthy app-switch return doesn't cause a needless gap.
       if (room && room.localParticipant.isMicrophoneEnabled && micNeedsRecovery()) {
         void restartMic();
+      }
+      if (room && cameraEnabledIntent && cameraNeedsRecovery()) {
+        void restartCamera();
       }
     }
   };
@@ -609,8 +964,215 @@ function removeVisibilityHandler() {
   visibilityHandler = null;
 }
 
-export async function joinCall(url: string, token: string): Promise<void> {
-  await leaveCall();
+function cameraOptions() {
+  return {
+    facingMode: cameraFacingMode,
+    width: { ideal: 640 },
+    height: { ideal: 360 },
+    frameRate: { ideal: 15, max: 20 },
+  };
+}
+
+export function prepareVideoCall(onDiagnostic: CallDiagnostic = callDiagnostic): Promise<void> {
+  if (preparedVideoTrack?.readyState === "live") return Promise.resolve();
+  if (videoPreparePromise) return videoPreparePromise;
+  // getUserMedia cannot be cancelled. A timed-out browser permission request
+  // must not be followed by concurrent acquisitions fighting for the camera.
+  if (cameraCaptureInFlight) {
+    onDiagnostic("web_camera_capture_still_pending");
+    return Promise.resolve();
+  }
+  const prepareGeneration = videoPrepareGeneration;
+  let accepted = true;
+  const operation = (async () => {
+    const gum = navigator.mediaDevices?.getUserMedia;
+    if (!gum) {
+      onDiagnostic("web_camera_capture_unavailable");
+      return;
+    }
+    let stream: MediaStream | null = null;
+    try {
+      onDiagnostic("web_camera_capture_start");
+      const capture = gum.call(navigator.mediaDevices, {
+        video: cameraOptions(),
+        audio: false,
+      });
+      cameraCaptureInFlight = capture;
+      // The rejection handler also consumes a late permission rejection after
+      // the deadline. A late stream belongs to the expired attempt and is stopped.
+      void capture.then((result) => {
+        if (!accepted || prepareGeneration !== videoPrepareGeneration) {
+          result.getTracks().forEach((track) => track.stop());
+        }
+      }, () => {}).finally(() => {
+        if (cameraCaptureInFlight === capture) cameraCaptureInFlight = null;
+      });
+      stream = await mediaDeadline(capture, CAMERA_CAPTURE_TIMEOUT_MS, "CameraCaptureTimeout");
+      const track = stream.getVideoTracks()[0];
+      if (!track) return;
+      // Permission UI/getUserMedia can resolve after the user ended the call.
+      // Do not keep a late camera track alive or let it bleed into call B.
+      if (prepareGeneration !== videoPrepareGeneration) {
+        track.stop();
+        return;
+      }
+      releasePreparedVideoTrack();
+      preparedVideoTrack = track;
+      onDiagnostic("web_camera_capture_ready", { cameraReadyState: track.readyState });
+      track.addEventListener(
+        "ended",
+        () => {
+          if (preparedVideoTrack === track) preparedVideoTrack = null;
+        },
+        { once: true },
+      );
+    } catch (error) {
+      onDiagnostic("web_camera_capture_failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+      return;
+    } finally {
+      accepted = false;
+      stream
+        ?.getTracks()
+        .filter((track) => track.kind !== "video" || track !== preparedVideoTrack)
+        .forEach((track) => track.stop());
+    }
+  })();
+  const bounded = operation.finally(() => {
+    if (videoPreparePromise === bounded) videoPreparePromise = null;
+  });
+  videoPreparePromise = bounded;
+  return bounded;
+}
+
+function releasePreparedVideoTrack(): void {
+  if (preparedVideoTrack) {
+    try {
+      preparedVideoTrack.stop();
+    } catch {}
+    preparedVideoTrack = null;
+  }
+}
+
+async function publishPreparedVideoTrack(r: Room, generation: number, captureGeneration: number): Promise<boolean> {
+  if (cameraPublishInFlight?.room === r) {
+    releasePreparedVideoTrack();
+    callDiagnostic("web_camera_publish_still_pending");
+    return false;
+  }
+  const track = preparedVideoTrack;
+  if (!track || track.readyState !== "live") {
+    preparedVideoTrack = null;
+    return false;
+  }
+  preparedVideoTrack = null;
+  track.enabled = true;
+  let valid = true;
+  const isCurrent = () => valid && room === r && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const discard = () => {
+    try { track.stop(); } catch {}
+    try {
+      const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (publication?.track?.mediaStreamTrack === track) {
+        void r.localParticipant.unpublishTrack(publication.track, true).catch(() => {});
+      }
+    } catch {}
+  };
+  try {
+    const publish = r.localParticipant.publishTrack(track, { source: Track.Source.Camera });
+    const publishing = { room: r, promise: publish };
+    cameraPublishInFlight = publishing;
+    void publish.then(() => { if (!isCurrent()) discard(); }, () => {}).finally(() => {
+      if (cameraPublishInFlight === publishing) cameraPublishInFlight = null;
+    });
+    await mediaDeadline(publish, CAMERA_PUBLISH_TIMEOUT_MS, "CameraPublishTimeout");
+    if (!isCurrent()) {
+      discard();
+      return false;
+    }
+    const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+    if (publication?.isMuted && publication.track) {
+      await mediaDeadline(
+        (publication.track as LocalVideoTrack).unmute(),
+        CAMERA_PUBLISH_TIMEOUT_MS,
+        "CameraResumeTimeout",
+      );
+    }
+    if (!isCurrent()) { discard(); return false; }
+    return !!publication?.track && !publication.isMuted && track.enabled && track.readyState === "live";
+  } catch (error) {
+    valid = false;
+    discard();
+    if (room === r && generation === roomGeneration) {
+      callDiagnostic("web_camera_publish_failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+    }
+    return false;
+  }
+}
+
+async function enableCameraForRoom(
+  r: Room,
+  generation = roomGeneration,
+): Promise<boolean> {
+  const captureGeneration = videoPrepareGeneration;
+  const isCurrent = () => room === r && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const existing = cameraEnableOperation;
+  if (existing?.room === r) {
+    if (existing.captureGeneration === captureGeneration) return existing.promise;
+    // OFF invalidates the old acquisition/publication. A subsequent ON waits
+    // for that bounded operation to settle, then acquires for the NEW intent.
+    // Reusing its old false result would silently undo the user's latest ON.
+    await existing.promise.catch(() => false);
+    if (!isCurrent()) return false;
+    if (cameraEnableOperation?.room === r && cameraEnableOperation.captureGeneration === captureGeneration) {
+      return cameraEnableOperation.promise;
+    }
+  }
+  const operation = (async () => {
+    await prepareVideoCall();
+    if (!isCurrent()) return false;
+    return publishPreparedVideoTrack(r, generation, captureGeneration);
+  })();
+  const current = { room: r, captureGeneration, promise: operation };
+  cameraEnableOperation = current;
+  try {
+    return await operation;
+  } finally {
+    if (cameraEnableOperation === current) cameraEnableOperation = null;
+  }
+}
+
+function hasLocalTrack(r: Room, source: Track.Source): boolean {
+  return !!r.localParticipant.getTrackPublication(source)?.track;
+}
+
+export async function joinCall(
+  url: string,
+  token: string,
+  options: { media?: CallMedia; cameraEnabled?: boolean; onDiagnostic?: CallDiagnostic } = {},
+): Promise<CallJoinResult> {
+  const media = options.media ?? "audio";
+  const cameraRequested = media === "video" && options.cameraEnabled !== false;
+  const generation = ++roomGeneration;
+  // Keep the camera track prepared by the genuine call/accept gesture. Stopping
+  // it here made the camera indicator turn on while discarding the exact track
+  // that was supposed to be published, followed by a slower second acquisition.
+  await cleanupCall({
+    releaseNoSleep: false,
+    preservePreparedVideo: cameraRequested,
+    invalidateGeneration: false,
+  });
+  if (generation !== roomGeneration) throw new Error("stale_join_attempt");
+  const diagnostic = options.onDiagnostic ?? (() => {});
+  callDiagnostic = diagnostic;
+  cameraFacingMode = "user";
+  cameraEnabledIntent = cameraRequested;
+  diagnostic("web_join_start", { media, cameraRequested });
 
   // Explicit voice-call audio processing. Without echo cancellation the remote
   // side hears their own voice bounced back off this device's loudspeaker —
@@ -620,14 +1182,27 @@ export async function joinCall(url: string, token: string): Promise<void> {
   // (re)acquisition — initial publish, restartTrack(), and the republish
   // fallback — not just the first one.
   const r = new Room({
+    adaptiveStream: media === "video",
+    dynacast: media === "video",
+    videoCaptureDefaults: cameraOptions(),
     audioCaptureDefaults: {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     },
   });
+  const isCurrentRoom = () => room === r && generation === roomGeneration;
 
   r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+    if (!isCurrentRoom()) {
+      track.detach().forEach((element) => element.remove());
+      return;
+    }
+    diagnostic("web_remote_track_subscribed", {
+      kind: track.kind,
+      source: track.source,
+      readyState: track.mediaStreamTrack?.readyState,
+    });
     if (track.kind === Track.Kind.Audio) {
       // On a network reconnect LiveKit can fire TrackSubscribed again for a
       // track that still has a live <audio> element attached. Detach any prior
@@ -636,10 +1211,12 @@ export async function joinCall(url: string, token: string): Promise<void> {
       // speakerphone-like echo.
       track.detach().forEach((old) => {
         boostedEls.delete(old as HTMLAudioElement);
+        audioElementRooms.delete(old as HTMLAudioElement);
         old.remove();
       });
       const el = track.attach() as HTMLAudioElement;
       el.setAttribute(AUDIO_ATTR, "true");
+      audioElementRooms.set(el, r);
       el.autoplay = true;
       // playsInline keeps iOS from hijacking playback into a fullscreen player.
       el.setAttribute("playsinline", "true");
@@ -657,20 +1234,56 @@ export async function joinCall(url: string, token: string): Promise<void> {
       } else {
         el.muted = false;
       }
-      keepPlaying(el);
+      keepPlaying(el, r);
       // The caller only subscribes to the remote track AFTER the callee accepts,
       // which is long after the click that started the call — so the browser's
       // autoplay activation has lapsed and play() is blocked, leaving the caller
       // in silence. Try to play; if blocked, the AudioPlaybackStatusChanged
       // handler below arms a one-shot gesture unlock.
-      void el.play().catch(() => {});
+      void el
+        .play()
+        .then(() => diagnostic("web_remote_audio_playing", callStateDetails()))
+        .catch((err) => {
+          diagnostic("web_remote_audio_play_blocked", {
+            message: errorMessage(err),
+            ...callStateDetails(),
+          });
+          installUnlockHandler(r);
+        });
     }
+  });
+  // Publish the in-flight Room immediately so leaveCall() can cancel and fully
+  // clean a connection attempt that is still awaiting signaling/ICE.
+  room = r;
+
+  r.on(RoomEvent.TrackSubscriptionFailed, (trackSid: string, _participant, reason) => {
+    diagnostic("web_track_subscription_failed", {
+      trackSid,
+      reason: reason == null ? undefined : String(reason),
+    });
+  });
+
+  r.on(RoomEvent.TrackStreamStateChanged, (publication, streamState) => {
+    diagnostic("web_track_stream_state_changed", {
+      kind: publication.kind,
+      source: publication.source,
+      streamState,
+    });
+  });
+
+  r.on(RoomEvent.ParticipantConnected, () => {
+    diagnostic("web_remote_participant_connected", { connectionState: r.state });
+  });
+
+  r.on(RoomEvent.ParticipantActive, () => {
+    diagnostic("web_remote_participant_active", { connectionState: r.state });
   });
 
   r.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-    detachGain(trackKey(track));
+    detachGain(track);
     track.detach().forEach((el) => {
       boostedEls.delete(el as HTMLAudioElement);
+      audioElementRooms.delete(el as HTMLAudioElement);
       el.remove();
     });
   });
@@ -679,58 +1292,310 @@ export async function joinCall(url: string, token: string): Promise<void> {
   // blocked, audio must be resumed from a user gesture; when allowed again,
   // drop the pending unlock listener and replay any paused elements.
   r.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+    if (!isCurrentRoom()) return;
     if (!r.canPlaybackAudio) {
+      diagnostic("web_audio_playback_blocked", callStateDetails());
       installUnlockHandler(r);
     } else {
+      diagnostic("web_audio_playback_allowed", callStateDetails());
       removeUnlockHandler();
-      resumeAllAudio();
+      void resumeRoomAudio(r);
     }
   });
 
   // Whenever the local mic (re)publishes, attach interruption listeners to the
   // new underlying track.
-  r.on(RoomEvent.LocalTrackPublished, () => armMicRecovery());
+  r.on(RoomEvent.LocalTrackPublished, () => {
+    if (!isCurrentRoom()) return;
+    armMicRecovery();
+    armCameraRecovery();
+  });
 
-  await r.connect(url, token);
-  await r.localParticipant.setMicrophoneEnabled(true);
-  // Secondary pre-authorization. The button-gesture activation is already spent
-  // by the createCall/acceptCall await that precedes this — primeAudioPlayback()
-  // (called on that gesture in CallProvider) is what actually unlocks playback;
-  // this startAudio() is a best-effort backup for when the context is suspended.
-  if (!r.canPlaybackAudio) {
-    await r.startAudio().catch(() => {});
+  r.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+    diagnostic("web_local_track_unpublished", {
+      kind: publication.kind,
+      source: publication.source,
+    });
+  });
+
+  r.on(RoomEvent.Reconnected, () => {
+    if (!isCurrentRoom()) return;
+    diagnostic("web_room_reconnected", { connectionState: r.state });
+    void resumeRoomAudio(r);
+    armMicRecovery();
+    armCameraRecovery();
+    if (r.localParticipant.isMicrophoneEnabled && micNeedsRecovery()) void restartMic();
+    if (cameraEnabledIntent && cameraNeedsRecovery()) void restartCamera();
+  });
+
+  try {
+    await r.connect(url, token);
+    if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
+    diagnostic("web_room_connected", { connectionState: r.state });
+    try {
+      diagnostic("web_microphone_publish_start");
+      const publishMicrophone = r.localParticipant.setMicrophoneEnabled(true);
+      void publishMicrophone.then(() => {
+        if (!isCurrentRoom()) stopRoomMediaTracks(r);
+      }, () => {});
+      await mediaDeadline(publishMicrophone, MICROPHONE_PUBLISH_TIMEOUT_MS, "MicrophonePublishTimeout");
+    } catch (err) {
+      diagnostic("web_microphone_publish_failed", {
+        errorName: err instanceof Error ? err.name : "unknown",
+      });
+      throw err;
+    }
+    if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
+    const microphonePublished = hasLocalTrack(r, Track.Source.Microphone);
+    diagnostic("web_microphone_publish_result", { microphonePublished });
+    let cameraPending = cameraRequested;
+    if (cameraRequested) {
+      const cameraGeneration = videoPrepareGeneration;
+      // A browser can leave camera permission/capture pending indefinitely.
+      // Expose the connected Room and audio immediately; publish video separately.
+      void enableCameraForRoom(r, generation).then((published) => {
+        cameraPending = false;
+        if (!isCurrentRoom() || cameraGeneration !== videoPrepareGeneration) return;
+        diagnostic("web_camera_publish_result", { cameraPublished: published });
+        armCameraRecovery();
+      }).catch((error) => {
+        cameraPending = false;
+        if (!isCurrentRoom() || cameraGeneration !== videoPrepareGeneration) return;
+        diagnostic("web_camera_publish_failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+        });
+        diagnostic("web_camera_publish_result", { cameraPublished: false });
+      });
+    }
+    // Secondary pre-authorization. The button-gesture activation is already spent
+    // by the createCall/acceptCall await that precedes this — primeAudioPlayback()
+    // (called on that gesture in CallProvider) is what actually unlocks playback.
+    if (!r.canPlaybackAudio) {
+      // Playback promises can also remain pending in Safari. The connected UI
+      // must already be available so its explicit resume button can be tapped.
+      void resumeRoomAudio(r).then((playbackStarted) => {
+        if (isCurrentRoom() && !playbackStarted) {
+          diagnostic("web_audio_playback_blocked", callStateDetails());
+        }
+      });
+    }
+    armMicRecovery();
+    installVisibilityHandler();
+    void requestWakeLock();
+    return {
+      room: r,
+      media,
+      microphonePublished,
+      cameraPublished: hasLocalTrack(r, Track.Source.Camera),
+      cameraPending,
+    };
+  } catch (err) {
+    diagnostic("web_join_cleanup_after_failure", {
+      errorName: err instanceof Error ? err.name : "unknown",
+      generationCurrent: generation === roomGeneration,
+    });
+    if (room === r) {
+      await cleanupCall({ releaseNoSleep: true, invalidateGeneration: false });
+    } else {
+      await disconnectRoom(r);
+    }
+    throw err;
   }
-  room = r;
-  armMicRecovery();
-  // Recover audio after iOS interruptions / app-switch once the call is live.
-  installVisibilityHandler();
-  // Keep the screen awake so an auto-lock doesn't silence the call.
-  void requestWakeLock();
 }
+
+export async function ensureCallKeepAlive(
+  _media: CallMedia,
+  _reason: string,
+  _onDiagnostic: CallDiagnostic = () => {},
+): Promise<void> {}
 
 export async function setMuted(muted: boolean): Promise<void> {
-  if (room) {
-    await room.localParticipant.setMicrophoneEnabled(!muted);
-    // The publication's track changes when re-enabled; keep recovery armed.
-    micTrack = null;
-    armMicRecovery();
-  }
+  if (!room) return;
+  const r = room;
+  const generation = roomGeneration;
+  await r.localParticipant.setMicrophoneEnabled(!muted);
+  if (room !== r || generation !== roomGeneration) return;
+  // The publication's track changes when re-enabled; keep recovery armed.
+  micTrack = null;
+  armMicRecovery();
 }
 
-export async function leaveCall(): Promise<void> {
+export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
+  cameraEnabledIntent = enabled;
+  if (room) {
+    const r = room;
+    const generation = roomGeneration;
+    if (enabled) {
+      const captureGeneration = videoPrepareGeneration;
+      if (cameraDisableOperation?.room === r) {
+        await cameraDisableOperation.promise;
+        if (room !== r || generation !== roomGeneration || captureGeneration !== videoPrepareGeneration || !cameraEnabledIntent) {
+          return false;
+        }
+      }
+      const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+      const current = publication?.track?.mediaStreamTrack;
+      if (current?.readyState === "live" && !current.muted && current.enabled && !publication?.isMuted) {
+        cameraTrack = current;
+        cameraLost = false;
+        return true;
+      }
+      if (publication?.isMuted && current?.readyState === "live") {
+        const resume = r.localParticipant.setCameraEnabled(true, cameraOptions());
+        void resume.then(() => {
+          // SDK operations also outlive local deadlines. A late ON must not
+          // re-enable a camera after the user pressed OFF or ended this call.
+          if (room !== r || generation !== roomGeneration) {
+            current.stop();
+          } else if (!cameraEnabledIntent) {
+            current.enabled = false;
+            void r.localParticipant.setCameraEnabled(false, cameraOptions()).catch(() => {});
+          }
+        }, () => {});
+        await mediaDeadline(
+          resume,
+          CAMERA_CAPTURE_TIMEOUT_MS,
+          "CameraResumeTimeout",
+        );
+        if (room !== r || generation !== roomGeneration || captureGeneration !== videoPrepareGeneration || !cameraEnabledIntent) return false;
+        armCameraRecovery();
+        const resumed = r.localParticipant.getTrackPublication(Track.Source.Camera);
+        const resumedTrack = resumed?.track?.mediaStreamTrack;
+        return !!resumedTrack && resumedTrack.readyState === "live" && resumedTrack.enabled &&
+          !resumedTrack.muted && !resumed?.isMuted;
+      }
+      if (current) return restartCamera();
+      const published = await enableCameraForRoom(r, generation);
+      if (room !== r || generation !== roomGeneration) return false;
+      cameraTrack = null;
+      armCameraRecovery();
+      return published;
+    } else {
+      videoPrepareGeneration += 1;
+      releasePreparedVideoTrack();
+      if (cameraRecoveryTimer) {
+        clearTimeout(cameraRecoveryTimer);
+        cameraRecoveryTimer = null;
+      }
+      const disabled = {
+        room: r,
+        promise: mediaDeadline(
+          r.localParticipant.setCameraEnabled(false, cameraOptions()),
+          CAMERA_PUBLISH_TIMEOUT_MS,
+          "CameraDisableTimeout",
+        ),
+      };
+      cameraDisableOperation = disabled;
+      try {
+        await disabled.promise;
+      } finally {
+        if (cameraDisableOperation === disabled) cameraDisableOperation = null;
+      }
+      if (room !== r || generation !== roomGeneration) return false;
+      cameraTrack = null;
+      cameraLost = false;
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function switchCamera(): Promise<"user" | "environment"> {
+  cameraFacingMode = cameraFacingMode === "user" ? "environment" : "user";
+  if (room && cameraEnabledIntent) {
+    const restored = await restartCamera();
+    if (!restored) throw new Error("camera_switch_failed");
+  }
+  return cameraFacingMode;
+}
+
+function detachRoomRemoteMedia(r: Room): void {
+  for (const participant of r.remoteParticipants.values()) {
+    for (const publication of participant.trackPublications.values()) {
+      const track = publication.track as RemoteTrack | undefined;
+      if (!track) continue;
+      if (track.kind === Track.Kind.Audio) detachGain(track);
+      try {
+        track.detach().forEach((element) => {
+          boostedEls.delete(element as HTMLAudioElement);
+          audioElementRooms.delete(element as HTMLAudioElement);
+          element.remove();
+        });
+      } catch {}
+    }
+  }
+  clearAudioElements(r);
+}
+
+async function disconnectRoom(r: Room): Promise<void> {
+  const existing = roomDisconnects.get(r);
+  if (existing) return existing;
+  const operation = (async () => {
+    r.removeAllListeners();
+    detachRoomRemoteMedia(r);
+    let disconnect: Promise<unknown>;
+    try {
+      disconnect = Promise.resolve(r.disconnect()).catch(() => {});
+    } catch {
+      disconnect = Promise.resolve();
+    }
+    await settleWithin(disconnect, ROOM_DISCONNECT_TIMEOUT_MS);
+    // `disconnect()` normally stops these tracks. Stop them explicitly as a
+    // final fence when the SDK cleanup stalls or returns before device teardown.
+    stopRoomMediaTracks(r);
+  })();
+  roomDisconnects.set(r, operation);
+  return operation;
+}
+
+async function cleanupCall({
+  releaseNoSleep,
+  preservePreparedVideo = false,
+  invalidateGeneration = true,
+}: {
+  releaseNoSleep: boolean;
+  preservePreparedVideo?: boolean;
+  invalidateGeneration?: boolean;
+}): Promise<void> {
+  if (invalidateGeneration) roomGeneration += 1;
   removeUnlockHandler();
   removeVisibilityHandler();
   releaseWakeLock();
+  if (releaseNoSleep) disableNoSleepFallback();
   // Null `room` before disconnecting so keepPlaying()'s pause handler and the
   // mic-recovery listeners don't try to resurrect tracks as they're torn down.
   const r = room;
   room = null;
+  removeMicTrackListeners?.();
+  removeMicTrackListeners = null;
   micTrack = null;
   micRestarting = false;
   micLost = false;
-  if (r) {
-    await r.disconnect();
+  removeCameraTrackListeners?.();
+  removeCameraTrackListeners = null;
+  cameraTrack = null;
+  cameraLost = false;
+  if (cameraRecoveryTimer) {
+    clearTimeout(cameraRecoveryTimer);
+    cameraRecoveryTimer = null;
   }
+  if (!preservePreparedVideo) {
+    cameraEnabledIntent = false;
+    videoPrepareGeneration += 1;
+  }
+  callDiagnostic = () => {};
+  if (!preservePreparedVideo) releasePreparedVideoTrack();
   clearAudioElements();
   teardownAudioGraph();
+  if (r) {
+    await disconnectRoom(r);
+  }
+}
+
+export async function leaveCall(expectedRoom?: Room): Promise<void> {
+  if (expectedRoom && room !== expectedRoom) {
+    await disconnectRoom(expectedRoom);
+    return;
+  }
+  await cleanupCall({ releaseNoSleep: true });
 }

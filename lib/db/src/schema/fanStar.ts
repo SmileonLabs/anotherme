@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
 export type PlayMode = "fan" | "star";
@@ -80,9 +81,14 @@ export const starProfilesTable = pgTable(
     chainId: integer("chain_id").notNull(),
     contractAddress: text("contract_address").notNull(),
     tokenId: text("token_id").notNull(),
+    collectionId: uuid("collection_id"),
     starKey: text("star_key").notNull(),
     displayName: text("display_name").notNull(),
     imageUrl: text("image_url"),
+    category: text("category").notNull().default("idol"),
+    ownershipStatus: text("ownership_status").notNull().default("verified"),
+    currentEvolutionStage: text("current_evolution_stage").notNull().default("base"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     stage: text("stage").notNull().default("aspiring").$type<StarProfileStage>(),
     level: integer("level").notNull().default(1),
     xp: integer("xp").notNull().default(0),
@@ -98,7 +104,9 @@ export const starProfilesTable = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
-    uniqueIndex("star_profiles_unique_nft_idx").on(t.chainId, t.contractAddress, t.tokenId),
+    uniqueIndex("star_profiles_active_nft_idx")
+      .on(t.chainId, t.contractAddress, t.tokenId)
+      .where(sql`${t.ownershipStatus} = 'verified'`),
     index("star_profiles_user_id_equipped_idx").on(t.userId, t.equippedAt),
   ],
 );

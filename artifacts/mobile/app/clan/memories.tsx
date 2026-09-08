@@ -80,7 +80,7 @@ export default function ClanMemoriesScreen() {
   );
 
   const onDelete = (memory: ClanMemory) => {
-    crossAlert("가문 기억 삭제", `"${memory.title}"을(를) 삭제할까요?`, [
+    crossAlert("팬클럽 기억 삭제", `"${memory.title}"을(를) 삭제할까요?`, [
       { text: "취소", style: "cancel" },
       {
         text: "삭제",
@@ -94,7 +94,7 @@ export default function ClanMemoriesScreen() {
             ]);
             await refetch();
           } catch {
-            crossAlert("오류", "가문 기억 삭제에 실패했어요.");
+            crossAlert("오류", "팬클럽 기억 삭제에 실패했어요.");
           }
         },
       },
@@ -149,7 +149,7 @@ export default function ClanMemoriesScreen() {
         ) : isError ? (
           <View style={styles.center}>
             <Text style={[styles.bodyText, { color: colors.mutedForeground }]}>
-              가문 기억을 불러오지 못했어요.
+              팬클럽 기억을 불러오지 못했어요.
             </Text>
             <Pressable
               onPress={() => refetch()}
@@ -163,11 +163,11 @@ export default function ClanMemoriesScreen() {
             <Feather name="book-open" size={28} color={colors.mutedForeground} />
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               {filter === "all"
-                ? "아직 가문 기억이 없습니다."
-                : "이 유형의 가문 기억이 없습니다."}
+                ? "아직 팬클럽 기억이 없습니다."
+                : "이 유형의 팬클럽 기억이 없습니다."}
             </Text>
             <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-              토크배틀과 라이프 퀘스트에서 얻은 교훈을 가문의 기억으로 남겨보세요.
+              토크배틀과 STAR 미션에서 얻은 교훈을 팬클럽의 기억으로 남겨보세요.
             </Text>
             {clanId ? (
               <Pressable

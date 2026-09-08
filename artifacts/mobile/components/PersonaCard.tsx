@@ -36,10 +36,12 @@ export function PersonaCard({
   card,
   avatarUri,
   avatarName,
+  avatarCharacterType,
 }: {
   card: PersonaCardData;
   avatarUri?: string | null;
   avatarName: string;
+  avatarCharacterType?: "fan" | "star" | "official_ai" | string | null;
 }) {
   const gradient = ARCHETYPE_GRADIENT[card.archetypeKey] ?? DEFAULT_GRADIENT;
   const ontologyProfile = (card as PersonaCardData & { ontologyProfile?: PersonaCardOntologyProfile | null }).ontologyProfile ?? null;
@@ -58,7 +60,13 @@ export function PersonaCard({
 
       <View style={styles.header}>
         <View style={styles.avatarRing}>
-          <Avatar uri={avatarUri} name={avatarName} size={64} />
+          <Avatar
+            uri={avatarUri}
+            name={avatarName}
+            size={64}
+            crop="face"
+            characterType={avatarCharacterType ?? "fan"}
+          />
         </View>
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={1}>

@@ -1,6 +1,13 @@
-import { Router, type IRouter, type Response } from "express";
+import {
+  Router,
+  type IRouter,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import { z } from "zod/v4";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 import {
   DailyTalkRewardError,
   generateDailyTalkReward,
@@ -52,18 +59,87 @@ function sendDailyTalkError(res: Response, err: unknown): void {
   }
 }
 
+async function dailyTalkGenerationPreflight(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const userId = req.dbUser!.id;
+    const status = await getDailyTalkRewardStatus(userId);
+
+    // A completed draft is idempotent and does not need another AI request.
+    if (status.rewardId && status.status === "GENERATED") {
+      res.json(await getDailyTalkReward(userId, status.rewardId));
+      return;
+    }
+    if (status.claimedToday) {
+      throw new DailyTalkRewardError(
+        "already_claimed",
+        "오늘은 이미 Talk to Earn 보상을 받았어요.",
+      );
+    }
+    if (status.reason === "analysis_disabled") {
+      throw new DailyTalkRewardError(
+        "analysis_disabled",
+        "Talk to Earn 대화 분석이 꺼져 있어요.",
+      );
+    }
+    if (
+      status.reason === "insufficient_messages" ||
+      status.reason === "insufficient_counterparts"
+    ) {
+      throw new DailyTalkRewardError(
+        "insufficient_messages",
+        status.reason === "insufficient_counterparts"
+          ? "오늘 다른 사용자와 나눈 대화가 필요해요."
+          : "분석할 수 있는 오늘의 대화가 아직 부족해요.",
+        {
+          messageCount: status.messageCount,
+          minMessageCount: status.minMessageCount,
+        },
+      );
+    }
+
+    next();
+  } catch (err) {
+    if (err instanceof DailyTalkRewardError) {
+      sendDailyTalkError(res, err);
+      return;
+    }
+    next(err);
+  }
+}
+
 router.get("/daily-talk-reward/status", requireAuth, async (req, res): Promise<void> => {
   res.json(await getDailyTalkRewardStatus(req.dbUser!.id));
 });
 
-router.post("/daily-talk-reward/generate", requireAuth, async (req, res): Promise<void> => {
-  try {
-    res.json(await generateDailyTalkReward(req.dbUser!.id, req.log));
-  } catch (err) {
-    req.log.error({ err }, "Daily talk reward generate failed");
-    sendDailyTalkError(res, err);
-  }
-});
+router.post(
+  "/daily-talk-reward/generate",
+  requireAuth,
+  dailyTalkGenerationPreflight,
+  rateLimit({
+    name: "daily-talk-ai-generate-minute",
+    limit: 3,
+    windowSeconds: 60,
+    requireRedis: true,
+  }),
+  rateLimit({
+    name: "daily-talk-ai-generate-daily",
+    limit: 5,
+    windowSeconds: 86400,
+    requireRedis: true,
+  }),
+  async (req, res): Promise<void> => {
+    try {
+      res.json(await generateDailyTalkReward(req.dbUser!.id, req.log));
+    } catch (err) {
+      req.log.error({ err }, "Daily talk reward generate failed");
+      sendDailyTalkError(res, err);
+    }
+  },
+);
 
 router.get("/daily-talk-reward/history", requireAuth, async (req, res): Promise<void> => {
   res.json(await listDailyTalkRewardHistory(req.dbUser!.id));

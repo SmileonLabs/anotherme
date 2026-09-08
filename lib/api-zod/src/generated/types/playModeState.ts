@@ -7,11 +7,14 @@
  */
 import type { FanProfile } from './fanProfile';
 import type { PlayModeStateCurrentMode } from './playModeStateCurrentMode';
+import type { PlayModeStateSocial } from './playModeStateSocial';
 import type { StarProfile } from './starProfile';
 
 export interface PlayModeState {
   currentMode: PlayModeStateCurrentMode;
   starUnlocked: boolean;
   fanProfile: FanProfile;
+  social: PlayModeStateSocial;
   equippedStar?: StarProfile | null;
+  starProfiles: StarProfile[];
 }

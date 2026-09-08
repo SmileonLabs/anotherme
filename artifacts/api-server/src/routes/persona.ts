@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { requireAuth } from "../lib/auth";
+import { rateLimit } from "../lib/rateLimit";
 import { ensurePersona, levelProgress, recentGrowthEvents } from "../lib/growth";
 import { analyzePersona } from "../lib/personaAnalysis";
 import { getPersonaCard } from "../lib/personaIdentity";
@@ -85,7 +86,7 @@ router.get("/users/me/persona/card", requireAuth, async (req, res): Promise<void
  * little activity, or an AI failure each return a friendly Korean message
  * without ever mutating the existing persona analysis.
  */
-router.post("/users/me/persona/analyze", requireAuth, async (req, res): Promise<void> => {
+router.post("/users/me/persona/analyze", requireAuth, rateLimit({ name: "persona-analyze-minute", limit: 5, windowSeconds: 60, requireRedis: true }), rateLimit({ name: "persona-analyze-daily", limit: 20, windowSeconds: 86400, requireRedis: true }), async (req, res): Promise<void> => {
   const user = req.dbUser!;
   const outcome = await analyzePersona(user.id, req.log);
 
@@ -113,7 +114,7 @@ router.post("/users/me/persona/analyze", requireAuth, async (req, res): Promise<
     case "insufficient_data":
       res.status(422).json({
         error: "insufficient_data",
-        message: "분석할 활동이 아직 부족해요. 채팅·배틀·던전으로 조금 더 활동해 보세요.",
+        message: "분석할 활동이 아직 부족해요. 채팅·배틀·성장RPG로 조금 더 활동해 보세요.",
       });
       return;
     case "ai_failed":

@@ -91,7 +91,7 @@ export default function ClanRankingScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.hero}
         >
-          <Text style={[styles.heroTitle, { color: colors.foreground }]}>가문 랭킹</Text>
+          <Text style={[styles.heroTitle, { color: colors.foreground }]}>팬클럽 랭킹</Text>
           <Text style={[styles.heroSubtitle, { color: colors.mutedForeground }]}>
             함께 성장한 Another Me들의 힘을 확인해보세요.
           </Text>
@@ -169,14 +169,14 @@ export default function ClanRankingScreen() {
         {myClanRank ? (
           <View style={[styles.myCard, { backgroundColor: colors.background }]}>
             <View style={styles.myCol}>
-              <Text style={[styles.myColLabel, { color: colors.mutedForeground }]}>내 가문 순위</Text>
+              <Text style={[styles.myColLabel, { color: colors.mutedForeground }]}>내 팬클럽 순위</Text>
               <Text style={[styles.myRankValue, { color: colors.foreground }]}>
                 {myClanRank.rank}위
               </Text>
             </View>
             <View style={[styles.myDivider, { backgroundColor: colors.border }]} />
             <View style={styles.myCol}>
-              <Text style={[styles.myColLabel, { color: colors.mutedForeground }]}>내 가문 점수</Text>
+              <Text style={[styles.myColLabel, { color: colors.mutedForeground }]}>내 팬클럽 점수</Text>
               <Text style={[styles.myColValue, { color: colors.foreground }]}>
                 {myClanRank.score.toLocaleString()}
               </Text>
@@ -217,7 +217,7 @@ export default function ClanRankingScreen() {
               아직 랭킹 데이터가 부족합니다.
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              가문원들과 함께 토크배틀과 라이프 퀘스트를 플레이해보세요.
+              팬클럽원들과 함께 토크배틀과 STAR 미션을 플레이해보세요.
             </Text>
             <Pressable
               onPress={() => router.push("/(tabs)/battle")}
@@ -289,7 +289,7 @@ function ClanRankingRow({
       <View style={styles.rowBody}>
         <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
           {item.name}
-          {isMine ? " (우리 가문)" : ""}
+          {isMine ? " (우리 팬클럽)" : ""}
         </Text>
         <Text style={[styles.rowMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
           Lv.{item.level} · {item.memberCount}명 · {item.dominantArchetypeLabel}

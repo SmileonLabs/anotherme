@@ -45,11 +45,28 @@ describe("API readiness and CORS", () => {
       .set("Origin", "https://anothermeai.app");
     expect(allowed.status).toBe(200);
     expect(allowed.headers["access-control-allow-origin"]).toBe("https://anothermeai.app");
+    expect(allowed.headers["access-control-expose-headers"]).toContain(
+      "X-Edge-Request-Id",
+    );
 
     const denied = await request(app)
       .get("/api/healthz")
       .set("Origin", "https://untrusted.example");
     expect(denied.status).toBe(403);
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("preserves safe request ids and replaces untrusted correlation headers", async () => {
+    const preserved = await request(app)
+      .get("/api/healthz")
+      .set("X-Request-Id", "request_12345678");
+    expect(preserved.headers["x-request-id"]).toBe("request_12345678");
+
+    const replaced = await request(app)
+      .get("/api/healthz")
+      .set("X-Request-Id", "user@example.com-not-safe");
+    expect(replaced.headers["x-request-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 });

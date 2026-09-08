@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { randomUUID } from "node:crypto";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
@@ -12,12 +13,32 @@ import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { isAllowedOrigin } from "./lib/origins";
+import livekitWebhookRouter from "./routes/livekitWebhooks";
 
 const app: Express = express();
+
+function validCorrelationId(value: string | string[] | undefined): string | undefined {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate) return undefined;
+  return /^[A-Za-z0-9_-]{8,80}$/.test(candidate) ? candidate : undefined;
+}
 
 app.use(
   pinoHttp({
     logger,
+    genReqId(req, res) {
+      const requestId = validCorrelationId(req.headers["x-request-id"]) ?? randomUUID();
+      res.setHeader("X-Request-Id", requestId);
+      return requestId;
+    },
+    customProps(req) {
+      const callAttemptId = validCorrelationId(req.headers["x-call-attempt-id"]);
+      const edgeRequestId = validCorrelationId(req.headers["x-edge-request-id"]);
+      return {
+        ...(callAttemptId ? { callAttemptId } : {}),
+        ...(edgeRequestId ? { edgeRequestId } : {}),
+      };
+    },
     serializers: {
       req(req) {
         return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
@@ -41,11 +62,16 @@ app.use((req, res, next) => {
 app.use(
   cors({
     credentials: true,
+    exposedHeaders: ["X-Request-Id", "X-Edge-Request-Id"],
     // The preceding middleware rejects untrusted browser origins. React Native
     // requests have no Origin header and remain supported.
     origin: true,
   }),
 );
+// LiveKit verifies the signature over the exact request bytes, so this endpoint
+// must be mounted before the global JSON parser. It is intentionally outside
+// Clerk auth; WebhookReceiver authenticates the LiveKit Authorization token.
+app.use("/api", livekitWebhookRouter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/api", healthRouter);

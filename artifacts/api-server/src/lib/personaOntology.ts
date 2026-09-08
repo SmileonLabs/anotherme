@@ -558,7 +558,7 @@ export async function recordPersonaAnalysisPersonaEvidence(args: {
 
     const evidenceSummary = `AI 분석에서 ${observations.slice(0, 3).map((item) => item.label).join(", ")} 정보를 Another Me 동기화 데이터로 제공함`;
     const countText = args.dataCounts
-      ? `입력 수: 채팅 ${args.dataCounts.chat ?? 0}, 배틀 ${args.dataCounts.battle ?? 0}, 던전 ${args.dataCounts.dungeon ?? 0}, 활동 ${args.dataCounts.growth ?? 0}.`
+      ? `입력 수: 채팅 ${args.dataCounts.chat ?? 0}, 배틀 ${args.dataCounts.battle ?? 0}, 성장RPG ${args.dataCounts.dungeon ?? 0}, 활동 ${args.dataCounts.growth ?? 0}.`
       : "";
     const { tenantId, personaId } = await ensureUserPersonaGraph(args.userId);
     const evidenceId = `${personaId}:persona_analysis:${args.analysisId}`;

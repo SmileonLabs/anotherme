@@ -86,6 +86,20 @@ Required production environment variables:
 - `FIREBASE_SERVICE_ACCOUNT`
 - `CORS_ALLOWED_ORIGINS`
 
+Call generation fencing rollout:
+
+- Forward `CALL_ATTEMPT_HEADER_ENFORCE_AFTER` as an ISO-8601 UTC timestamp selected
+  from the actual PWA/API rollout (for example, the end of the old-client grace
+  period). Do not copy a source-code build date.
+- Before that cutoff, calls created before the cutoff may omit
+  `X-Call-Attempt-Id`; a supplied value must always match. Calls whose persisted
+  `attempt_id` is null remain legacy-compatible.
+- At and after the cutoff, new call creation requires the header, and calls
+  created at/after the cutoff with an attempt ID reject missing headers. An unset
+  or invalid value intentionally keeps rolling compatibility and emits a server
+  warning, so production deployment checks should treat that warning as an
+  unfinished rollout item.
+
 `S3_PUBLIC_ENDPOINT` must be reachable by user browsers because clients upload
 directly to the signed URL returned by the API.
 
@@ -123,5 +137,38 @@ The API no longer performs PostgreSQL DDL, global data backfills, or Neo4j schem
 writes during replica startup. `deploy-production.sh` runs the Drizzle migration job and
 the Neo4j initialization job before replacing application containers.
 
+The production deploy is intentionally fail-closed:
+
+- `API_IMAGE` must be an immutable registry digest and
+  `PRE_DEPLOY_BACKUP_CONFIRMED=1` must refer to a tested restore point.
+- `SCHEMA_ROLLBACK_COMPATIBILITY_CONFIRMED=1` is required only after the target
+  and recorded rollback images have both been checked against the resulting
+  forward schema. The script does not reverse a committed database migration.
+- Before `migrate`, the target image runs the read-only
+  `call-migration-readiness` tool. Ringing/active calls block migration unless
+  `CALL_MIGRATION_ALLOW_LIVE_CALLS=1` is explicitly set. A `calls` or `messages`
+  relation at least 1 GiB (override with
+  `CALL_MIGRATION_LARGE_RELATION_BYTES`) blocks unless
+  `CALL_MIGRATION_ALLOW_LARGE_RELATIONS=1` is explicitly set. Clear these
+  one-deploy approvals after use.
+- PostgreSQL DDL receives a 5-second lock timeout and 15-minute statement
+  timeout by default. Override them only with reviewed values through
+  `MIGRATION_LOCK_TIMEOUT` and `MIGRATION_STATEMENT_TIMEOUT`.
+- Caddy configuration is validated with the deployment's exact bind mounts
+  before migration starts.
+
+For a PWA replacement, build and stage a new immutable versioned directory,
+then run with `DEPLOY_PWA=1` and an explicit absolute `PWA_WEB_ROOT`, for example
+`/opt/anotherme-pwa-release-<digest>`. The directory must contain `index.html`,
+`sw.js`, `sw-cache-policy.js`, `manifest.webmanifest`, and a compiled Expo
+JavaScript/CSS asset. Reusing the currently mounted directory is refused because
+an in-place overwrite cannot be rolled back. API-only deploys preserve the
+proxy's currently mounted `/srv/app` bind source, and rollback restores that
+captured source. Optional release cleanup also protects the captured PWA path.
+
 For an existing production PostgreSQL database with no Drizzle ledger, follow
 [`docs/operations/drizzle-existing-production-baseline.md`](../docs/operations/drizzle-existing-production-baseline.md).
+
+Host disk sampling, alert setup, bounded log retention, and fail-closed release
+cleanup are documented in
+[`docs/operations/disk-capacity.md`](../docs/operations/disk-capacity.md).

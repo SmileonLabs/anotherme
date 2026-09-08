@@ -7,9 +7,11 @@
  */
 import type { StarFeedAuthor } from './starFeedAuthor';
 import type { StarFeedComment } from './starFeedComment';
+import type { StarFeedMedia } from './starFeedMedia';
 import type { StarFeedPostKind } from './starFeedPostKind';
 import type { StarFeedPostMetadata } from './starFeedPostMetadata';
 import type { StarFeedPostVisibility } from './starFeedPostVisibility';
+import type { StarProfileTarget } from './starProfileTarget';
 
 export interface StarFeedPost {
   id: string;
@@ -18,9 +20,13 @@ export interface StarFeedPost {
   body: string;
   /** @nullable */
   metadata?: StarFeedPostMetadata;
+  hashtags: string[];
+  /** @maxItems 4 */
+  media: StarFeedMedia[];
   visibility: StarFeedPostVisibility;
   createdAt: Date;
   author: StarFeedAuthor;
+  targetStarProfile: StarProfileTarget | null;
   reactionCount: number;
   commentCount: number;
   reactedByMe: boolean;

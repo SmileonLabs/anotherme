@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type DimensionValue,
   View,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -14,12 +15,27 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StickerPicker } from "./StickerPicker";
 import { useColors } from "@/hooks/useColors";
 import { usePwaBottomInset } from "@/hooks/usePwaBottomInset";
+import {
+  chatPerformanceDiagnosticsEnabled,
+  chatPerformanceNow,
+  noteChatInputCommit,
+  noteChatRender,
+} from "@/lib/chatPerformanceDiagnostics";
+
+const INPUT_MIN_HEIGHT = 44;
+const INPUT_MAX_HEIGHT = 124;
+// Safari can dispatch the Enter key that commits an IME composition immediately
+// after compositionend, with isComposing already reset to false. Treat that key
+// as part of the composition instead of a send action.
+const SAFARI_COMPOSITION_END_GUARD_MS = 80;
 
 interface MessageComposerProps {
   /** Whether a send mutation is currently in flight (disables the composer). */
   sending: boolean;
   /** Whether an image/file upload is in progress, for the inline spinners. */
   uploading: "image" | "file" | null;
+  uploadProgress?: number | null;
+  onCancelUpload?: () => void;
   placeholder?: string;
   /**
    * Sends the trimmed text. Returns true on success; on false the composer
@@ -31,6 +47,8 @@ interface MessageComposerProps {
   onPickImage: () => void;
   onPickFile: () => void;
   onSendSticker: (code: string) => void;
+  replyPreview?: { senderName?: string | null; content: string } | null;
+  onCancelReply?: () => void;
 }
 
 /**
@@ -43,28 +61,65 @@ interface MessageComposerProps {
 function MessageComposerComponent({
   sending,
   uploading,
+  uploadProgress = null,
+  onCancelUpload,
   placeholder = "메시지",
   onSend,
   onTyping,
   onPickImage,
   onPickFile,
   onSendSticker,
+  replyPreview,
+  onCancelReply,
 }: MessageComposerProps) {
+  noteChatRender("composerRenders");
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const pwaBottom = usePwaBottomInset();
   const [text, setText] = useState("");
   const [showStickers, setShowStickers] = useState(false);
+  const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const inputRef = useRef<TextInput>(null);
   const lastTypingSentRef = useRef(0);
+  const composingRef = useRef(false);
+  const lastCompositionEndAtRef = useRef(0);
+  const submittingRef = useRef(false);
+  const inputStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const startedAt = inputStartedAtRef.current;
+    if (startedAt === null) return;
+    inputStartedAtRef.current = null;
+    if (typeof requestAnimationFrame === "function") {
+      // Do not cancel the previous sample when another key lands before the
+      // frame. Cancelling systematically hides the worst bursts on a busy iPhone.
+      requestAnimationFrame(() => noteChatInputCommit(startedAt));
+      return;
+    }
+    noteChatInputCommit(startedAt);
+  }, [text]);
+
+  const handleContentSizeChange = useCallback((event: any) => {
+    const next = Math.min(
+      INPUT_MAX_HEIGHT,
+      Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+    );
+    setInputHeight((current) => (current === next ? current : next));
+  }, []);
 
   const submit = useCallback(async () => {
     const content = text.trim();
-    if (!content || sending) return;
+    if (!content || sending || submittingRef.current) return;
+    submittingRef.current = true;
     setText("");
+    setInputHeight(INPUT_MIN_HEIGHT);
     lastTypingSentRef.current = 0;
-    const ok = await onSend(content);
-    if (!ok) setText(content);
+    try {
+      const ok = await onSend(content);
+      if (!ok) setText(content);
+    } finally {
+      submittingRef.current = false;
+    }
   }, [text, sending, onSend]);
 
   const handleChangeText = useCallback(
@@ -93,13 +148,32 @@ function MessageComposerComponent({
     }
   }, [showStickers]);
 
-  // Web: Enter sends, Shift+Enter inserts a newline.
+  const handleCompositionStart = useCallback(() => {
+    composingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    lastCompositionEndAtRef.current = Date.now();
+  }, []);
+
+  // Web: Enter sends, Shift+Enter inserts a newline. Enter also commits Korean,
+  // Japanese, and Chinese IME composition, so never send while that composition
+  // is active (or during Safari's compositionend -> key event handoff).
   const handleKeyPress = useCallback(
     (e: any) => {
       if (Platform.OS !== "web") return;
       const key = e?.key ?? e?.nativeEvent?.key;
       const isShift = !!(e?.shiftKey ?? e?.nativeEvent?.shiftKey);
       if (key === "Enter" && !isShift) {
+        const nativeEvent = e?.nativeEvent ?? e;
+        const isComposing =
+          composingRef.current ||
+          nativeEvent?.isComposing === true ||
+          nativeEvent?.keyCode === 229 ||
+          nativeEvent?.which === 229 ||
+          Date.now() - lastCompositionEndAtRef.current < SAFARI_COMPOSITION_END_GUARD_MS;
+        if (isComposing) return;
         e.preventDefault?.();
         void submit();
       }
@@ -107,10 +181,75 @@ function MessageComposerComponent({
     [submit],
   );
 
+  const handleDiagnosticKeyDown = useCallback(() => {
+    if (!chatPerformanceDiagnosticsEnabled()) return;
+    inputStartedAtRef.current = chatPerformanceNow();
+  }, []);
+
   const hasText = text.trim().length > 0;
+  const uploadLabel = uploading === "image" ? "사진 업로드 중" : uploading === "file" ? "파일 업로드 중" : null;
+  const progressText = typeof uploadProgress === "number" ? `${uploadProgress}%` : "준비 중";
+  const progressWidth = `${Math.max(6, uploadProgress ?? 12)}%` as DimensionValue;
 
   return (
     <>
+      {replyPreview ? (
+        <View
+          style={[
+            styles.replyPreview,
+            { backgroundColor: colors.background, borderTopColor: colors.border },
+          ]}
+        >
+          <View style={[styles.replyAccent, { backgroundColor: colors.primary }]} />
+          <View style={styles.replyTextWrap}>
+            <Text style={[styles.replyLabel, { color: colors.primary }]} numberOfLines={1}>
+              {replyPreview.senderName ? `${replyPreview.senderName}에게 답장` : "답장"}
+            </Text>
+            <Text style={[styles.replyText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {replyPreview.content}
+            </Text>
+          </View>
+          <Pressable
+            onPress={onCancelReply}
+            hitSlop={8}
+            style={({ pressed }) => [styles.replyClose, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Feather name="x" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+      ) : null}
+      {uploading ? (
+        <View
+          style={[
+            styles.uploadStatus,
+            { backgroundColor: colors.background, borderTopColor: colors.border },
+          ]}
+        >
+          <View style={styles.uploadStatusTop}>
+            <View style={styles.uploadStatusTextWrap}>
+              <Text style={[styles.uploadStatusLabel, { color: colors.foreground }]} numberOfLines={1}>
+                {uploadLabel}
+              </Text>
+              <Text style={[styles.uploadStatusProgress, { color: colors.mutedForeground }]}>
+                {progressText}
+              </Text>
+            </View>
+            {onCancelUpload ? (
+              <Pressable onPress={onCancelUpload} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}>
+                <Text style={[styles.uploadCancel, { color: colors.primary }]}>취소</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={[styles.uploadTrack, { backgroundColor: colors.muted }]}>
+            <View
+              style={[
+                styles.uploadFill,
+                { backgroundColor: colors.primary, width: progressWidth },
+              ]}
+            />
+          </View>
+        </View>
+      ) : null}
       <View
         style={[
           styles.inputRow,
@@ -139,10 +278,30 @@ function MessageComposerComponent({
           </Pressable>
           <TextInput
             ref={inputRef}
-            style={[styles.input, { color: colors.foreground }]}
+            style={[
+              styles.input,
+              {
+                color: colors.foreground,
+                // react-native-web synchronously reads scrollHeight/scrollWidth
+                // whenever onContentSizeChange is present. On iOS Safari that
+                // forces a full-page layout on every keystroke and becomes very
+                // expensive once the chat contains media-rich rows. Keep the
+                // PWA composer at one line with its own scroll area; native keeps
+                // the expanding composer behavior.
+                height: Platform.OS === "web" ? INPUT_MIN_HEIGHT : inputHeight,
+              },
+            ]}
             value={text}
             onChangeText={handleChangeText}
+            onContentSizeChange={Platform.OS === "web" ? undefined : handleContentSizeChange}
             onKeyPress={handleKeyPress}
+            {...(Platform.OS === "web"
+              ? ({
+                  onCompositionStart: handleCompositionStart,
+                  onCompositionEnd: handleCompositionEnd,
+                  onKeyDown: handleDiagnosticKeyDown,
+                } as object)
+              : {})}
             onFocus={() => setShowStickers(false)}
             placeholder={placeholder}
             placeholderTextColor={colors.mutedForeground}
@@ -150,6 +309,7 @@ function MessageComposerComponent({
             numberOfLines={1}
             maxLength={2000}
             blurOnSubmit={false}
+            scrollEnabled={Platform.OS === "web" || inputHeight >= INPUT_MAX_HEIGHT}
           />
           <Pressable
             style={({ pressed }) => [styles.fieldBtn, { opacity: pressed ? 0.5 : 1 }]}
@@ -199,6 +359,78 @@ function MessageComposerComponent({
 export const MessageComposer = React.memo(MessageComposerComponent);
 
 const styles = StyleSheet.create({
+  replyPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 7,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  replyAccent: {
+    width: 3,
+    alignSelf: "stretch",
+    borderRadius: 2,
+  },
+  replyTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  replyLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  replyText: {
+    marginTop: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  replyClose: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  uploadStatus: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 7,
+    gap: 7,
+  },
+  uploadStatusTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  uploadStatusTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  uploadStatusLabel: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  uploadStatusProgress: {
+    marginTop: 1,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  uploadCancel: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
+  uploadTrack: {
+    height: 3,
+    overflow: "hidden",
+    borderRadius: 999,
+  },
+  uploadFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -234,7 +466,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     fontFamily: "Inter_400Regular",
-    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : null),
+    ...(Platform.OS === "web"
+      ? {
+          outlineStyle: "none" as any,
+          overflowY: "auto" as any,
+          resize: "none" as any,
+        }
+      : null),
   },
   sendBtn: {
     width: 44,

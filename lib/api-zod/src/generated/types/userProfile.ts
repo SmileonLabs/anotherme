@@ -11,7 +11,10 @@ export interface UserProfile {
   clerkId: string;
   email: string;
   nickname: string;
-  /** @nullable */
+  /**
+     * Deprecated legacy field. Always null; use the active character profile.
+     * @nullable
+     */
   profileImageUrl?: string | null;
   /** @nullable */
   statusMessage?: string | null;

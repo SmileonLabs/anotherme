@@ -93,19 +93,19 @@ export default function ClanWarDetailScreen() {
       {
         text: "확정",
         onPress: () =>
-          run(() => complete.mutateAsync({ id: warId }), "가문전을 종료하지 못했어요."),
+          run(() => complete.mutateAsync({ id: warId }), "팬클럽전을 종료하지 못했어요."),
       },
     ]);
   };
 
   const onCancel = () => {
-    crossAlert("가문전 취소", "이 가문전을 취소할까요?", [
+    crossAlert("팬클럽전 취소", "이 팬클럽전을 취소할까요?", [
       { text: "닫기", style: "cancel" },
       {
         text: "취소하기",
         style: "destructive",
         onPress: () =>
-          run(() => cancel.mutateAsync({ id: warId }), "가문전을 취소하지 못했어요."),
+          run(() => cancel.mutateAsync({ id: warId }), "팬클럽전을 취소하지 못했어요."),
       },
     ]);
   };
@@ -121,7 +121,7 @@ export default function ClanWarDetailScreen() {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.muted }]}>
         <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-          가문전을 불러오지 못했어요.
+          팬클럽전을 불러오지 못했어요.
         </Text>
         <Pressable onPress={() => refetch()} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
           <Text style={styles.retryText}>다시 시도</Text>
@@ -159,7 +159,7 @@ export default function ClanWarDetailScreen() {
 
         <View style={[styles.scoreCard, { backgroundColor: colors.background }]}>
           <SideCol
-            name={war.challengerClanName ?? "도전 가문"}
+            name={war.challengerClanName ?? "도전 팬클럽"}
             score={war.challengerScore}
             isWinner={war.status === "completed" && war.winnerClanId === war.challengerClanId}
             colors={colors}
@@ -173,15 +173,15 @@ export default function ClanWarDetailScreen() {
           />
         </View>
         {outcome ? (
-          <Text style={[styles.outcome, { color: colors.primary }]}>우리 가문: {outcome}</Text>
+          <Text style={[styles.outcome, { color: colors.primary }]}>우리 팬클럽: {outcome}</Text>
         ) : null}
 
         {war.result ? (
           <View style={[styles.resultCard, { backgroundColor: colors.background }]}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>AI 심판 총평</Text>
             <Text style={[styles.resultBody, { color: colors.foreground }]}>{war.result.judgeSummary}</Text>
-            <ResultFeedback label="도전 가문" text={war.result.challengerFeedback} colors={colors} />
-            <ResultFeedback label="상대 가문" text={war.result.opponentFeedback} colors={colors} />
+            <ResultFeedback label="도전 팬클럽" text={war.result.challengerFeedback} colors={colors} />
+            <ResultFeedback label="상대 팬클럽" text={war.result.opponentFeedback} colors={colors} />
           </View>
         ) : null}
 
@@ -275,7 +275,7 @@ export default function ClanWarDetailScreen() {
             disabled={pending}
             style={[styles.cancelBtn, { borderColor: colors.destructive }]}
           >
-            <Text style={[styles.cancelText, { color: colors.destructive }]}>가문전 취소</Text>
+            <Text style={[styles.cancelText, { color: colors.destructive }]}>팬클럽전 취소</Text>
           </Pressable>
         ) : null}
       </CustomScrollView>
