@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   RoomEvent,
   Track,
@@ -8,6 +8,7 @@ import {
   type Room,
 } from "livekit-client";
 import { useColors } from "@/hooks/useColors";
+import { attachCallVideoPlayback } from "@/lib/callVideoPlayback";
 
 type VideoTrackLike = LocalVideoTrack | RemoteVideoTrack;
 
@@ -61,13 +62,13 @@ export function CallVideoView({
         // Remote audio is rendered by voiceCall.web.ts on a dedicated audio
         // element. Keep this video-only surface muted so Safari always permits
         // inline autoplay in an installed PWA.
-        <VideoElement track={tracks.remote} muted style={videoFillStyle} />
+        <VideoElement key={tracks.remote.sid} track={tracks.remote} muted style={videoFillStyle} />
       ) : (
         <VideoPlaceholder label={room ? "상대방 영상을 기다리는 중..." : "영상 연결 중..."} />
       )}
       {cameraOn && tracks.local ? (
         <View style={styles.localPreview}>
-          <VideoElement track={tracks.local} muted mirror style={videoFillStyle} />
+          <VideoElement key={tracks.local.sid} track={tracks.local} muted mirror style={videoFillStyle} />
         </View>
       ) : null}
     </View>
@@ -100,48 +101,45 @@ function VideoElement({
   style: React.CSSProperties;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const playbackRef = useRef<ReturnType<typeof attachCallVideoPlayback> | null>(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.autoplay = true;
-    el.playsInline = true;
-    el.setAttribute("playsinline", "true");
-    el.muted = muted;
-    track.attach(el);
-    const play = () => {
-      if (document.visibilityState === "hidden") return;
-      void el.play().catch(() => {});
-    };
-    play();
-    // WebKit can leave a WebRTC video element paused after the track unmutes,
-    // the PWA returns from the background, or autoplay was initially deferred.
-    // Retry at each safe recovery point; play() is idempotent while already live.
-    const mediaTrack = track.mediaStreamTrack;
-    mediaTrack?.addEventListener("unmute", play);
-    el.addEventListener("loadedmetadata", play);
-    el.addEventListener("canplay", play);
-    window.addEventListener("focus", play);
-    document.addEventListener("visibilitychange", play);
-    document.addEventListener("click", play, true);
-    document.addEventListener("touchend", play, true);
+    setPlaybackBlocked(false);
+    const playback = attachCallVideoPlayback(track, el, {
+      muted,
+      onBlocked: setPlaybackBlocked,
+    });
+    playbackRef.current = playback;
     return () => {
-      mediaTrack?.removeEventListener("unmute", play);
-      el.removeEventListener("loadedmetadata", play);
-      el.removeEventListener("canplay", play);
-      window.removeEventListener("focus", play);
-      document.removeEventListener("visibilitychange", play);
-      document.removeEventListener("click", play, true);
-      document.removeEventListener("touchend", play, true);
-      track.detach(el);
+      playback.dispose();
+      if (playbackRef.current === playback) playbackRef.current = null;
     };
   }, [muted, track]);
 
   return (
-    <video
-      ref={ref}
-      style={{ ...style, transform: mirror ? "scaleX(-1)" : undefined }}
-    />
+    <>
+      <video
+        ref={ref}
+        muted={muted}
+        playsInline
+        style={{ ...style, transform: mirror ? "scaleX(-1)" : undefined }}
+      />
+      {playbackBlocked && (
+        <View style={styles.playbackRecovery}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="영상 재생"
+            onPress={() => playbackRef.current?.play()}
+            style={styles.playbackButton}
+          >
+            <Text style={styles.playbackButtonText}>영상 재생</Text>
+          </Pressable>
+        </View>
+      )}
+    </>
   );
 }
 
@@ -180,6 +178,18 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.35)",
     backgroundColor: "#111",
   },
+  playbackRecovery: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playbackButton: {
+    backgroundColor: "#6D35D5",
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  playbackButtonText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
   placeholder: {
     width: "100%",
     height: "100%",

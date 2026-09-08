@@ -16,6 +16,7 @@ export interface CallJoinResult {
   media: CallMedia;
   microphonePublished: boolean;
   cameraPublished: boolean;
+  cameraPending?: boolean;
 }
 
 let room: Room | null = null;
@@ -29,13 +30,18 @@ let micRestarting = false;
 let micLost = false;
 let cameraTrack: MediaStreamTrack | null = null;
 let removeCameraTrackListeners: (() => void) | null = null;
-let cameraRestarting = false;
+let cameraRestartOperation: { room: Room; captureGeneration: number; promise: Promise<boolean> } | null = null;
 let cameraLost = false;
 let cameraEnabledIntent = false;
 let cameraRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let cameraFacingMode: "user" | "environment" = "user";
 let videoPreparePromise: Promise<void> | null = null;
 let preparedVideoTrack: MediaStreamTrack | null = null;
+let videoPrepareGeneration = 0;
+let cameraCaptureInFlight: Promise<MediaStream> | null = null;
+let cameraPublishInFlight: { room: Room; promise: Promise<unknown> } | null = null;
+let cameraEnableOperation: { room: Room; captureGeneration: number; promise: Promise<boolean> } | null = null;
+let cameraDisableOperation: { room: Room; promise: Promise<unknown> } | null = null;
 let callDiagnostic: CallDiagnostic = () => {};
 
 // Mobile browsers route WebRTC remote audio through the quiet earpiece/call
@@ -70,6 +76,23 @@ const audioElementRooms = new WeakMap<HTMLAudioElement, Room>();
 // without the distortion a raw 2x+ gain would cause.
 const REMOTE_GAIN = 3.0;
 const ROOM_DISCONNECT_TIMEOUT_MS = 4_000;
+const CAMERA_CAPTURE_TIMEOUT_MS = 12_000;
+const CAMERA_PUBLISH_TIMEOUT_MS = 12_000;
+const MICROPHONE_PUBLISH_TIMEOUT_MS = 20_000;
+
+function mediaDeadline<T>(operation: Promise<T>, timeoutMs: number, name: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(name);
+      error.name = name;
+      reject(error);
+    }, timeoutMs);
+    operation.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
 
 async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -840,42 +863,66 @@ function cameraNeedsRecovery(): boolean {
 }
 
 async function restartCamera(): Promise<boolean> {
-  if (!room || cameraRestarting || !cameraEnabledIntent) return false;
+  if (!room || !cameraEnabledIntent) return false;
   const activeRoom = room;
   const generation = roomGeneration;
+  const captureGeneration = videoPrepareGeneration;
   const diagnostic = callDiagnostic;
-  cameraRestarting = true;
-  let succeeded = false;
-  diagnostic("web_camera_restart_start", callStateDetails());
-  try {
-    const pub = activeRoom.localParticipant.getTrackPublication(Track.Source.Camera);
-    const track = pub?.track as LocalVideoTrack | undefined;
-    if (track && typeof track.restartTrack === "function") {
-      await track.restartTrack(cameraOptions());
-    } else {
-      await activeRoom.localParticipant.setCameraEnabled(false, cameraOptions());
-      if (room !== activeRoom || generation !== roomGeneration) return false;
-      succeeded = await enableCameraWithRetry(activeRoom, generation);
-      if (!succeeded) throw new Error("camera_republish_failed");
-    }
-    succeeded = true;
-  } catch (err) {
-    if (room === activeRoom && generation === roomGeneration) {
-      diagnostic("web_camera_restart_failed", {
-        message: errorMessage(err),
-        ...callStateDetails(),
-      });
-    }
-  } finally {
-    if (room === activeRoom && generation === roomGeneration) {
-      cameraRestarting = false;
-      cameraLost = false;
-      cameraTrack = null;
-      armCameraRecovery();
-      if (succeeded) diagnostic("web_camera_restart_succeeded", callStateDetails());
+  const isCurrent = () => room === activeRoom && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const existing = cameraRestartOperation;
+  if (existing?.room === activeRoom) {
+    if (existing.captureGeneration === captureGeneration) return existing.promise;
+    await existing.promise.catch(() => false);
+    if (!isCurrent()) return false;
+    if (cameraRestartOperation?.room === activeRoom && cameraRestartOperation.captureGeneration === captureGeneration) {
+      return cameraRestartOperation.promise;
     }
   }
-  return succeeded;
+  const operation = (async () => {
+    let succeeded = false;
+    diagnostic("web_camera_restart_start", callStateDetails());
+    try {
+      const pub = activeRoom.localParticipant.getTrackPublication(Track.Source.Camera);
+      const track = pub?.track as LocalVideoTrack | undefined;
+      if (track) {
+        // Keep every acquisition in the bounded coordinator. SDK restartTrack()
+        // would start a separate unbounded getUserMedia operation internally.
+        track.mediaStreamTrack.stop();
+        await mediaDeadline(
+          activeRoom.localParticipant.unpublishTrack(track, true),
+          CAMERA_PUBLISH_TIMEOUT_MS,
+          "CameraUnpublishTimeout",
+        );
+      }
+      if (!isCurrent()) return false;
+      releasePreparedVideoTrack();
+      succeeded = await enableCameraForRoom(activeRoom, generation);
+      if (!succeeded) throw new Error("camera_republish_failed");
+    } catch (error) {
+      if (isCurrent()) {
+        diagnostic("web_camera_restart_failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+          ...callStateDetails(),
+        });
+      }
+    } finally {
+      if (isCurrent()) {
+        cameraLost = false;
+        cameraTrack = null;
+        armCameraRecovery();
+        if (succeeded) diagnostic("web_camera_restart_succeeded", callStateDetails());
+      }
+    }
+    return succeeded && isCurrent();
+  })();
+  const current = { room: activeRoom, captureGeneration, promise: operation };
+  cameraRestartOperation = current;
+  try {
+    return await operation;
+  } finally {
+    if (cameraRestartOperation === current) cameraRestartOperation = null;
+  }
 }
 
 function installVisibilityHandler() {
@@ -926,33 +973,52 @@ function cameraOptions() {
   };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function prepareVideoCall(): Promise<void> {
+export function prepareVideoCall(onDiagnostic: CallDiagnostic = callDiagnostic): Promise<void> {
   if (preparedVideoTrack?.readyState === "live") return Promise.resolve();
   if (videoPreparePromise) return videoPreparePromise;
-  const prepareGeneration = roomGeneration;
-  videoPreparePromise = (async () => {
+  // getUserMedia cannot be cancelled. A timed-out browser permission request
+  // must not be followed by concurrent acquisitions fighting for the camera.
+  if (cameraCaptureInFlight) {
+    onDiagnostic("web_camera_capture_still_pending");
+    return Promise.resolve();
+  }
+  const prepareGeneration = videoPrepareGeneration;
+  let accepted = true;
+  const operation = (async () => {
     const gum = navigator.mediaDevices?.getUserMedia;
-    if (!gum) return;
+    if (!gum) {
+      onDiagnostic("web_camera_capture_unavailable");
+      return;
+    }
     let stream: MediaStream | null = null;
     try {
-      stream = await gum.call(navigator.mediaDevices, {
+      onDiagnostic("web_camera_capture_start");
+      const capture = gum.call(navigator.mediaDevices, {
         video: cameraOptions(),
         audio: false,
       });
+      cameraCaptureInFlight = capture;
+      // The rejection handler also consumes a late permission rejection after
+      // the deadline. A late stream belongs to the expired attempt and is stopped.
+      void capture.then((result) => {
+        if (!accepted || prepareGeneration !== videoPrepareGeneration) {
+          result.getTracks().forEach((track) => track.stop());
+        }
+      }, () => {}).finally(() => {
+        if (cameraCaptureInFlight === capture) cameraCaptureInFlight = null;
+      });
+      stream = await mediaDeadline(capture, CAMERA_CAPTURE_TIMEOUT_MS, "CameraCaptureTimeout");
       const track = stream.getVideoTracks()[0];
       if (!track) return;
       // Permission UI/getUserMedia can resolve after the user ended the call.
       // Do not keep a late camera track alive or let it bleed into call B.
-      if (prepareGeneration !== roomGeneration) {
+      if (prepareGeneration !== videoPrepareGeneration) {
         track.stop();
         return;
       }
       releasePreparedVideoTrack();
       preparedVideoTrack = track;
+      onDiagnostic("web_camera_capture_ready", { cameraReadyState: track.readyState });
       track.addEventListener(
         "ended",
         () => {
@@ -960,18 +1026,24 @@ export function prepareVideoCall(): Promise<void> {
         },
         { once: true },
       );
-    } catch {
+    } catch (error) {
+      onDiagnostic("web_camera_capture_failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
       return;
     } finally {
+      accepted = false;
       stream
         ?.getTracks()
         .filter((track) => track.kind !== "video" || track !== preparedVideoTrack)
         .forEach((track) => track.stop());
     }
-  })().finally(() => {
-    videoPreparePromise = null;
+  })();
+  const bounded = operation.finally(() => {
+    if (videoPreparePromise === bounded) videoPreparePromise = null;
   });
-  return videoPreparePromise;
+  videoPreparePromise = bounded;
+  return bounded;
 }
 
 function releasePreparedVideoTrack(): void {
@@ -983,44 +1055,96 @@ function releasePreparedVideoTrack(): void {
   }
 }
 
-async function publishPreparedVideoTrack(r: Room): Promise<boolean> {
+async function publishPreparedVideoTrack(r: Room, generation: number, captureGeneration: number): Promise<boolean> {
+  if (cameraPublishInFlight?.room === r) {
+    releasePreparedVideoTrack();
+    callDiagnostic("web_camera_publish_still_pending");
+    return false;
+  }
   const track = preparedVideoTrack;
   if (!track || track.readyState !== "live") {
     preparedVideoTrack = null;
     return false;
   }
-  try {
-    await r.localParticipant.publishTrack(track, { source: Track.Source.Camera });
-    preparedVideoTrack = null;
-    return !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
-  } catch {
-    if (preparedVideoTrack === track) preparedVideoTrack = null;
+  preparedVideoTrack = null;
+  track.enabled = true;
+  let valid = true;
+  const isCurrent = () => valid && room === r && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const discard = () => {
+    try { track.stop(); } catch {}
     try {
-      track.stop();
+      const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (publication?.track?.mediaStreamTrack === track) {
+        void r.localParticipant.unpublishTrack(publication.track, true).catch(() => {});
+      }
     } catch {}
+  };
+  try {
+    const publish = r.localParticipant.publishTrack(track, { source: Track.Source.Camera });
+    const publishing = { room: r, promise: publish };
+    cameraPublishInFlight = publishing;
+    void publish.then(() => { if (!isCurrent()) discard(); }, () => {}).finally(() => {
+      if (cameraPublishInFlight === publishing) cameraPublishInFlight = null;
+    });
+    await mediaDeadline(publish, CAMERA_PUBLISH_TIMEOUT_MS, "CameraPublishTimeout");
+    if (!isCurrent()) {
+      discard();
+      return false;
+    }
+    const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+    if (publication?.isMuted && publication.track) {
+      await mediaDeadline(
+        (publication.track as LocalVideoTrack).unmute(),
+        CAMERA_PUBLISH_TIMEOUT_MS,
+        "CameraResumeTimeout",
+      );
+    }
+    if (!isCurrent()) { discard(); return false; }
+    return !!publication?.track && !publication.isMuted && track.enabled && track.readyState === "live";
+  } catch (error) {
+    valid = false;
+    discard();
+    if (room === r && generation === roomGeneration) {
+      callDiagnostic("web_camera_publish_failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+    }
     return false;
   }
 }
 
-async function enableCameraWithRetry(
+async function enableCameraForRoom(
   r: Room,
   generation = roomGeneration,
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if (room !== r || generation !== roomGeneration) return false;
-    if (await publishPreparedVideoTrack(r)) return true;
-    if (room !== r || generation !== roomGeneration) return false;
-    try {
-      await r.localParticipant.setCameraEnabled(true, cameraOptions());
-      if (r.localParticipant.getTrackPublication(Track.Source.Camera)?.track) return true;
-    } catch {}
-    await delay(350 + attempt * 250);
+  const captureGeneration = videoPrepareGeneration;
+  const isCurrent = () => room === r && generation === roomGeneration &&
+    captureGeneration === videoPrepareGeneration && cameraEnabledIntent;
+  const existing = cameraEnableOperation;
+  if (existing?.room === r) {
+    if (existing.captureGeneration === captureGeneration) return existing.promise;
+    // OFF invalidates the old acquisition/publication. A subsequent ON waits
+    // for that bounded operation to settle, then acquires for the NEW intent.
+    // Reusing its old false result would silently undo the user's latest ON.
+    await existing.promise.catch(() => false);
+    if (!isCurrent()) return false;
+    if (cameraEnableOperation?.room === r && cameraEnableOperation.captureGeneration === captureGeneration) {
+      return cameraEnableOperation.promise;
+    }
   }
-  return (
-    room === r &&
-    generation === roomGeneration &&
-    !!r.localParticipant.getTrackPublication(Track.Source.Camera)?.track
-  );
+  const operation = (async () => {
+    await prepareVideoCall();
+    if (!isCurrent()) return false;
+    return publishPreparedVideoTrack(r, generation, captureGeneration);
+  })();
+  const current = { room: r, captureGeneration, promise: operation };
+  cameraEnableOperation = current;
+  try {
+    return await operation;
+  } finally {
+    if (cameraEnableOperation === current) cameraEnableOperation = null;
+  }
 }
 
 function hasLocalTrack(r: Room, source: Track.Source): boolean {
@@ -1209,7 +1333,12 @@ export async function joinCall(
     if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
     diagnostic("web_room_connected", { connectionState: r.state });
     try {
-      await r.localParticipant.setMicrophoneEnabled(true);
+      diagnostic("web_microphone_publish_start");
+      const publishMicrophone = r.localParticipant.setMicrophoneEnabled(true);
+      void publishMicrophone.then(() => {
+        if (!isCurrentRoom()) stopRoomMediaTracks(r);
+      }, () => {});
+      await mediaDeadline(publishMicrophone, MICROPHONE_PUBLISH_TIMEOUT_MS, "MicrophonePublishTimeout");
     } catch (err) {
       diagnostic("web_microphone_publish_failed", {
         errorName: err instanceof Error ? err.name : "unknown",
@@ -1219,26 +1348,47 @@ export async function joinCall(
     if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
     const microphonePublished = hasLocalTrack(r, Track.Source.Microphone);
     diagnostic("web_microphone_publish_result", { microphonePublished });
-    let cameraPublished = false;
+    let cameraPending = cameraRequested;
     if (cameraRequested) {
-      // Camera is optional media. A denial, delayed acquisition, or a camera-off
-      // peer must never tear down a working audio path.
-      cameraPublished = await enableCameraWithRetry(r, generation);
-      if (generation !== roomGeneration || room !== r) throw new Error("stale_join_attempt");
-      diagnostic("web_camera_publish_result", { cameraPublished });
-      armCameraRecovery();
+      const cameraGeneration = videoPrepareGeneration;
+      // A browser can leave camera permission/capture pending indefinitely.
+      // Expose the connected Room and audio immediately; publish video separately.
+      void enableCameraForRoom(r, generation).then((published) => {
+        cameraPending = false;
+        if (!isCurrentRoom() || cameraGeneration !== videoPrepareGeneration) return;
+        diagnostic("web_camera_publish_result", { cameraPublished: published });
+        armCameraRecovery();
+      }).catch((error) => {
+        cameraPending = false;
+        if (!isCurrentRoom() || cameraGeneration !== videoPrepareGeneration) return;
+        diagnostic("web_camera_publish_failed", {
+          errorName: error instanceof Error ? error.name : "unknown",
+        });
+        diagnostic("web_camera_publish_result", { cameraPublished: false });
+      });
     }
     // Secondary pre-authorization. The button-gesture activation is already spent
     // by the createCall/acceptCall await that precedes this — primeAudioPlayback()
     // (called on that gesture in CallProvider) is what actually unlocks playback.
     if (!r.canPlaybackAudio) {
-      const playbackStarted = await resumeRoomAudio(r);
-      if (!playbackStarted) diagnostic("web_audio_playback_blocked", callStateDetails());
+      // Playback promises can also remain pending in Safari. The connected UI
+      // must already be available so its explicit resume button can be tapped.
+      void resumeRoomAudio(r).then((playbackStarted) => {
+        if (isCurrentRoom() && !playbackStarted) {
+          diagnostic("web_audio_playback_blocked", callStateDetails());
+        }
+      });
     }
     armMicRecovery();
     installVisibilityHandler();
     void requestWakeLock();
-    return { room: r, media, microphonePublished, cameraPublished };
+    return {
+      room: r,
+      media,
+      microphonePublished,
+      cameraPublished: hasLocalTrack(r, Track.Source.Camera),
+      cameraPending,
+    };
   } catch (err) {
     diagnostic("web_join_cleanup_after_failure", {
       errorName: err instanceof Error ? err.name : "unknown",
@@ -1276,28 +1426,71 @@ export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
     const r = room;
     const generation = roomGeneration;
     if (enabled) {
-      const current = r.localParticipant
-        .getTrackPublication(Track.Source.Camera)
-        ?.track?.mediaStreamTrack;
-      if (current?.readyState === "live" && !current.muted) {
+      const captureGeneration = videoPrepareGeneration;
+      if (cameraDisableOperation?.room === r) {
+        await cameraDisableOperation.promise;
+        if (room !== r || generation !== roomGeneration || captureGeneration !== videoPrepareGeneration || !cameraEnabledIntent) {
+          return false;
+        }
+      }
+      const publication = r.localParticipant.getTrackPublication(Track.Source.Camera);
+      const current = publication?.track?.mediaStreamTrack;
+      if (current?.readyState === "live" && !current.muted && current.enabled && !publication?.isMuted) {
         cameraTrack = current;
         cameraLost = false;
         return true;
       }
+      if (publication?.isMuted && current?.readyState === "live") {
+        const resume = r.localParticipant.setCameraEnabled(true, cameraOptions());
+        void resume.then(() => {
+          // SDK operations also outlive local deadlines. A late ON must not
+          // re-enable a camera after the user pressed OFF or ended this call.
+          if (room !== r || generation !== roomGeneration) {
+            current.stop();
+          } else if (!cameraEnabledIntent) {
+            current.enabled = false;
+            void r.localParticipant.setCameraEnabled(false, cameraOptions()).catch(() => {});
+          }
+        }, () => {});
+        await mediaDeadline(
+          resume,
+          CAMERA_CAPTURE_TIMEOUT_MS,
+          "CameraResumeTimeout",
+        );
+        if (room !== r || generation !== roomGeneration || captureGeneration !== videoPrepareGeneration || !cameraEnabledIntent) return false;
+        armCameraRecovery();
+        const resumed = r.localParticipant.getTrackPublication(Track.Source.Camera);
+        const resumedTrack = resumed?.track?.mediaStreamTrack;
+        return !!resumedTrack && resumedTrack.readyState === "live" && resumedTrack.enabled &&
+          !resumedTrack.muted && !resumed?.isMuted;
+      }
       if (current) return restartCamera();
-      await prepareVideoCall();
-      if (room !== r || generation !== roomGeneration) return false;
-      const published = await enableCameraWithRetry(r, generation);
+      const published = await enableCameraForRoom(r, generation);
       if (room !== r || generation !== roomGeneration) return false;
       cameraTrack = null;
       armCameraRecovery();
       return published;
     } else {
+      videoPrepareGeneration += 1;
+      releasePreparedVideoTrack();
       if (cameraRecoveryTimer) {
         clearTimeout(cameraRecoveryTimer);
         cameraRecoveryTimer = null;
       }
-      await r.localParticipant.setCameraEnabled(false, cameraOptions());
+      const disabled = {
+        room: r,
+        promise: mediaDeadline(
+          r.localParticipant.setCameraEnabled(false, cameraOptions()),
+          CAMERA_PUBLISH_TIMEOUT_MS,
+          "CameraDisableTimeout",
+        ),
+      };
+      cameraDisableOperation = disabled;
+      try {
+        await disabled.promise;
+      } finally {
+        if (cameraDisableOperation === disabled) cameraDisableOperation = null;
+      }
       if (room !== r || generation !== roomGeneration) return false;
       cameraTrack = null;
       cameraLost = false;
@@ -1309,19 +1502,9 @@ export async function setCameraEnabled(enabled: boolean): Promise<boolean> {
 
 export async function switchCamera(): Promise<"user" | "environment"> {
   cameraFacingMode = cameraFacingMode === "user" ? "environment" : "user";
-  if (room) {
-    const r = room;
-    const generation = roomGeneration;
-    const pub = r.localParticipant.getTrackPublication(Track.Source.Camera);
-    const track = pub?.track as LocalVideoTrack | undefined;
-    if (track) {
-      await track.restartTrack(cameraOptions());
-    } else {
-      await prepareVideoCall();
-      if (room === r && generation === roomGeneration) {
-        await enableCameraWithRetry(r, generation);
-      }
-    }
+  if (room && cameraEnabledIntent) {
+    const restored = await restartCamera();
+    if (!restored) throw new Error("camera_switch_failed");
   }
   return cameraFacingMode;
 }
@@ -1391,13 +1574,15 @@ async function cleanupCall({
   removeCameraTrackListeners?.();
   removeCameraTrackListeners = null;
   cameraTrack = null;
-  cameraRestarting = false;
   cameraLost = false;
   if (cameraRecoveryTimer) {
     clearTimeout(cameraRecoveryTimer);
     cameraRecoveryTimer = null;
   }
-  if (!preservePreparedVideo) cameraEnabledIntent = false;
+  if (!preservePreparedVideo) {
+    cameraEnabledIntent = false;
+    videoPrepareGeneration += 1;
+  }
   callDiagnostic = () => {};
   if (!preservePreparedVideo) releasePreparedVideoTrack();
   clearAudioElements();

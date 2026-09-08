@@ -35,6 +35,7 @@ export interface CallJoinResult {
   media: CallMedia;
   microphonePublished: boolean;
   cameraPublished: boolean;
+  cameraPending?: boolean;
 }
 
 type Diagnostic = CallDiagnostic | undefined;
@@ -317,7 +318,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function prepareVideoCall(): Promise<void> {
+export function prepareVideoCall(_onDiagnostic?: CallDiagnostic): Promise<void> {
   if (videoPreparePromise) return videoPreparePromise;
   videoPreparePromise = (async () => {
     if (Platform.OS !== "android") return;
@@ -413,6 +414,10 @@ export async function joinCall(
   let r: Room | null = null;
   try {
     await ensureAudioMode();
+    if (generation !== roomGeneration) throw new Error("stale_join_attempt");
+    // The shared UI starts camera preparation without blocking the web join.
+    // Android's native permission dialogs must still be serialized.
+    if (videoPreparePromise) await videoPreparePromise;
     if (generation !== roomGeneration) throw new Error("stale_join_attempt");
     let cameraPermissionGranted = true;
     cameraPermissionGranted = await ensureAndroidCallPermissions(cameraRequested ? "video" : "audio");

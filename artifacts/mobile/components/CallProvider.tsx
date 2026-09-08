@@ -306,6 +306,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const [callMedia, setCallMedia] = useState<CallMedia>("audio");
   const [liveRoom, setLiveRoom] = useState<Room | null>(null);
   const [cameraOn, setCameraOnState] = useState(true);
+  const [cameraPreparing, setCameraPreparing] = useState(false);
+  const [cameraIssue, setCameraIssue] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [audioPath, setAudioPath] = useState<AudioPathState>("waiting_for_participant");
   const [videoPath, setVideoPath] = useState<VideoPathState>("not_requested");
@@ -323,6 +325,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const cameraWantedRef = useRef(true);
+  const cameraActionRef = useRef(0);
+  const cameraOutcomeRef = useRef<{ generation: number; published: boolean } | null>(null);
   const expectedDisconnectRef = useRef(false);
   const disconnectHandlingRef = useRef(false);
   const joinedCallIdRef = useRef<string | null>(null);
@@ -418,6 +422,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
     setCallMedia("audio");
     setLiveRoom(null);
     setCameraOnState(true);
+    setCameraPreparing(false);
+    setCameraIssue(null);
     cameraWantedRef.current = true;
     mutedRef.current = false;
     setMutedState(false);
@@ -466,6 +472,24 @@ function CallManager({ children }: { children: React.ReactNode }) {
           details,
         });
         if (generation !== sessionGenerationRef.current) return;
+        if (phase === "web_camera_capture_start") setCameraIssue(null);
+        if (phase === "web_camera_capture_failed") {
+          setCameraIssue(details?.errorName === "NotAllowedError"
+            ? "카메라 권한을 허용한 뒤 카메라 버튼을 눌러주세요."
+            : "카메라를 켜지 못했어요. 권한과 다른 앱의 카메라 사용을 확인한 뒤 다시 눌러주세요.");
+        }
+        if (phase === "web_camera_capture_still_pending") {
+          setCameraIssue("카메라 권한 창을 확인해 주세요. 계속 대기하면 통화를 마친 뒤 앱을 다시 열어주세요.");
+        }
+        if (phase === "web_camera_publish_still_pending") {
+          setCameraIssue("카메라 영상 전송 준비가 지연되고 있어요. 잠시 후 카메라 버튼을 다시 눌러주세요.");
+        }
+        if (phase === "web_camera_publish_result") {
+          cameraOutcomeRef.current = { generation, published: details?.cameraPublished === true };
+          setCameraPreparing(false);
+          if (details?.cameraPublished === true) setCameraIssue(null);
+          if (cameraWantedRef.current) setCameraOnState(details?.cameraPublished === true);
+        }
         if (phase === "web_remote_audio_play_blocked" || phase === "web_audio_playback_blocked") {
           setAudioPlaybackBlocked(true);
         }
@@ -500,7 +524,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         },
       });
       if (!result.microphonePublished) throw new Error("microphone_publish_failed");
-      if (cameraExpected && result.media === "video" && !result.cameraPublished) {
+      if (cameraExpected && result.media === "video" && !result.cameraPublished && !result.cameraPending) {
         reportCallDiagnostic(callId, {
           attemptId: diagnosticAttemptIdRef.current,
           phase: "local_camera_unavailable_audio_continues",
@@ -512,6 +536,19 @@ function CallManager({ children }: { children: React.ReactNode }) {
     },
     [],
   );
+
+  const applyJoinedCameraState = useCallback((result: Awaited<ReturnType<typeof joinCall>>) => {
+    const publication = result.room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const published = !!publication?.track && !publication.isMuted;
+    const outcome = cameraOutcomeRef.current?.generation === sessionGenerationRef.current
+      ? cameraOutcomeRef.current
+      : null;
+    const pending = result.media === "video" && !!result.cameraPending && !published && !outcome;
+    const wanted = result.media === "video" && (published || result.cameraPublished || pending);
+    setCameraPreparing(pending);
+    setCameraOnState(wanted);
+    cameraWantedRef.current = wanted;
+  }, []);
 
   const failCallLocally = useCallback(
     async (callId: string | null, role: string, err: unknown, generation?: number) => {
@@ -583,7 +620,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         shouldMarkFailed = true;
         if (!isCurrentJoin()) return;
         const joinedMedia = session.call.media ?? media;
-        if (joinedMedia === "video") await prepareVideoCall().catch(() => {});
+        if (joinedMedia === "video") void prepareVideoCall(diagnosticFor(call.id, "caller", generation)).catch(() => {});
         if (!isCurrentJoin()) return;
         setActiveCall(session.call);
         setCallMedia(joinedMedia);
@@ -601,8 +638,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         validateJoinResult(joined, call.id, "caller");
         liveRoomRef.current = joined.room;
         setLiveRoom(joined.room);
-        setCameraOnState(joinedMedia === "video" && joined.cameraPublished);
-        cameraWantedRef.current = joinedMedia === "video" && joined.cameraPublished;
+        applyJoinedCameraState(joined);
         joinedCallIdRef.current = call.id;
         setConnecting(false);
         setRecoveryStage("none");
@@ -615,7 +651,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         if (mediaJoinCallIdRef.current === call.id) mediaJoinCallIdRef.current = null;
       }
     },
-    [callMedia, diagnosticFor, failCallLocally, reset, validateJoinResult],
+    [applyJoinedCameraState, callMedia, diagnosticFor, failCallLocally, reset, validateJoinResult],
   );
 
   useEffect(() => {
@@ -649,13 +685,23 @@ function CallManager({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (callMedia !== "video" || mode !== "active" || connecting || !liveRoom) return;
+    const generation = sessionGenerationRef.current;
+    let disposed = false;
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active" || !cameraWantedRef.current) return;
+      const cameraAction = cameraActionRef.current;
       void setCameraEnabled(true)
-        .then((ok) => setCameraOnState(ok))
+        .then((ok) => {
+          if (disposed || generation !== sessionGenerationRef.current || liveRoomRef.current !== liveRoom
+            || cameraAction !== cameraActionRef.current || !cameraWantedRef.current) return;
+          setCameraOnState(ok);
+        })
         .catch(() => {});
     });
-    return () => sub.remove();
+    return () => {
+      disposed = true;
+      sub.remove();
+    };
   }, [callMedia, connecting, liveRoom, mode]);
 
   useEffect(() => {
@@ -896,7 +942,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
           }
           const media = session.call.media ?? callMedia;
           if (media === "video" && cameraWantedRef.current) {
-            await prepareVideoCall().catch(() => {});
+            void prepareVideoCall(diagnosticFor(callId, "rejoin", rejoinGeneration)).catch(() => {});
           }
           const joined = await joinCall(session.url, session.token, {
             media,
@@ -925,8 +971,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
           setLiveRoom(joined.room);
           setActiveCall(session.call);
           setCallMedia(media);
-          setCameraOnState(media === "video" && joined.cameraPublished);
-          cameraWantedRef.current = media === "video" && joined.cameraPublished;
+          applyJoinedCameraState(joined);
           setConnecting(false);
           setRecoveryStage("none");
           disconnectHandlingRef.current = false;
@@ -977,6 +1022,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
     liveRoom,
     mode,
     reset,
+    applyJoinedCameraState,
     validateJoinResult,
   ]);
 
@@ -1111,7 +1157,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
       expectedDisconnectRef.current = false;
       // Unlock audio on the card-tap gesture, before the join await.
       primeAudioPlayback();
-      const videoReady = media === "video" ? prepareVideoCall() : Promise.resolve();
+      if (media === "video") void prepareVideoCall().catch(() => {});
       setPeerName(peer);
       setCallMedia(media);
       setCameraOnState(media === "video");
@@ -1134,13 +1180,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         shouldMarkFailed = true;
         if (!isCurrentJoin()) return false;
         const joinedMedia = session.call.media ?? media;
-        await (
-          joinedMedia === "video"
-            ? media === "video"
-              ? videoReady
-              : prepareVideoCall()
-            : Promise.resolve()
-        ).catch(() => {});
+        if (joinedMedia === "video" && media !== "video") void prepareVideoCall().catch(() => {});
         if (!isCurrentJoin()) return false;
         setActiveCall(session.call);
         setCallMedia(joinedMedia);
@@ -1158,8 +1198,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         validateJoinResult(joined, callId, "join-card");
         liveRoomRef.current = joined.room;
         setLiveRoom(joined.room);
-        setCameraOnState(joinedMedia === "video" && joined.cameraPublished);
-        cameraWantedRef.current = joinedMedia === "video" && joined.cameraPublished;
+        applyJoinedCameraState(joined);
         joinedCallIdRef.current = callId;
         setConnecting(false);
         setRecoveryStage("none");
@@ -1174,7 +1213,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
         if (mediaJoinCallIdRef.current === callId) mediaJoinCallIdRef.current = null;
       }
     },
-    [diagnosticFor, failCallLocally, reset, validateJoinResult],
+    [applyJoinedCameraState, diagnosticFor, failCallLocally, reset, validateJoinResult],
   );
 
   // Decline an incoming call straight from a notification action (no modal up).
@@ -1209,7 +1248,9 @@ function CallManager({ children }: { children: React.ReactNode }) {
     // Unlock audio on the accept-button gesture, before the accept await.
     primeAudioPlayback();
     const initialMedia = currentIncoming.media ?? "audio";
-    const videoReady = initialMedia === "video" ? prepareVideoCall() : Promise.resolve();
+    const onDiagnostic = diagnosticFor(currentIncoming.id, "callee", generation);
+    onDiagnostic("accept_gesture", { media: initialMedia });
+    if (initialMedia === "video") void prepareVideoCall(onDiagnostic).catch(() => {});
     setIncoming(null);
     setActiveCall(currentIncoming);
     setCallMedia(initialMedia);
@@ -1227,22 +1268,16 @@ function CallManager({ children }: { children: React.ReactNode }) {
     let shouldMarkFailed = false;
     try {
       const session = await acceptTrackedCall(currentIncoming.id, attemptId);
+      onDiagnostic("accept_api_succeeded", { media: session.call.media });
       shouldMarkFailed = true;
       if (!isCurrentJoin()) return;
       const media = session.call.media ?? currentIncoming.media ?? "audio";
-      await (
-        media === "video"
-          ? initialMedia === "video"
-            ? videoReady
-            : prepareVideoCall()
-          : Promise.resolve()
-      ).catch(() => {});
+      if (media === "video" && initialMedia !== "video") void prepareVideoCall(onDiagnostic).catch(() => {});
       if (!isCurrentJoin()) return;
       setActiveCall(session.call);
       setCallMedia(media);
       setCameraOnState(media === "video");
       cameraWantedRef.current = media === "video";
-      const onDiagnostic = diagnosticFor(currentIncoming.id, "callee", generation);
       const joined = await joinCall(session.url, session.token, {
         media,
         onDiagnostic,
@@ -1254,8 +1289,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
       validateJoinResult(joined, currentIncoming.id, "callee");
       liveRoomRef.current = joined.room;
       setLiveRoom(joined.room);
-      setCameraOnState(media === "video" && joined.cameraPublished);
-      cameraWantedRef.current = media === "video" && joined.cameraPublished;
+      applyJoinedCameraState(joined);
       joinedCallIdRef.current = currentIncoming.id;
       setConnecting(false);
       setRecoveryStage("none");
@@ -1267,7 +1301,7 @@ function CallManager({ children }: { children: React.ReactNode }) {
     } finally {
       if (mediaJoinCallIdRef.current === currentIncoming.id) mediaJoinCallIdRef.current = null;
     }
-  }, [incoming, diagnosticFor, failCallLocally, reset, validateJoinResult]);
+  }, [incoming, applyJoinedCameraState, diagnosticFor, failCallLocally, reset, validateJoinResult]);
 
   const handleDecline = useCallback(async () => {
     const id = incoming?.id;
@@ -1331,16 +1365,22 @@ function CallManager({ children }: { children: React.ReactNode }) {
   }, [activeCall?.id, muted]);
 
   const toggleCamera = useCallback(async () => {
+    const generation = sessionGenerationRef.current;
+    const cameraAction = ++cameraActionRef.current;
     const next = !cameraOn;
     cameraWantedRef.current = next;
     setCameraOnState(next);
+    setCameraPreparing(next);
+    setCameraIssue(null);
     try {
-      if (next) await prepareVideoCall().catch(() => {});
       const ok = await setCameraEnabled(next);
+      if (generation !== sessionGenerationRef.current || cameraAction !== cameraActionRef.current || cameraWantedRef.current !== next) return;
       if (next && !ok) throw new Error("camera_toggle_failed");
     } catch {
+      if (generation !== sessionGenerationRef.current || cameraAction !== cameraActionRef.current || cameraWantedRef.current !== next) return;
       cameraWantedRef.current = !next;
       setCameraOnState(!next);
+      setCameraIssue("카메라를 켜지 못했어요. 권한과 다른 앱의 카메라 사용을 확인해 주세요.");
       if (activeCall?.id) {
         reportCallDiagnostic(activeCall.id, {
           attemptId: diagnosticAttemptIdRef.current,
@@ -1349,6 +1389,10 @@ function CallManager({ children }: { children: React.ReactNode }) {
           role: "in-call",
           details: { requested: next },
         });
+      }
+    } finally {
+      if (generation === sessionGenerationRef.current && cameraAction === cameraActionRef.current) {
+        setCameraPreparing(false);
       }
     }
   }, [activeCall?.id, cameraOn]);
@@ -1450,6 +1494,8 @@ function CallManager({ children }: { children: React.ReactNode }) {
                       : activeStatus}
                 </Text>
                 <Text style={styles.identityLight}>{callIdentityLabel}</Text>
+                {cameraPreparing && <Text style={styles.webCallHint}>카메라를 준비하고 있어요. 음성 통화는 계속할 수 있어요.</Text>}
+                {cameraIssue && <Text style={styles.webCallHint}>{cameraIssue}</Text>}
                 {showWebCallHint && (
                   <Text style={styles.webCallHint}>웹/PWA는 화면을 내리면 마이크가 멈출 수 있어요.</Text>
                 )}
